@@ -40,6 +40,23 @@ def _prepare_env() -> None:
     path = os.environ.get("PATH", "")
     if not path.lower().startswith(scripts.lower()):
         os.environ["PATH"] = scripts + os.pathsep + path
+    # Claves guardadas con setx no llegan a terminales abiertas antes: se leen del registro de usuario.
+    if os.name == "nt":
+        try:
+            import winreg
+
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+                i = 0
+                while True:
+                    try:
+                        name, value, _ = winreg.EnumValue(k, i)
+                    except OSError:
+                        break
+                    i += 1
+                    if name.upper().endswith("_API_KEY") and value and not os.environ.get(name):
+                        os.environ[name] = str(value)
+        except OSError:
+            pass
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")  # no ensuciar los repos con __pycache__
     for stream in (sys.stdout, sys.stderr):
