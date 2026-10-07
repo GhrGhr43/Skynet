@@ -22,6 +22,11 @@ tareas, tarea larga, registro, modelos/repos, diagnóstico y ayuda. Probada en l
 Chromium (sin GPU real) y 10 tests nuevos en `tests/test_web.py`. **Falta probarla en el PC de
 Daniel** (rendimiento real en la RX 9070 XT, calidad «ultra»).
 
+## Motores locales (2026-10-08)
+LM Studio (Qwen 27B) y Strata (Qwen3.8-Flash-Next Coder, C:Strata) se encienden y apagan desde
+Ajustes de la web (`skynet/engines.py`, `[motores.*]` en config/skynet.toml). Comparten GPU: encender
+uno apaga el otro. Probado en el PC: LM Studio carga en ~2 min, Strata en ~2 min.
+
 ## Decisiones tomadas por defecto (Daniel puede cambiarlas)
 - Python para el Core.
 - Cloud = Anthropic vía LiteLLM (`claude-opus-5-5`), desactivado: `presupuesto.mensual_eur = 0`
