@@ -87,6 +87,32 @@ MIGRATIONS: list[str] = [
 ]
 
 
+def pid_alive(pid: int | None) -> bool:
+    """True si el proceso existe. En Windows no se usa os.kill(pid, 0): ahí mataría el proceso."""
+    if not pid or pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -121,8 +147,11 @@ class Task:
         return self.agent in ("scheduler", "agente-godot")
 
     def runner_alive(self) -> bool:
+        """Hay un proceso trabajando en la tarea: latido reciente y, si se conoce, el pid sigue vivo."""
         hb = parse_iso(self.heartbeat_at)
-        return bool(hb and datetime.now(timezone.utc) - hb < HEARTBEAT_STALE)
+        if not (hb and datetime.now(timezone.utc) - hb < HEARTBEAT_STALE):
+            return False
+        return pid_alive(self.pid) if self.pid else True
 
 
 @dataclass

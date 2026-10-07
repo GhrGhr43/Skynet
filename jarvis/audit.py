@@ -33,6 +33,7 @@ def describe_event(e: dict[str, Any]) -> str:
     if t == "tool":
         args = d.get("args_resumen") or ""
         res = d.get("resultado") or d.get("motivo") or ""
+        args = args if len(args) <= 80 else args[:77] + "..."
         return f"{args} -> {res}"[:160]
     if t == "llm":
         return f"{d.get('motivo_ruta', '')} {d.get('fin', '')}".strip()[:160]

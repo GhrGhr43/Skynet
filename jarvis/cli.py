@@ -230,7 +230,16 @@ def cmd_demo(rt: Runtime, force: bool) -> int:
         console.print(f"{repo.ruta} ya existe (usa --forzar para recrearlo)")
         return 1
     if repo.ruta.exists() and force:
-        shutil.rmtree(repo.ruta, onerror=lambda f, p, e: (os.chmod(p, 0o700), f(p)))
+        # Se vacía la carpeta (no se borra: puede ser el directorio actual de alguna consola)
+        def _force(func: Any, path: str, _exc: Any) -> None:
+            os.chmod(path, 0o700)  # los objetos de .git son de solo lectura en Windows
+            func(path)
+
+        for child in repo.ruta.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child, onexc=_force)
+            else:
+                child.unlink()
     for rel, content in DEMO_FILES.items():
         p = repo.ruta / rel
         p.parent.mkdir(parents=True, exist_ok=True)

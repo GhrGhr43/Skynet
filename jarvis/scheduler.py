@@ -30,7 +30,7 @@ from .verifier import VerifierResult, run_verifier
 
 ITERATION_INSTRUCTIONS = f"""Esta es la iteración {{n}} de una tarea larga que avanza en pasos pequeños verificados.
 - Haz UN avance concreto y pequeño hacia el objetivo, que el verificador pueda comprobar. No intentes hacerlo todo de golpe.
-- Lee PROGRESO.md y ERRORES.md (arriba) para no repetir lo que ya falló.
+- Lee PROGRESO.md y ERRORES.md (arriba) para no repetir lo que ya falló. PROGRESO.md lo escribe JARVIS: no lo edites.
 - Si después de tu cambio pasan menos tests o fallan más que al empezar, todo lo de esta iteración se deshará.
 - Al terminar, resume en 1-3 líneas qué hiciste.
 - Solo si el objetivo COMPLETO ya está cumplido y el verificador pasa, añade al final una línea con {DONE_MARK}."""
@@ -155,7 +155,7 @@ class LongTaskRunner:
                 self.on_event("iteracion", {"n": n})
                 run = await self.rt.agent_step(
                     task, "iteracion", on_event=self.on_event, max_turns=L.turnos_por_iteracion,
-                    instructions=ITERATION_INSTRUCTIONS.format(n=n),
+                    instructions=ITERATION_INSTRUCTIONS.format(n=n), protected=["PROGRESO.md"],
                 )
                 out = run.outcome
                 ver: VerifierResult | None = None

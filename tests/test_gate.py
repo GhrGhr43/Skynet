@@ -89,3 +89,12 @@ def test_preapproved_grants(ctx):
     g = gate(ctx, grants=["coding_agent.*"])
     assert g.evaluate("coding_agent.start_task", {}).decision is Decision.ALLOW
     assert gate(ctx).evaluate("coding_agent.start_task", {}).decision is Decision.ASK
+
+
+def test_protected_paths(ctx):
+    settings, repo, audit, _ = ctx
+    g = PermissionGate(settings, repo, audit, protected=["PROGRESO.md"])
+    assert g.evaluate("workspace.write_file", {"path": "progreso.md", "content": "x"}).decision is Decision.DENY
+    assert g.evaluate("workspace.edit_file", {"path": "./PROGRESO.md"}).decision is Decision.DENY
+    assert g.evaluate("workspace.read_file", {"path": "PROGRESO.md"}).decision is Decision.ALLOW
+    assert g.evaluate("workspace.write_file", {"path": "otro.md", "content": "x"}).decision is Decision.ALLOW

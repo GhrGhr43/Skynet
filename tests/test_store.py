@@ -61,8 +61,11 @@ def test_last_resumable(store):
 
 def test_heartbeat_staleness(store):
     t = store.create_task("a", "g", agent="scheduler")
-    store.heartbeat(t.id, pid=123)
+    store.heartbeat(t.id)  # pid de este proceso: vivo
     assert store.get_task(t.id).runner_alive()
+    store.heartbeat(t.id, pid=999_999_9)  # latido reciente pero el proceso ya no existe
+    assert not store.get_task(t.id).runner_alive()
+    store.heartbeat(t.id)
     old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(timespec="seconds")
     store.update_task(t.id, heartbeat_at=old)
     assert not store.get_task(t.id).runner_alive()

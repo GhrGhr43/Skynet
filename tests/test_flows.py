@@ -204,3 +204,44 @@ async def test_long_task_stop_requested(make_rt):
 
     final = await LongTaskRunner(rt, task.id, on_event=stop_after_first, sleep=_no_sleep).run()
     assert final.status == PAUSADA and "parada" in final.result_summary and final.iters_done == 1
+
+
+# --- comandos del chat -------------------------------------------------------------
+async def test_largo_command_creates_and_spawns(make_rt, monkeypatch):
+    import jarvis.coordinator as coord_mod
+
+    spawned = []
+    monkeypatch.setattr(coord_mod, "spawn_background", lambda rt, tid: spawned.append(tid) or 4242)
+    rt = make_rt(ScriptedLLM([]))
+    ui = FakeUI(answers=["s"])
+    c = Coordinator(rt, ui)
+    await c.handle("/largo 1,5 haz que pasen los tests")
+    task = rt.store.get_task(spawned[0])
+    assert task.agent == "scheduler" and task.max_hours == 1.5 and task.goal == "haz que pasen los tests"
+    assert task.capabilities["capacidades"]["cost"] == "bajo"
+    # continúa sobre una tarea larga sin runner vivo: la relanza en segundo plano
+    rt.store.update_task(task.id, status=PAUSADA)
+    await c.handle("continúa")
+    assert spawned == [task.id, task.id]
+
+
+async def test_largo_cancelled(make_rt, monkeypatch):
+    import jarvis.coordinator as coord_mod
+
+    monkeypatch.setattr(coord_mod, "spawn_background", lambda rt, tid: 1 / 0)
+    rt = make_rt(ScriptedLLM([]))
+    ui = FakeUI(answers=["n"])
+    await Coordinator(rt, ui).handle("/largo 2 algo")
+    assert rt.store.list_tasks() == [] and ui.infos[-1] == "Cancelado."
+
+
+async def test_info_commands(make_rt):
+    rt = make_rt(ScriptedLLM([("hola", None)]))
+    ui = FakeUI()
+    c = Coordinator(rt, ui)
+    await c.handle("/repo ninguno")
+    await c.handle("hola")
+    for cmd in ("/ayuda", "/repos", "/tareas", "/estado 1", "/log", "/log 1", "/modelo local", "/privado", "/nada"):
+        assert await c.handle(cmd)
+    assert await c.handle("/salir") is False
+    assert any("Comando desconocido" in i for i in ui.infos)

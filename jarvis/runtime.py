@@ -57,6 +57,7 @@ class Runtime:
         on_event: EventFn | None = None,
         max_turns: int | None = None,
         instructions: str | None = None,
+        protected: list[str] | None = None,
     ) -> StepRun:
         """Ejecuta un paso de agente con contexto fresco (sesión nueva). No verifica ni hace commit."""
         repo = self.repo_for(task)
@@ -70,7 +71,8 @@ class Runtime:
         if instructions:
             context += "\n\n## Instrucciones de este paso\n" + instructions
         grants = list(task.capabilities.get("permisos_preaprobados", []))
-        gate = PermissionGate(self.settings, repo, audit, asker=asker, grants=grants) if repo else None
+        gate = (PermissionGate(self.settings, repo, audit, asker=asker, grants=grants, protected=protected)
+                if repo else None)
         agent_kwargs: dict[str, Any] = dict(max_tool_output=self.settings.agent.max_salida_herramienta,
                                             on_event=on_event)
         turns = max_turns or self.settings.agent.max_turnos

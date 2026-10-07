@@ -82,6 +82,7 @@ class PermissionGate:
         audit: Audit,
         asker: Asker | None = None,
         grants: list[str] | None = None,
+        protected: list[str] | None = None,
     ):
         self.settings = settings
         self.repo = repo
@@ -89,6 +90,7 @@ class PermissionGate:
         self.asker = asker
         self.grants = list(grants or [])       # patrones preaprobados para la tarea
         self.session_grants: set[str] = set()  # respondido "t" durante esta ejecución
+        self.protected = [p.replace("\\", "/").lower() for p in (protected or [])]  # rutas que el agente no toca
 
     # --- clasificación ---------------------------------------------------
     def classify(self, key: str) -> Level:
@@ -126,6 +128,9 @@ class PermissionGate:
 
         if level is Level.READ:
             return GateResult(Decision.ALLOW, level, "lectura")
+        hit = self._protected_hit(args)
+        if hit:
+            return GateResult(Decision.DENY, level, f"'{hit}' lo gestiona JARVIS; no lo modifiques")
         if level is Level.WRITE:
             if self.repo is None:
                 return GateResult(Decision.DENY, level, "escritura sin repo autorizado")
@@ -151,6 +156,22 @@ class PermissionGate:
                 return GateResult(Decision.ALLOW, level, "preaprobado para esta tarea")
             return GateResult(Decision.ASK, level, "acción privilegiada")
         return GateResult(Decision.ASK, level, "acción destructiva")
+
+    def _protected_hit(self, args: dict[str, Any]) -> str | None:
+        if not self.protected or self.repo is None:
+            return None
+        root = self.repo.ruta.resolve()
+        for k, v in args.items():
+            if k.lower() in PATH_KEYS and isinstance(v, str) and v:
+                p = Path(v)
+                target = (p if p.is_absolute() else root / p).resolve()
+                try:
+                    rel = target.relative_to(root).as_posix().lower()
+                except ValueError:
+                    continue
+                if rel in self.protected:
+                    return v
+        return None
 
     def _granted(self, key: str) -> bool:
         if key in self.session_grants:
