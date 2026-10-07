@@ -3,9 +3,9 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jarvis"
+name = "skynet"
 version = "0.1.0"
-description = "JARVIS: agente personal sobre un Core modular (Personal Agent OS)"
+description = "Skynet: agente personal sobre un Core modular (Personal Agent OS)"
 requires-python = ">=3.12"
 dependencies = [
     "mcp>=2.3,<3",
@@ -19,15 +19,15 @@ dependencies = [
 dev = ["pytest>=8", "pytest-asyncio>=0.24"]
 
 [project.scripts]
-jarvis = "jarvis.cli:main"
+skynet = "skynet.cli:main"
 
 [tool.setuptools]
-packages = ["jarvis", "jarvis.web", "jarvis_tools"]
+packages = ["skynet", "skynet.web", "skynet_tools"]
 
 [tool.setuptools.package-data]
-"jarvis.web" = ["static/**/*"]
+"skynet.web" = ["static/**/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-markers = ["lmstudio: necesita LM Studio encendido (JARVIS_TEST_LMSTUDIO=1)"]
+markers = ["lmstudio: necesita LM Studio encendido (SKYNET_TEST_LMSTUDIO=1)"]

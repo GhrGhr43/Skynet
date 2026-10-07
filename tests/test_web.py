@@ -8,8 +8,8 @@ import pytest
 from conftest import ScriptedLLM, tool_call
 from starlette.testclient import TestClient
 
-from jarvis.store import FALLIDA, HECHA, PAUSADA
-from jarvis.web.server import Bus, create_app
+from skynet.store import FALLIDA, HECHA, PAUSADA
+from skynet.web.server import Bus, create_app
 
 GOOD_MOD = "VERSION = 1\n\n\ndef doble(x):\n    return 2 * x\n"
 
@@ -125,7 +125,7 @@ def test_ajustes(web):
 
 def test_tareas_detalle_y_acciones(web):
     c, rt, _ = web()
-    t = rt.store.create_task("x", "objetivo x", agent="jarvis", repo="prueba", status=PAUSADA)
+    t = rt.store.create_task("x", "objetivo x", agent="skynet", repo="prueba", status=PAUSADA)
     rt.store.add_event("llm", task_id=t.id, model="m", tokens_in=10, tokens_out=5, cost_eur=0.01)
     lst = c.get("/api/tareas").json()
     assert lst[0]["id"] == t.id and lst[0]["vivo"] is False

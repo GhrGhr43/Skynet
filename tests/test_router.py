@@ -1,9 +1,9 @@
 import pytest
 
-from jarvis.audit import Audit
-from jarvis.config import load_settings
-from jarvis.router import Capabilities, ModelRouter
-from jarvis.store import Store
+from skynet.audit import Audit
+from skynet.config import load_settings
+from skynet.router import Capabilities, ModelRouter
+from skynet.store import Store
 
 from conftest import ScriptedLLM
 

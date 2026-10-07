@@ -7,23 +7,23 @@ Python 3.14 en `.venv`. El SDK oficial de MCP y LiteLLM son Python. Aprobado por
 el 2026-10-07 (Daniel no contestó; el coordinador eligió el valor recomendado del diseño).
 
 ## D2. Herramientas = servidores MCP — cara
-El Core solo habla MCP (`jarvis/toolhub.py`). Las herramientas propias están en
-`jarvis_tools/` como servidores MCP independientes que se lanzan por stdio:
+El Core solo habla MCP (`skynet/toolhub.py`). Las herramientas propias están en
+`skynet_tools/` como servidores MCP independientes que se lanzan por stdio:
 - `workspace`: archivos, búsqueda, git y comandos dentro de un único repo.
 - `coding_agent`: envuelve agente-godot (noche.ps1) sin modificarlo.
 
-Desviación del diseño: la carpeta se llama `jarvis_tools/` y no `mcp/`, porque una carpeta
+Desviación del diseño: la carpeta se llama `skynet_tools/` y no `mcp/`, porque una carpeta
 `mcp` en la raíz taparía el paquete `mcp` del SDK al ejecutar desde `C:\Skynet`.
 
 SDK MCP 2.x: `FastMCP` pasó a llamarse `MCPServer` (`mcp.server.mcpserver`). El cliente usa
 `ClientSession` + `stdio_client` (con el stderr de cada servidor a `data/logs/mcp-<nombre>.log`).
 
 Añadir una herramienta: escribir un servidor MCP (propio o de terceros), declararlo en
-`config/jarvis.toml` bajo `[mcp.<nombre>]`, darle nivel a sus herramientas en
+`config/skynet.toml` bajo `[mcp.<nombre>]`, darle nivel a sus herramientas en
 `config/permisos.toml` y añadir su nombre a `herramientas` del repo en `config/repos.toml`.
 
 ## D3. LiteLLM como librería — barata
-`jarvis/router.py` llama `litellm.acompletion`. Coste: si el perfil del modelo trae precios
+`skynet/router.py` llama `litellm.acompletion`. Coste: si el perfil del modelo trae precios
 en `router.toml` se usan esos; si no, `litellm.completion_cost`. LiteLLM da USD; se pasa a €
 con `moneda_usd_eur`.
 
@@ -37,7 +37,7 @@ añadidas al diseño para no tener que migrar pronto:
   `result_summary`, `pid` y `heartbeat_at` (para saber si un runner sigue vivo).
 - `steps.status` (`completado`, `ok`, `avance`, `revertida`, `sin_cambios`, `interrumpido`...).
 
-Cambios futuros: añadir una entrada a `MIGRATIONS` en `jarvis/store.py`; nunca editar la v1.
+Cambios futuros: añadir una entrada a `MIGRATIONS` en `skynet/store.py`; nunca editar la v1.
 
 ## D5. agente-godot como proceso externo — barata
 `coding_agent.start_task(repo, horas)` lanza `sistema\noche.ps1 -Juego <repo> -Horas <h>` y
@@ -47,7 +47,7 @@ Para usarlo: añadir el juego a `repos.toml` con `agente = "agente-godot"` y
 No se ha tocado nada de agente-godot.
 
 ## D6. Chat en terminal — barata
-`jarvis` abre el chat. Cada mensaje es una tarea nueva; «continúa» retoma la última sin
+`skynet` abre el chat. Cada mensaje es una tarea nueva; «continúa» retoma la última sin
 terminar. Las tareas de chat no hacen commit: dejan los cambios para que los revises
 (el verificador sí se ejecuta y decide si la tarea queda `hecha` o `fallida`).
 
@@ -64,13 +64,13 @@ terminar. Las tareas de chat no hacen commit: dejan los cambios para que los rev
 Una iteración se **acepta** (commit) si el verificador pasa o si no empeora respecto a la
 última aceptada: mismos o más tests en verde y mismos o menos fallos (cuentas sacadas de la
 salida de pytest/jest/unittest). Si empeora, `git reset --hard` + `git clean` al checkpoint y
-el fallo se anota en `.jarvis/tarea-N/ERRORES.md`. La tarea solo es `hecha` si el verificador
+el fallo se anota en `.skynet/tarea-N/ERRORES.md`. La tarea solo es `hecha` si el verificador
 está en verde **y** el agente escribe `OBJETIVO_CUMPLIDO`. Se para con: límite de horas o de
 iteraciones, el mismo fallo N veces seguidas, N iteraciones sin cambios, o `/parar`.
 
 ## D9. Interfaz web local — barata
-`jarvis web` sirve una página en `127.0.0.1:8765` con el **mismo** Coordinator que el chat de
-terminal (`jarvis/web/server.py`): la web es otra UI del Protocol `UI`, no un segundo camino de
+`skynet web` sirve una página en `127.0.0.1:8765` con el **mismo** Coordinator que el chat de
+terminal (`skynet/web/server.py`): la web es otra UI del Protocol `UI`, no un segundo camino de
 ejecución. Lo único que cambia es cómo pregunta (`WebCoordinator._make_asker` manda los datos del
 permiso estructurados para el diálogo).
 - **HTTP + Server-Sent Events** en vez de WebSocket: Starlette y uvicorn ya llegan con el SDK de
@@ -85,4 +85,4 @@ permiso estructurados para el diálogo).
   Unreal/Unity, la API HTTP + SSE les sirve igual.
 - Cambios en el Core: el verificador del chat corre en un hilo (no congela la web),
   `Coordinator.resume` acepta una tarea concreta y `cli.doctor_checks()` devuelve los checks
-  estructurados (`jarvis doctor` imprime lo mismo que antes).
+  estructurados (`skynet doctor` imprime lo mismo que antes).

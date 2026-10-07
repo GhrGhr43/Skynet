@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from jarvis.verifier import VerifierResult, run_verifier
+from skynet.verifier import VerifierResult, run_verifier
 
 
 def vr(out: str, ok: bool = False) -> VerifierResult:

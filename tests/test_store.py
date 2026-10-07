@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from jarvis.store import EN_CURSO, HECHA, MIGRATIONS, PAUSADA, Store
+from skynet.store import EN_CURSO, HECHA, MIGRATIONS, PAUSADA, Store
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def test_schema_version(store):
 
 
 def test_task_lifecycle(store):
-    t = store.create_task("t", "objetivo", agent="jarvis", repo="r", capabilities={"capacidades": {"cost": "bajo"}})
+    t = store.create_task("t", "objetivo", agent="skynet", repo="r", capabilities={"capacidades": {"cost": "bajo"}})
     assert t.status == "pendiente" and t.capabilities["capacidades"]["cost"] == "bajo"
     t = store.update_task(t.id, status=EN_CURSO, iters_done=2)
     assert t.status == EN_CURSO and t.iters_done == 2
@@ -28,7 +28,7 @@ def test_task_lifecycle(store):
 
 
 def test_steps_numbering(store):
-    t = store.create_task("t", "g", agent="jarvis")
+    t = store.create_task("t", "g", agent="skynet")
     s1 = store.start_step(t.id, "chat", "a")
     s2 = store.start_step(t.id, "chat", "b")
     assert (s1.n, s2.n) == (1, 2)
@@ -38,7 +38,7 @@ def test_steps_numbering(store):
 
 
 def test_events_and_totals(store):
-    t = store.create_task("t", "g", agent="jarvis")
+    t = store.create_task("t", "g", agent="skynet")
     store.add_event("llm", task_id=t.id, model="m", tokens_in=10, tokens_out=5, cost_eur=0.5)
     store.add_event("llm", task_id=t.id, model="m", tokens_in=1, tokens_out=1, cost_eur=0.25)
     store.add_event("tool", task_id=t.id, tool="workspace.read_file", decision="permitido", detail={"x": 1})
@@ -50,8 +50,8 @@ def test_events_and_totals(store):
 
 
 def test_last_resumable(store):
-    a = store.create_task("a", "g", agent="jarvis")
-    b = store.create_task("b", "g", agent="jarvis")
+    a = store.create_task("a", "g", agent="skynet")
+    b = store.create_task("b", "g", agent="skynet")
     store.set_status(b.id, HECHA)
     store.set_status(a.id, PAUSADA)
     assert store.last_resumable_task().id == a.id
@@ -73,7 +73,7 @@ def test_heartbeat_staleness(store):
 
 def test_reopen_keeps_data(tmp_path):
     s = Store(tmp_path / "j.db")
-    t = s.create_task("a", "g", agent="jarvis")
+    t = s.create_task("a", "g", agent="skynet")
     s.close()
     s2 = Store(tmp_path / "j.db")
     assert s2.get_task(t.id).title == "a"

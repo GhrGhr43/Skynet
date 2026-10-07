@@ -5,10 +5,10 @@ from datetime import datetime, timedelta, timezone
 
 from conftest import ORIGINAL_MOD, FakeUI, ScriptedLLM, tool_call
 
-from jarvis import gitops
-from jarvis.coordinator import Coordinator
-from jarvis.scheduler import LongTaskRunner
-from jarvis.store import EN_CURSO, FALLIDA, HECHA, PAUSADA
+from skynet import gitops
+from skynet.coordinator import Coordinator
+from skynet.scheduler import LongTaskRunner
+from skynet.store import EN_CURSO, FALLIDA, HECHA, PAUSADA
 
 GOOD = "VERSION = 1\n\n\ndef doble(x):\n    return 2 * x\n"
 BAD = "VERSION = 1\n\n\ndef doble(x):\n    return x\n"
@@ -72,7 +72,7 @@ async def test_path_escape_denied(make_rt, repo_path):
 # --- MVP 2: cerrar, abrir y "continúa" -------------------------------------------
 async def test_resume_after_crash(make_rt, repo_path):
     rt1 = make_rt(ScriptedLLM([]))
-    task = rt1.store.create_task("implementa doble", "implementa doble en mod.py", agent="jarvis",
+    task = rt1.store.create_task("implementa doble", "implementa doble en mod.py", agent="skynet",
                                  repo="prueba", status=EN_CURSO)
     step = rt1.store.start_step(task.id, "chat", "implementa doble")
     rt1.store.add_event("tool", task_id=task.id, step_id=step.id, tool="workspace.read_file",
@@ -159,7 +159,7 @@ async def test_long_task_rollback_then_success(make_rt, repo_path):
     assert "it. 1 revertida" in log and "it. 3: Implementado doble." in log
     progreso = (repo_path / "PROGRESO.md").read_text(encoding="utf-8")
     assert "hecha" in progreso and "| 3 | ok |" in progreso
-    errores = (repo_path / ".jarvis" / f"tarea-{task.id}" / "ERRORES.md").read_text(encoding="utf-8")
+    errores = (repo_path / ".skynet" / f"tarea-{task.id}" / "ERRORES.md").read_text(encoding="utf-8")
     assert "Iteración 1" in errores
     assert (repo_path / "mod.py").read_text() == GOOD
     assert not gitops.is_dirty(repo_path)
@@ -208,7 +208,7 @@ async def test_long_task_stop_requested(make_rt):
 
 # --- comandos del chat -------------------------------------------------------------
 async def test_largo_command_creates_and_spawns(make_rt, monkeypatch):
-    import jarvis.coordinator as coord_mod
+    import skynet.coordinator as coord_mod
 
     spawned = []
     monkeypatch.setattr(coord_mod, "spawn_background", lambda rt, tid: spawned.append(tid) or 4242)
@@ -226,7 +226,7 @@ async def test_largo_command_creates_and_spawns(make_rt, monkeypatch):
 
 
 async def test_largo_cancelled(make_rt, monkeypatch):
-    import jarvis.coordinator as coord_mod
+    import skynet.coordinator as coord_mod
 
     monkeypatch.setattr(coord_mod, "spawn_background", lambda rt, tid: 1 / 0)
     rt = make_rt(ScriptedLLM([]))

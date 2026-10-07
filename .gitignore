@@ -5,4 +5,4 @@ __pycache__/
 data/
 config/*.local.toml
 .env
-jarvis.egg-info/
+skynet.egg-info/

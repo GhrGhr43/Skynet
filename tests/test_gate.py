@@ -1,9 +1,9 @@
 import pytest
 
-from jarvis.audit import Audit
-from jarvis.config import load_settings
-from jarvis.gate import Decision, Level, PermissionGate, command_whitelisted
-from jarvis.store import Store
+from skynet.audit import Audit
+from skynet.config import load_settings
+from skynet.gate import Decision, Level, PermissionGate, command_whitelisted
+from skynet.store import Store
 
 
 @pytest.fixture

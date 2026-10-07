@@ -1,4 +1,4 @@
-"""Utilidades de test: un JARVIS_HOME temporal y un LLM guionizado (sin red ni GPU)."""
+"""Utilidades de test: un SKYNET_HOME temporal y un LLM guionizado (sin red ni GPU)."""
 from __future__ import annotations
 
 import json
@@ -10,9 +10,9 @@ from typing import Any, Callable
 
 import pytest
 
-from jarvis import gitops
-from jarvis.config import load_settings
-from jarvis.runtime import Runtime
+from skynet import gitops
+from skynet.config import load_settings
+from skynet.runtime import Runtime
 
 ROOT = Path(__file__).resolve().parent.parent
 ORIGINAL_MOD = "VERSION = 1\n\n\ndef doble(x):\n    raise NotImplementedError\n"
@@ -64,7 +64,7 @@ class ScriptedLLM:
 def home(tmp_path: Path) -> Path:
     h = tmp_path / "home"
     (h / "config").mkdir(parents=True)
-    for f in ("jarvis.toml", "permisos.toml", "router.toml"):
+    for f in ("skynet.toml", "permisos.toml", "router.toml"):
         shutil.copy(ROOT / "config" / f, h / "config" / f)
     repo = tmp_path / "repo"
     repo.mkdir()

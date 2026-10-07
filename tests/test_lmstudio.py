@@ -1,15 +1,15 @@
-"""Prueba de integración con el modelo local real. Solo corre con JARVIS_TEST_LMSTUDIO=1."""
+"""Prueba de integración con el modelo local real. Solo corre con SKYNET_TEST_LMSTUDIO=1."""
 import os
 
 import pytest
 from conftest import FakeUI
 
-from jarvis.coordinator import Coordinator
-from jarvis.store import HECHA
+from skynet.coordinator import Coordinator
+from skynet.store import HECHA
 
 pytestmark = [
     pytest.mark.lmstudio,
-    pytest.mark.skipif(os.environ.get("JARVIS_TEST_LMSTUDIO") != "1", reason="LM Studio no solicitado"),
+    pytest.mark.skipif(os.environ.get("SKYNET_TEST_LMSTUDIO") != "1", reason="LM Studio no solicitado"),
 ]
 
 

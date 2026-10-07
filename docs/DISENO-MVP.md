@@ -1,4 +1,4 @@
-# JARVIS: diseño del MVP (borrador para aprobar)
+# Skynet: diseño del MVP (borrador para aprobar)
 
 Fecha: 2026-10-07. Estado: **pendiente de tu OK**. No hay código escrito todavía.
 
@@ -9,9 +9,9 @@ Fecha: 2026-10-07. Estado: **pendiente de tu OK**. No hay código escrito todav�
 | D1 | Lenguaje del Core | **Python 3.12+** | Mejor SDK oficial de MCP, LiteLLM es Python, SQLite viene incluido | TypeScript (también tiene SDK MCP, pero LiteLLM no) |
 | D2 | Protocolo de herramientas | **MCP** (cliente MCP dentro del Core) | Estándar; ya usas MCP (serena, blender) | Herramientas propias (rompe el principio 3) |
 | D3 | Acceso a modelos | **LiteLLM** como librería | Un solo API para LM Studio, Anthropic, OpenAI; calcula coste por llamada | Llamar a cada API a mano |
-| D4 | Esquema SQLite | Tablas `tasks`, `steps`, `events` (abajo) | Es la memoria de JARVIS; migrar luego es caro | — |
-| D5 | Agente programador | **agente-godot como proceso externo** (PowerShell), envuelto como servidor MCP | Reutilizar sin reescribir; JARVIS no sabe de Godot | Reescribirlo en Python (mucho trabajo, sin ganancia ahora) |
-| D6 | Interfaz | **Chat en terminal** (`jarvis` en PowerShell) | Mínimo; la UI web es no-objetivo | TUI con Textual más adelante, sin tocar el Core |
+| D4 | Esquema SQLite | Tablas `tasks`, `steps`, `events` (abajo) | Es la memoria de Skynet; migrar luego es caro | — |
+| D5 | Agente programador | **agente-godot como proceso externo** (PowerShell), envuelto como servidor MCP | Reutilizar sin reescribir; Skynet no sabe de Godot | Reescribirlo en Python (mucho trabajo, sin ganancia ahora) |
+| D6 | Interfaz | **Chat en terminal** (`skynet` en PowerShell) | Mínimo; la UI web es no-objetivo | TUI con Textual más adelante, sin tocar el Core |
 
 ## 2. Qué se reutiliza (no se construye)
 
@@ -48,7 +48,7 @@ Fecha: 2026-10-07. Estado: **pendiente de tu OK**. No hay código escrito todav�
    - EXECUTE: automático solo si está en lista blanca (tests, build).
    - PRIVILEGED / DESTRUCTIVE: siempre pregunta en el chat y queda auditado.
    - Repos autorizados: lista explícita en la config. Fuera de ella, todo se deniega.
-4. **Audit log**: tabla `events`. Comando `jarvis log` para verlo (tarea, herramienta, modelo, tokens, €).
+4. **Audit log**: tabla `events`. Comando `skynet log` para verlo (tarea, herramienta, modelo, tokens, €).
 5. **Context builder**: sin vector DB. Usa `git status/diff/log`, ripgrep, y los archivos de estado de la tarea (OBJETIVO, PROGRESO, ERRORES). Tope de tokens configurable.
 6. **Model router**: los agentes piden capacidades, no modelos: `{privacy, coding, reasoning, cost}`. Política simple en `config/router.toml`, por ejemplo:
    - `privacy=alta` → siempre local.
@@ -72,7 +72,7 @@ events(id, ts, task_id, step_id, type, tool, permission_level, decision,
 
 ## 5. agente-godot como Coding Agent (D5)
 
-- JARVIS no lo reescribe ni lo mueve. Un pequeño servidor MCP (`mcp-coding-agent`) expone:
+- Skynet no lo reescribe ni lo mueve. Un pequeño servidor MCP (`mcp-coding-agent`) expone:
   `start_task(repo, objetivo, horas)`, `status(task)`, `stop(task)`, `history(task)`.
 - Por dentro llama a sus scripts PowerShell y lee su `HISTORIAL-LOCAL.csv` y gasto para volcarlos al audit log.
 - Primer paso: separar en agente-godot lo genérico (bucle, verificador, historial) de lo específico de Godot. **Esto lo propondría en su `MEJORAS-HERRAMIENTA.md`, no lo cambio sin tu OK.**
@@ -82,11 +82,11 @@ events(id, ts, task_id, step_id, type, tool, permission_level, decision,
 
 ```
 C:\Skynet\
-  jarvis\            código del Core (Python)
+  skynet\            código del Core (Python)
     coordinator.py  store.py  gate.py  audit.py  context.py  router.py  scheduler.py
   mcp\coding-agent\  adaptador de agente-godot
   config\            permisos.toml  router.toml  repos.toml
-  data\jarvis.db     SQLite
+  data\skynet.db     SQLite
   docs\              este diseño y decisiones (ADR)
   tests\
 ```
