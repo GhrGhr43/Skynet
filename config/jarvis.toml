@@ -26,3 +26,17 @@ args = ["-m", "jarvis_tools.workspace", "--root", "{repo}"]
 [mcp.coding_agent]
 comando = "{python}"
 args = ["-m", "jarvis_tools.coding_agent", "--agente-godot", "C:/Users/HACHO/Documents/agente-godot"]
+
+# Motores locales que se encienden y apagan desde la web (Ajustes). Comparten GPU: encender uno
+# apaga el otro. El nombre coincide con el perfil de router.toml que sirven.
+[motores.local]
+tipo = "lmstudio"
+url = "http://127.0.0.1:1234/v1"
+modelo = "qwen/qwen3.8-27b"
+contexto = 49152
+
+[motores.strata]
+tipo = "strata"
+url = "http://127.0.0.1:8080/v1"
+carpeta = "C:/Strata/Strata-main"
+config = "strata-coder-iq1_m.json"

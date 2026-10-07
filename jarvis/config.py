@@ -97,6 +97,7 @@ class Settings:
     servers: dict[str, ServerSpec]
     agent: AgentLimits
     long: LongLimits
+    engines: dict[str, Any] = field(default_factory=dict)  # [motores.*] de jarvis.toml
 
     def repo(self, nombre: str) -> RepoConfig:
         try:
@@ -203,4 +204,5 @@ def load_settings(home: Path | str | None = None) -> Settings:
         servers=servers,
         agent=AgentLimits(**general.get("agente", {})),
         long=LongLimits(**general.get("largo", {})),
+        engines=dict(general.get("motores", {})),
     )

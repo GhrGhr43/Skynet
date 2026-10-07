@@ -265,6 +265,7 @@ input[type="range"] { flex: 1; accent-color: var(--fg); }
 .toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--fg2); transition: transform .3s var(--ease), background .25s; }
 .toggle[aria-checked="true"] { background: color-mix(in srgb, var(--ok) 55%, transparent); }
 .toggle[aria-checked="true"]::after { transform: translateX(16px); background: #fff; }
+.toggle:disabled { opacity: .5; cursor: progress; }
 
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .stat { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }

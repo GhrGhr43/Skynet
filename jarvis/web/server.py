@@ -185,6 +185,9 @@ class Session:
         self.current: asyncio.Task[Any] | None = None
         self.running = False  # no se mira current.done(): en su propio finally aún no ha terminado
         self.label = ""
+        from ..engines import load_engines
+
+        self.engines = load_engines(rt.settings.engines, rt.settings.logs_dir)
 
     @property
     def busy(self) -> bool:
@@ -254,11 +257,15 @@ def event_dict(e: dict[str, Any]) -> dict[str, Any]:
     return {**e, "descripcion": describe_event(e)}
 
 
-def models_info(rt: Runtime) -> list[dict[str, Any]]:
+def models_info(rt: Runtime, engines: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
+    on = {e["nombre"]: e for e in engines}
     for name, m in rt.settings.models.items():
         free = (m.coste_entrada_usd_mtok or 0) == 0 and (m.coste_salida_usd_mtok or 0) == 0
-        ok, why = (True, "") if name == "local" else rt.router._usable(m)
+        if name in on:
+            ok, why = on[name]["encendido"], "" if on[name]["encendido"] else "motor apagado"
+        else:
+            ok, why = (True, "") if name == "local" else rt.router._usable(m)
         out.append({"nombre": name, "litellm": m.litellm, "privado": m.privado, "gratis": free,
                     "disponible": ok, "motivo": why,
                     "coste": [m.coste_entrada_usd_mtok, m.coste_salida_usd_mtok]})
@@ -270,6 +277,7 @@ def snapshot(s: Session) -> dict[str, Any]:
     pending = rt.store.last_resumable_task()
     month = rt.store.totals(since=_month_start())
     long_alive = [t.id for t in rt.store.list_tasks(limit=30) if t.is_long and t.runner_alive()]
+    engines = s.engines.status() if s.engines else []
     return {
         "version": __version__,
         "repo": c.repo_name,
@@ -280,7 +288,8 @@ def snapshot(s: Session) -> dict[str, Any]:
         "preguntas": s.ui.open_questions(),
         "repos": [{"nombre": r.nombre, "ruta": str(r.ruta), "verificador": r.verificador, "agente": r.agente,
                    "privacidad": r.privacidad, "existe": r.ruta.exists()} for r in rt.settings.repos.values()],
-        "modelos": models_info(rt),
+        "modelos": models_info(rt, engines),
+        "motores": engines,
         "reglas": rt.settings.rules,
         "presupuesto_eur": rt.settings.budget_eur,
         "mes": month,
@@ -521,7 +530,36 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         checks = await asyncio.to_thread(doctor_checks, rt)
         return jresp({"checks": checks})
 
+    async def motor(request: Request) -> Response:
+        b = await body(request)
+        eng = session.engines
+        name = b.get("nombre")
+        if name not in eng.specs:
+            return bad(f"Motor desconocido: {name}")
+        if name in eng.busy:
+            return bad("Ya se está encendiendo o apagando")
+        on = bool(b.get("encender"))
+
+        async def work() -> None:
+            eng.busy.add(name)
+            session.bus.publish("estado", snapshot(session))
+            try:
+                msg = await asyncio.to_thread(eng.start if on else eng.stop, name)
+                session.ui.info(msg)
+                if on and name in rt.settings.models:
+                    session.coord.force_model = name  # usar el motor que se acaba de encender
+            except Exception as e:
+                session.ui.info(f"No se pudo {'encender' if on else 'apagar'} {name}: {e}")
+            finally:
+                eng.busy.discard(name)
+                eng.invalidate()
+                session.bus.publish("estado", snapshot(session))
+
+        asyncio.create_task(work())
+        return jresp(snapshot(session))
+
     routes = [
+        Route("/api/motor", motor, methods=["POST"]),
         Route("/", index),
         Route("/api/stream", stream),
         Route("/api/estado", estado),

@@ -335,12 +335,19 @@ export class Panels {
     html += '<div class="section-k">Modelo</div>';
     html += `<div class="card clickable ${s.modelo === 'auto' ? 'selected' : ''}" data-model="auto">
       <div class="card-row">${icon('route')}<div class="grow"><div class="card-title">Automático</div><div class="card-sub">El router elige según la tarea (privacidad, coste, razonamiento).</div></div></div></div>`;
+    const motores = Object.fromEntries((s.motores || []).map((e) => [e.nombre, e]));
     for (const m of s.modelos || []) {
       const tags = [m.privado ? 'en tu PC' : 'en la nube', m.gratis ? 'gratis' : `${m.coste[0]} $ / ${m.coste[1]} $ por M tokens`];
+      const e = motores[m.nombre];
+      const sw = e ? `<button class="toggle" data-engine="${esc(m.nombre)}" role="switch" aria-checked="${e.encendido}"
+        aria-label="${e.encendido ? 'Apagar' : 'Encender'} ${esc(m.nombre)}" ${e.ocupado ? 'disabled' : ''}
+        title="${e.ocupado ? 'Un momento…' : e.encendido ? 'Encendido: clic para apagar' : 'Apagado: clic para encender (apaga el otro motor local)'}"></button>` : '';
       html += `<div class="card clickable ${s.modelo === m.nombre ? 'selected' : ''}" data-model="${esc(m.nombre)}">
         <div class="card-row">${icon(m.privado ? 'cpu' : 'cloud')}<div class="grow"><div class="card-title">${esc(m.nombre)} <span class="card-sub mono">${esc(m.litellm.split('/').slice(1).join('/'))}</span></div>
         <div class="card-sub">${esc(tags.join(' · '))}</div>
-        ${m.disponible ? '' : `<div class="card-sub" style="color:var(--warn)">No disponible: ${esc(m.motivo)}. Si lo eliges, JARVIS usará el local.</div>`}</div></div></div>`;
+        ${e?.ocupado ? '<div class="card-sub" style="color:var(--warn)">Cambiando… cargar el modelo tarda hasta unos minutos.</div>'
+          : m.disponible ? '' : e ? '<div class="card-sub" style="color:var(--warn)">Apagado. Enciéndelo con el interruptor.</div>'
+          : `<div class="card-sub" style="color:var(--warn)">No disponible: ${esc(m.motivo)}. Si lo eliges, JARVIS usará el local.</div>`}</div>${sw}</div></div>`;
     }
     html += `<div class="card" style="margin-top:14px"><div class="card-row">${icon('lock')}<div class="grow"><div class="card-title">Privacidad alta</div>
       <div class="card-sub">Fuerza el modelo local: nada sale de tu PC.</div></div>
@@ -367,6 +374,12 @@ export class Panels {
     this.paint(html);
     for (const c of this.body.querySelectorAll('[data-repo]')) c.addEventListener('click', () => this.setRepo(c.dataset.repo || null));
     for (const c of this.body.querySelectorAll('[data-model]')) c.addEventListener('click', () => this.setModel(c.dataset.model));
+    for (const b of this.body.querySelectorAll('[data-engine]')) b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();  // el interruptor no selecciona la tarjeta
+      b.disabled = true;
+      try { this.app.applySnap(await api.motor(b.dataset.engine, b.getAttribute('aria-checked') !== 'true')); }
+      catch (e) { this.app.toast(e.message, 'bad'); b.disabled = false; }
+    });
     $('#privToggle').addEventListener('click', () => this.app.setPrivate(!s.privado));
     $('#notifBtn')?.addEventListener('click', async () => { await Notification.requestPermission(); this.render(true); });
     $('#quality').addEventListener('change', (e) => {

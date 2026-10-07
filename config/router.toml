@@ -17,6 +17,17 @@ max_tokens = 8192
 timeout_seg = 900
 reasoning_effort = "medium"   # como agente-godot; "low" = más rápido
 
+[modelos.strata]
+# Strata (C:/Strata): Qwen3.8-Flash-Next Coder en tu PC, más rápido que el 27B. Se enciende en Ajustes.
+litellm = "openai/qwen3.8-flash-next-coder-iq1_m"
+api_base = "http://127.0.0.1:8080/v1"
+api_key = "strata"
+privado = true
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 8192
+timeout_seg = 900
+
 [modelos.gemini]
 # Gratis (plan gratuito de Google AI Studio). Clave en la variable de entorno GEMINI_API_KEY.
 # Ojo: en el plan gratuito Google puede usar los datos; los repos privados van siempre al local.

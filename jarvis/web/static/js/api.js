@@ -30,6 +30,7 @@ export const api = {
   responder: (id, respuesta) => request('POST', '/api/responder', { id, respuesta }),
   cancelar: () => request('POST', '/api/cancelar', {}),
   ajustes: (cambios) => request('POST', '/api/ajustes', cambios),
+  motor: (nombre, encender) => request('POST', '/api/motor', { nombre, encender }),
   tareas: (n = 40) => request('GET', `/api/tareas?n=${n}`),
   tarea: (id) => request('GET', `/api/tareas/${id}`),
   accion: (id, accion, body = {}) => request('POST', `/api/tareas/${id}/${accion}`, body),
