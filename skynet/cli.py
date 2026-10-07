@@ -208,8 +208,16 @@ def cmd_doctor(rt: Runtime) -> int:
 
 
 def cmd_web(rt: Runtime, a: argparse.Namespace) -> int:
+    import socket
+
     from .web.server import serve
 
+    # Si otra ventana ya sirve en ese puerto, el navegador acabaría en ella (p. ej. una versión vieja)
+    with socket.socket() as sock:
+        if sock.connect_ex(("127.0.0.1", a.puerto)) == 0:
+            console.print(f"El puerto {a.puerto} ya está ocupado: cierra la otra ventana de Skynet "
+                          f"o usa --puerto.", style="red", markup=False)
+            return 1
     return serve(rt, port=a.puerto, open_browser=not a.no_abrir)
 
 
