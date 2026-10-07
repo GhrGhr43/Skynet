@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import shlex
@@ -30,6 +31,7 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   /largo <horas> <objetivo> tarea larga en segundo plano con verificador y commits
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
   /parar <id>               parar una tarea larga      /log [id]               audit log
+  /doctor                   comprobar instalación      /descartar [id]         dar una tarea por abandonada
   /ayuda                    esta ayuda                 /salir                  salir"""
 
 
@@ -234,6 +236,15 @@ class Coordinator:
                 else:
                     st.update_task(task.id, status=PAUSADA)
                     self.ui.info(f"Pedida la parada de la tarea {task.id}; se detiene al acabar la iteración en curso.")
+        elif cmd == "/doctor":
+            from .cli import cmd_doctor
+
+            await asyncio.to_thread(cmd_doctor, self.rt)
+        elif cmd == "/descartar":
+            task = self._task_arg(args)
+            if task:
+                st.set_status(task.id, FALLIDA, "descartada por el usuario")
+                self.ui.info(f"Tarea {task.id} descartada: «continúa» ya no la retomará.")
         elif cmd == "/largo":
             await self._long(args)
         else:

@@ -241,7 +241,7 @@ async def test_info_commands(make_rt):
     c = Coordinator(rt, ui)
     await c.handle("/repo ninguno")
     await c.handle("hola")
-    for cmd in ("/ayuda", "/repos", "/tareas", "/estado 1", "/log", "/log 1", "/modelo local", "/privado", "/nada"):
+    for cmd in ("/ayuda", "/repos", "/tareas", "/estado 1", "/log", "/log 1", "/modelo local", "/privado", "/descartar 1", "/nada"):
         assert await c.handle(cmd)
     assert await c.handle("/salir") is False
     assert any("Comando desconocido" in i for i in ui.infos)
