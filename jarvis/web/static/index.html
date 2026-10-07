@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>JARVIS</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/css/app.css">
+<script type="importmap">
+{ "imports": {
+    "three": "/static/vendor/three/three.module.min.js",
+    "three/addons/": "/static/vendor/three/addons/"
+} }
+</script>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<div class="fallback-glow" aria-hidden="true"></div>
+<div class="veil" aria-hidden="true"></div>
+
+<header class="top">
+  <div class="brand">
+    <span class="wordmark">JARVIS</span>
+    <span class="brand-sub">Personal Agent OS</span>
+  </div>
+  <div class="status" id="status" role="status" aria-live="polite">
+    <span class="status-dot"></span>
+    <span class="status-label" id="statusLabel">Conectando</span>
+    <span class="status-detail" id="statusDetail"></span>
+  </div>
+  <div class="chips">
+    <button class="chip" id="chipRepo" data-panel="ajustes" title="Repo en el que trabaja JARVIS">
+      <span class="chip-k">Repo</span><span class="chip-v" id="chipRepoV">—</span>
+    </button>
+    <button class="chip" id="chipModel" data-panel="ajustes" title="Modelo que usa JARVIS">
+      <span class="chip-k">Modelo</span><span class="chip-v" id="chipModelV">—</span>
+    </button>
+    <button class="chip chip-toggle" id="chipPriv" title="Privacidad alta: solo el modelo local, nada sale de tu PC" aria-pressed="false">
+      <span class="chip-ico" data-icon="lock"></span><span class="chip-v">Privado</span>
+    </button>
+  </div>
+</header>
+
+<nav class="rail" aria-label="Secciones">
+  <button class="rail-btn" data-panel="conversacion" data-icon="chat" aria-label="Conversación"><span class="rail-tip">Conversación</span></button>
+  <button class="rail-btn" data-panel="tareas" data-icon="tasks" aria-label="Tareas"><span class="rail-tip">Tareas</span></button>
+  <button class="rail-btn" data-panel="largo" data-icon="orbit" aria-label="Tarea larga"><span class="rail-tip">Tarea larga</span></button>
+  <button class="rail-btn" data-panel="registro" data-icon="log" aria-label="Registro"><span class="rail-tip">Registro y consumo</span></button>
+  <button class="rail-btn" data-panel="ajustes" data-icon="sliders" aria-label="Modelos y repos"><span class="rail-tip">Modelos y repos</span></button>
+  <button class="rail-btn" data-panel="diagnostico" data-icon="pulse" aria-label="Diagnóstico"><span class="rail-tip">Diagnóstico</span></button>
+  <span class="rail-sep"></span>
+  <button class="rail-btn" data-panel="ayuda" data-icon="spark" aria-label="Qué puede hacer"><span class="rail-tip">Qué puede hacer JARVIS</span></button>
+</nav>
+
+<aside class="panel" id="panel" aria-hidden="true">
+  <div class="panel-head">
+    <h2 class="panel-title" id="panelTitle"></h2>
+    <button class="icon-btn" id="panelClose" data-icon="close" aria-label="Cerrar panel"></button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</aside>
+
+<section class="convo" id="convo" aria-label="Conversación" aria-live="polite">
+  <div class="convo-scroll" id="convoScroll">
+    <div class="convo-inner" id="convoInner"></div>
+  </div>
+</section>
+
+<footer class="dock">
+  <div class="suggest" id="suggest"></div>
+  <form class="prompt" id="prompt" autocomplete="off">
+    <span class="prompt-glow" aria-hidden="true"></span>
+    <textarea id="input" rows="1" placeholder="Pídele algo a JARVIS…" aria-label="Mensaje para JARVIS"></textarea>
+    <button type="button" class="prompt-btn prompt-stop" id="stopBtn" data-icon="stop" aria-label="Detener" title="Detener (la tarea queda pausada)"></button>
+    <button type="submit" class="prompt-btn prompt-send" id="sendBtn" data-icon="arrow" aria-label="Enviar"></button>
+  </form>
+  <div class="hint"><kbd>Enter</kbd> enviar · <kbd>Mayús</kbd>+<kbd>Enter</kbd> nueva línea · <kbd>Ctrl</kbd>+<kbd>K</kbd> todas las acciones</div>
+</footer>
+
+<div class="modal" id="ask" role="dialog" aria-modal="true" aria-labelledby="askTitle" hidden>
+  <div class="modal-card" id="askCard"></div>
+</div>
+
+<div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Acciones" hidden>
+  <div class="palette-card">
+    <div class="palette-search"><span data-icon="search"></span><input id="paletteInput" placeholder="¿Qué quieres hacer?" aria-label="Buscar acción"></div>
+    <div class="palette-list" id="paletteList" role="listbox"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

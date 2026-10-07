@@ -61,6 +61,11 @@ class Coordinator:
             return True
         if text.startswith("/"):
             return await self._command(text)
+        word = text.lower().strip(" .!")
+        if word in ("exit", "quit", "salir", "adiós", "adios"):
+            return False
+        if word in ("doctor", "ayuda", "help", "tareas", "log", "repos"):
+            return await self._command("/" + word)
         m = RESUME_RE.match(text)
         if m:
             await self.resume(m.group(2).strip() or None)
@@ -93,8 +98,9 @@ class Coordinator:
                           detail={"mensaje": title, "repo": self.repo_name})
         return await self._run(task, kind="chat", extra=self._recent())
 
-    async def resume(self, extra: str | None) -> None:
-        task = self.rt.store.last_resumable_task()
+    async def resume(self, extra: str | None, task_id: int | None = None) -> None:
+        """Retoma la última tarea sin terminar, o la tarea `task_id` si se indica (lo usa la web)."""
+        task = self.rt.store.get_task(task_id) if task_id else self.rt.store.last_resumable_task()
         if task is None:
             self.ui.info("No hay ninguna tarea pendiente que retomar.")
             return
@@ -142,7 +148,9 @@ class Coordinator:
             if (repo and repo.verificador and out.status == "completado" and gitops.is_repo(repo.ruta)
                     and (out.files_touched or gitops.is_dirty(repo.ruta))):
                 self.ui.event("verifying", {"command": repo.verificador})
-                ver = run_verifier(repo.verificador, repo.ruta, self.rt.settings.long.timeout_verificador_seg)
+                # En un hilo: el verificador puede tardar minutos y no debe congelar la interfaz web.
+                ver = await asyncio.to_thread(run_verifier, repo.verificador, repo.ruta,
+                                              self.rt.settings.long.timeout_verificador_seg)
                 self.rt.audit.log("verifier", task_id=task.id, step_id=run.step.id,
                                   detail={"ok": ver.ok, "exit": ver.exit_code, "comando": ver.command,
                                           "segundos": round(ver.seconds, 1), "salida": ver.output_tail[-1500:]})

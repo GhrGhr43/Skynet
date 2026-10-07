@@ -1,6 +1,6 @@
 # PROGRESO del proyecto JARVIS
 
-Última actualización: 2026-10-07 (sesión inicial, Claude).
+Última actualización: 2026-10-07 (interfaz web, Claude).
 
 ## Estado: MVP implementado
 
@@ -14,6 +14,13 @@
 
 Verificación: 44 tests (`pytest -q`) con LLM guionizado y servidores MCP reales, 1 test de
 integración con LM Studio (`-m lmstudio`), y pruebas manuales con Qwen 3.8 27B (abajo).
+
+## Interfaz web (2026-10-07)
+`jarvis web` abre una interfaz gráfica local (ver README y D9 en docs/DECISIONES.md): nebulosa
+3D en GPU que reacciona al cursor y cambia de color según el estado, chat, diálogo de permisos,
+tareas, tarea larga, registro, modelos/repos, diagnóstico y ayuda. Probada en la nube con
+Chromium (sin GPU real) y 10 tests nuevos en `tests/test_web.py`. **Falta probarla en el PC de
+Daniel** (rendimiento real en la RX 9070 XT, calidad «ultra»).
 
 ## Decisiones tomadas por defecto (Daniel puede cambiarlas)
 - Python para el Core.

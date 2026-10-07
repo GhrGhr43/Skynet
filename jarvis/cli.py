@@ -7,6 +7,7 @@
   jarvis largo --tarea N       ejecuta una tarea larga (lo usa el chat en segundo plano)
   jarvis largo --repo R --horas H "objetivo"   crea y ejecuta una tarea larga en primer plano
   jarvis doctor                comprueba configuración, LM Studio, git y servidores MCP
+  jarvis web [--puerto P]      interfaz gráfica local en el navegador (http://127.0.0.1:8765)
   jarvis demo                  crea el repo de prueba data/sandbox/demo
 """
 from __future__ import annotations
@@ -149,14 +150,14 @@ def cmd_long(rt: Runtime, a: argparse.Namespace) -> int:
     return 0 if task.status == "hecha" else 1
 
 
-def cmd_doctor(rt: Runtime) -> int:
+def doctor_checks(rt: Runtime) -> list[dict[str, Any]]:
+    """Comprobaciones de la instalación. Cada una: nombre, estado (ok | mal | off) y detalle.
+    La usan `jarvis doctor` y la web; «off» = desactivado a propósito, no cuenta como fallo."""
     s = rt.settings
-    ok_all = True
+    out: list[dict[str, Any]] = []
 
     def check(name: str, ok: bool, detail: str = "") -> None:
-        nonlocal ok_all
-        ok_all &= ok
-        console.print(f"[{'green' if ok else 'red'}]{'OK ' if ok else 'MAL'}[/] {name}" + (f" · {detail}" if detail else ""))
+        out.append({"nombre": name, "estado": "ok" if ok else "mal", "detalle": detail})
 
     check("Configuración", True, str(s.home / "config"))
     check("Base de datos", True, f"{s.db_path} (esquema v{rt.store.schema_version()})")
@@ -175,8 +176,8 @@ def cmd_doctor(rt: Runtime) -> int:
         if name == "local":
             continue
         avail, why = m.available()
-        console.print(f"[{'green' if avail else 'yellow'}]{'OK ' if avail else 'OFF'}[/] modelo {name} "
-                      f"({m.litellm}) · {why or 'clave presente'} · presupuesto {s.budget_eur} €/mes")
+        out.append({"nombre": f"modelo {name}", "estado": "ok" if avail else "off",
+                    "detalle": f"{m.litellm} · {why or 'clave presente'} · presupuesto {s.budget_eur} €/mes"})
     for r in s.repos.values():
         exists = r.ruta.exists()
         check(f"Repo {r.nombre}", exists, f"{r.ruta}" + ("" if exists else " no existe (jarvis demo lo crea)"))
@@ -193,7 +194,23 @@ def cmd_doctor(rt: Runtime) -> int:
             except Exception as e:
                 check(f"MCP de {r.nombre}", False, f"{type(e).__name__}: {e}")
     asyncio.run(mcp_probe())
-    return 0 if ok_all else 1
+    return out
+
+
+def cmd_doctor(rt: Runtime) -> int:
+    style = {"ok": ("green", "OK "), "mal": ("red", "MAL"), "off": ("yellow", "OFF")}
+    checks = doctor_checks(rt)
+    for c in checks:
+        color, label = style[c["estado"]]
+        console.print(f"[{color}]{label}[/] {c['nombre']}" + (f" · {c['detalle']}" if c["detalle"] else ""),
+                      highlight=False)
+    return 1 if any(c["estado"] == "mal" for c in checks) else 0
+
+
+def cmd_web(rt: Runtime, a: argparse.Namespace) -> int:
+    from .web.server import serve
+
+    return serve(rt, port=a.puerto, open_browser=not a.no_abrir)
 
 
 DEMO_FILES = {
@@ -287,6 +304,9 @@ def main(argv: list[str] | None = None) -> int:
     p_l.add_argument("--iters", type=int)
     p_l.add_argument("objetivo", nargs="?")
     sub.add_parser("doctor", help="comprobar la instalación")
+    p_w = sub.add_parser("web", help="interfaz gráfica local en el navegador")
+    p_w.add_argument("--puerto", type=int, default=8765)
+    p_w.add_argument("--no-abrir", action="store_true", help="no abrir el navegador")
     p_d = sub.add_parser("demo", help="crear el repo de prueba")
     p_d.add_argument("--forzar", action="store_true")
     sub.add_parser("chat", help="chat (por defecto)")
@@ -321,6 +341,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_long(rt, a)
     if a.cmd == "doctor":
         return cmd_doctor(rt)
+    if a.cmd == "web":
+        return cmd_web(rt, a)
     if a.cmd == "demo":
         return cmd_demo(rt, a.forzar)
     return 0

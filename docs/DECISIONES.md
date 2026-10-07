@@ -67,3 +67,22 @@ salida de pytest/jest/unittest). Si empeora, `git reset --hard` + `git clean` al
 el fallo se anota en `.jarvis/tarea-N/ERRORES.md`. La tarea solo es `hecha` si el verificador
 está en verde **y** el agente escribe `OBJETIVO_CUMPLIDO`. Se para con: límite de horas o de
 iteraciones, el mismo fallo N veces seguidas, N iteraciones sin cambios, o `/parar`.
+
+## D9. Interfaz web local — barata
+`jarvis web` sirve una página en `127.0.0.1:8765` con el **mismo** Coordinator que el chat de
+terminal (`jarvis/web/server.py`): la web es otra UI del Protocol `UI`, no un segundo camino de
+ejecución. Lo único que cambia es cómo pregunta (`WebCoordinator._make_asker` manda los datos del
+permiso estructurados para el diálogo).
+- **HTTP + Server-Sent Events** en vez de WebSocket: Starlette y uvicorn ya llegan con el SDK de
+  MCP y uvicorn no trae WebSocket sin instalar algo más. Cero dependencias nuevas.
+- **Seguridad:** solo `127.0.0.1`; se comprueba `Host` (contra DNS rebinding) y `Origin` + JSON
+  en los POST (contra CSRF desde otra web abierta). El Markdown de las respuestas se escapa
+  siempre (un texto malicioso en un repo no puede ejecutar código en la página).
+- **Una tarea a la vez**, como en la terminal; «Detener» cancela el paso (queda `pausada`).
+- **3D:** Three.js r180 en WebGL2, vendorizado (sin CDN ni Node). La nebulosa se simula en la
+  GPU (GPUComputationRenderer: muelle hacia la forma de reposo + curl noise + fuerzas del cursor).
+  WebGPU descartado por ahora: aún falla en algunos drivers. Si más adelante se pasa a
+  Unreal/Unity, la API HTTP + SSE les sirve igual.
+- Cambios en el Core: el verificador del chat corre en un hilo (no congela la web),
+  `Coordinator.resume` acepta una tarea concreta y `cli.doctor_checks()` devuelve los checks
+  estructurados (`jarvis doctor` imprime lo mismo que antes).

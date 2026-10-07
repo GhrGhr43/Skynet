@@ -245,3 +245,12 @@ async def test_info_commands(make_rt):
         assert await c.handle(cmd)
     assert await c.handle("/salir") is False
     assert any("Comando desconocido" in i for i in ui.infos)
+
+
+async def test_bare_words_are_not_tasks(make_rt):
+    rt = make_rt(ScriptedLLM([]))
+    c = Coordinator(rt, FakeUI())
+    assert await c.handle("exit") is False
+    assert await c.handle("Salir.") is False
+    assert await c.handle("tareas") is True
+    assert rt.store.list_tasks() == []

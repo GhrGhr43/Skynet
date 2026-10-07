@@ -18,6 +18,9 @@ jarvis demo                       # crea el repo de prueba data\sandbox\demo
 jarvis                            # abre el chat
 ```
 
+O, con interfaz gráfica, `jarvis web` (o `.\jarvis web` desde `C:\Skynet`): abre
+`http://127.0.0.1:8765` en el navegador. Ver [Interfaz web](#interfaz-web).
+
 En el chat:
 
 | Escribe | Qué pasa |
@@ -35,6 +38,36 @@ Fuera del chat: `jarvis log [--tarea N]`, `jarvis tareas`, `jarvis estado N`,
 
 Cuando una acción es de riesgo (comando fuera de la lista blanca, acción privilegiada o
 destructiva), JARVIS pregunta: `s` (sí), `n` (no) o `t` (sí a esa herramienta durante la tarea).
+
+## Interfaz web
+
+```powershell
+cd C:\Skynet
+.\jarvis web                 # abre el navegador; Ctrl+C en la ventana para cerrar
+.\jarvis web --puerto 9000 --no-abrir
+```
+
+Es el mismo JARVIS que el chat de terminal (mismo Coordinator, permisos, tareas y registro),
+con todo visible sin saberse comandos:
+
+- **Centro:** la nebulosa es JARVIS. Reacciona al cursor y su color dice qué hace: blanco
+  azulado en espera, azul pensando, violeta usando herramientas, turquesa verificando, ámbar
+  cuando te necesita, verde hecho, rojo si algo falla. Cada tarea larga en marcha es una luz
+  en órbita.
+- **Abajo:** escribe lo que quieras; las sugerencias cambian según el estado (continuar la
+  tarea pendiente, tarea larga...). El botón cuadrado detiene la tarea (queda pausada).
+- **Izquierda:** Tareas (continuar, parar, descartar, pasos, consumo, PROGRESO.md), Tarea
+  larga (formulario), Registro y consumo, Modelos y repos (repo, modelo, privacidad, reglas
+  del router, calidad visual), Diagnóstico y Qué puede hacer JARVIS.
+- **Permisos:** las acciones de riesgo salen en un diálogo: Permitir (`S`), Denegar (`N`) o
+  Permitir en toda la tarea (`T`).
+- `Ctrl+K` abre todas las acciones con buscador. Los comandos `/` siguen funcionando.
+
+Solo escucha en `127.0.0.1` y rechaza peticiones de otras webs (comprueba Host y Origin).
+Sin dependencias nuevas: usa Starlette y uvicorn, que ya instala el SDK de MCP; Three.js va
+incluido en `jarvis/web/static/vendor` (funciona sin internet). Calidad visual automática
+según la GPU; se puede forzar con `?calidad=baja|media|alta|ultra` o en Modelos y repos, y
+`?fps` muestra los fotogramas por segundo.
 
 ## Configuración (`config/`)
 
@@ -87,6 +120,7 @@ jarvis/          Core
   toolhub.py       cliente MCP
   runtime.py       ensamblaje de las piezas
   cli.py, views.py interfaz de terminal
+  web/             interfaz web: server.py (HTTP + SSE) y static/ (Three.js, sin build)
 jarvis_tools/    servidores MCP propios (workspace, coding_agent)
 config/          configuración TOML
 tests/           pytest (LLM guionizado + MCP real); tests/test_lmstudio.py usa el modelo real
