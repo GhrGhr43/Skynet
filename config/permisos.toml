@@ -1,0 +1,39 @@
+# Permission gate. Niveles: READ, WRITE, EXECUTE, PRIVILEGED, DESTRUCTIVE.
+#  READ        automático
+#  WRITE       automático, solo dentro del repo autorizado
+#  EXECUTE     automático si el comando está en la lista blanca; si no, pregunta
+#  PRIVILEGED  siempre pregunta (o preaprobado al lanzar una tarea larga)
+#  DESTRUCTIVE siempre pregunta, nunca se preaprueba
+# Herramienta desconocida = nivel_por_defecto. Las claves admiten comodines (fnmatch).
+
+nivel_por_defecto = "PRIVILEGED"
+
+[herramientas]
+"workspace.read_file" = "READ"
+"workspace.list_dir" = "READ"
+"workspace.search" = "READ"
+"workspace.git_status" = "READ"
+"workspace.git_diff" = "READ"
+"workspace.git_log" = "READ"
+"workspace.write_file" = "WRITE"
+"workspace.edit_file" = "WRITE"
+"workspace.run_command" = "EXECUTE"
+"workspace.delete_file" = "DESTRUCTIVE"
+"coding_agent.status" = "READ"
+"coding_agent.history" = "READ"
+"coding_agent.start_task" = "PRIVILEGED"
+"coding_agent.stop_task" = "PRIVILEGED"
+
+[ejecutar]
+# Prefijos de comando permitidos sin preguntar (además del verificador y la lista de cada repo).
+lista_blanca = [
+    "python -m pytest",
+    "pytest",
+    "python -m unittest",
+    "npm test",
+    "npm run test",
+    "npm run build",
+    "git status",
+    "git diff",
+    "git log",
+]

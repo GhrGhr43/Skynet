@@ -1,0 +1,46 @@
+# Model router: los agentes piden capacidades {privacy, coding, reasoning, cost};
+# las reglas eligen un perfil de modelo. Gana la primera regla que encaja.
+
+moneda_usd_eur = 0.86      # para convertir el coste que da LiteLLM (USD) a euros
+
+[presupuesto]
+mensual_eur = 0            # 0 = cloud desactivado. Ponlo > 0 cuando tengas la clave.
+
+[modelos.local]
+litellm = "lm_studio/qwen/qwen3.8-27b"
+api_base = "http://localhost:1234/v1"
+api_key = "lm-studio"
+privado = true             # los datos no salen del PC
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 8192
+timeout_seg = 900
+
+[modelos.cloud]
+litellm = "anthropic/claude-opus-5-5"
+api_key_env = "ANTHROPIC_API_KEY"
+privado = false
+coste_entrada_usd_mtok = 4.0
+coste_salida_usd_mtok = 20.0
+max_tokens = 16000
+timeout_seg = 600
+
+[[reglas]]
+si = { privacy = "alta" }
+usar = "local"
+motivo = "privacidad alta: siempre local"
+
+[[reglas]]
+si = { cost = "bajo" }
+usar = "local"
+motivo = "tarea larga o barata: local"
+
+[[reglas]]
+si = { reasoning = "alto" }
+usar = "cloud"
+motivo = "razonamiento alto: cloud si hay presupuesto"
+
+[[reglas]]
+si = {}
+usar = "local"
+motivo = "por defecto: local"

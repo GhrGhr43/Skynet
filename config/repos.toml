@@ -1,0 +1,14 @@
+# Repos autorizados. Fuera de esta lista JARVIS no lee ni escribe nada.
+#   ruta          carpeta del repo (git)
+#   verificador   comando que decide si un paso es bueno (exit 0 = pasa)
+#   ejecutar      comandos extra permitidos sin preguntar
+#   privacidad    "alta" obliga a usar el modelo local
+#   agente        "jarvis" (bucle propio) o "agente-godot" (tareas largas con noche.ps1)
+#   herramientas  servidores MCP de jarvis.toml que puede usar
+
+[repos.demo]
+ruta = "data/sandbox/demo"
+verificador = "python -m pytest -q"
+privacidad = "normal"
+agente = "jarvis"
+herramientas = ["workspace"]

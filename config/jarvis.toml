@@ -1,0 +1,28 @@
+# Configuración general de JARVIS. Las rutas relativas son relativas a C:\Skynet.
+
+[general]
+base_datos = "data/jarvis.db"
+logs = "data/logs"
+
+[agente]
+max_turnos = 30                 # llamadas al modelo por paso como máximo
+max_salida_herramienta = 6000   # caracteres de cada resultado de herramienta que ve el modelo
+contexto_max_tokens = 6000      # tope del contexto inicial que arma el Context builder
+
+[largo]                         # tareas largas (Scheduler)
+max_horas = 8
+max_iteraciones = 200
+max_errores_iguales = 3         # para si el mismo fallo se repite N veces seguidas
+max_sin_avance = 3              # para si N iteraciones seguidas no cambian nada
+turnos_por_iteracion = 20
+timeout_verificador_seg = 900
+
+# Servidores MCP. {python} = Python de JARVIS, {repo} = ruta del repo de la tarea,
+# {home} = C:\Skynet. Cada repo elige cuáles usa en repos.toml (campo "herramientas").
+[mcp.workspace]
+comando = "{python}"
+args = ["-m", "jarvis_tools.workspace", "--root", "{repo}"]
+
+[mcp.coding_agent]
+comando = "{python}"
+args = ["-m", "jarvis_tools.coding_agent", "--agente-godot", "C:/Users/HACHO/Documents/agente-godot"]
