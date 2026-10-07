@@ -11,6 +11,7 @@ from conftest import ScriptedLLM
 @pytest.fixture
 def router(home, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     settings = load_settings(home)
     store = Store(":memory:")
     yield ModelRouter(settings, store), settings, store
@@ -33,14 +34,14 @@ def test_reasoning_high_without_key_falls_back(router):
     r, s, _ = router
     s.budget_eur = 100
     d = r.choose(Capabilities(reasoning="alto"))
-    assert d.profile.nombre == "local" and "ANTHROPIC_API_KEY" in d.reason
+    assert d.profile.nombre == "local" and "GEMINI_API_KEY" in d.reason
 
 
 def test_reasoning_high_with_key_and_budget_goes_cloud(router, monkeypatch):
     r, s, _ = router
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     s.budget_eur = 10
-    assert r.choose(Capabilities(reasoning="alto")).profile.nombre == "cloud"
+    assert r.choose(Capabilities(force="cloud")).profile.nombre == "cloud"
     assert r.choose(Capabilities(reasoning="alto", cost="bajo")).profile.nombre == "local"
 
 
@@ -72,3 +73,12 @@ async def test_complete_records_tokens_and_cost(router, monkeypatch):
     assert res.cost_eur == pytest.approx(0.0008 * s.usd_eur)
     ev = store.events(types=("llm",))[-1]
     assert ev["tokens_in"] == 100 and ev["model"] == "anthropic/claude-opus-5-5"
+
+
+def test_free_gemini_needs_no_budget(router, monkeypatch):
+    r, s, _ = router
+    s.budget_eur = 0
+    assert r.choose(Capabilities(reasoning="alto")).profile.nombre == "local"  # sin clave
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    assert r.choose(Capabilities(reasoning="alto")).profile.nombre == "gemini"
+    assert r.choose(Capabilities(reasoning="alto", privacy="alta")).profile.nombre == "local"

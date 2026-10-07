@@ -95,7 +95,8 @@ class ModelRouter:
         ok, why = profile.available()
         if not ok:
             return False, why
-        if not profile.privado:
+        gratis = profile.coste_entrada_usd_mtok == 0 and profile.coste_salida_usd_mtok == 0
+        if not profile.privado and not gratis:
             if self.settings.budget_eur <= 0:
                 return False, "presupuesto cloud a 0 (desactivado en router.toml)"
             spent = self.store.month_cost_eur()
