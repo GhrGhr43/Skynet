@@ -15,6 +15,7 @@ coste_entrada_usd_mtok = 0
 coste_salida_usd_mtok = 0
 max_tokens = 8192
 timeout_seg = 900
+reasoning_effort = "medium"   # como agente-godot; "low" = más rápido
 
 [modelos.cloud]
 litellm = "anthropic/claude-opus-5-5"

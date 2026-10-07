@@ -158,6 +158,8 @@ class ModelRouter:
             kwargs["tool_choice"] = "auto"
         if p.api_base:
             kwargs["api_base"] = p.api_base
+        if p.reasoning_effort:
+            kwargs["reasoning_effort"] = p.reasoning_effort
         key = p.resolved_api_key()
         if key:
             kwargs["api_key"] = key

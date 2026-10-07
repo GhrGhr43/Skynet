@@ -174,11 +174,13 @@ class PermissionGate:
                     result = GateResult(Decision.ALLOW, result.level, "confirmado por el usuario")
                 else:
                     result = GateResult(Decision.DENY, result.level, "rechazado por el usuario")
-        self.audit.log(
-            "permission",
-            tool=key,
-            permission_level=result.level.name,
-            decision=result.decision.value,
-            detail={"motivo": result.reason, "preguntado": asked, "args_resumen": args_summary},
-        )
+        # Lo permitido sin preguntar ya queda en el evento "tool"; aquí solo lo que decide un humano o se deniega.
+        if asked or result.decision is not Decision.ALLOW:
+            self.audit.log(
+                "permission",
+                tool=key,
+                permission_level=result.level.name,
+                decision=result.decision.value,
+                detail={"motivo": result.reason, "preguntado": asked, "args_resumen": args_summary},
+            )
         return result

@@ -169,7 +169,7 @@ class Coordinator:
         finally:
             store.update_task(task.id, status=status, result_summary=summary)
             store.clear_heartbeat(task.id)
-            self.rt.audit.log("task", task_id=task.id, decision=status, detail={"motivo": summary[:200]})
+            self.rt.audit.log("task", task_id=task.id, decision=status, detail={"motivo": (summary.splitlines() or [""])[0][:200]})
         return store.get_task(task.id)
 
     # --- comandos --------------------------------------------------------

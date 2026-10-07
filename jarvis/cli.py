@@ -41,6 +41,7 @@ def _prepare_env() -> None:
     if not path.lower().startswith(scripts.lower()):
         os.environ["PATH"] = scripts + os.pathsep + path
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")  # no ensuciar los repos con __pycache__
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
@@ -80,7 +81,9 @@ class ConsoleUI:
             return "n"
 
 
-async def chat(rt: Runtime) -> None:
+def chat(rt: Runtime) -> None:
+    """Bucle del chat. Cada mensaje corre en su propio event loop: así Ctrl+C solo corta la
+    tarea en curso (queda pausada y «continúa» la retoma) y el chat sigue abierto."""
     ui = ConsoleUI()
     coord = Coordinator(rt, ui)
     console.print(f"[bold cyan]JARVIS[/] {__version__} · repo: {coord.repo_name or 'ninguno'} · /ayuda para ver comandos")
@@ -90,11 +93,11 @@ async def chat(rt: Runtime) -> None:
                       "Di «continúa» para retomarla.", style="yellow", markup=False)
     while True:
         try:
-            text = await asyncio.to_thread(input, "\nTú> ")
+            text = input("\nTú> ")
         except (EOFError, KeyboardInterrupt):
             break
         try:
-            if not await coord.handle(text):
+            if not asyncio.run(coord.handle(text)):
                 break
         except KeyboardInterrupt:
             console.print("Interrumpido. La tarea queda pausada; «continúa» la retoma.", style="yellow")
@@ -178,6 +181,7 @@ def cmd_doctor(rt: Runtime) -> int:
 
 DEMO_FILES = {
     "pytest.ini": "[pytest]\ntestpaths = tests\n",
+    ".gitignore": "__pycache__/\n.pytest_cache/\n",
     "README.md": "# demo\n\nRepo de prueba de JARVIS: una pequeña librería de texto con tests.\n",
     "textos.py": '''"""Utilidades de texto (algunas sin implementar)."""
 
@@ -269,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if a.cmd in (None, "chat"):
-        asyncio.run(chat(rt))
+        chat(rt)
         return 0
     if a.cmd == "log":
         console.print(views.events_table(rt.store.events(task_id=a.tarea, limit=a.n)))

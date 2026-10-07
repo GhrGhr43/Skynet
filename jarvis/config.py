@@ -43,6 +43,7 @@ class ModelProfile:
     coste_salida_usd_mtok: float | None = None
     max_tokens: int = 8192
     timeout_seg: float = 600
+    reasoning_effort: str | None = None  # low | medium | high (si el modelo lo admite)
 
     def resolved_api_key(self) -> str | None:
         if self.api_key_env:
