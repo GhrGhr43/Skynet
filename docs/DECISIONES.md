@@ -104,3 +104,27 @@ Fase 1 de la propuesta de automejora. Sin dependencias nuevas.
   `/skill <nombre> <tarea>`, que guarda el nombre en `tasks.capabilities_json` para que
   «continúa» lo vuelva a cargar. Se leen del disco en cada paso. Skynet no escribe skills en
   esta fase: crearlas o mejorarlas sola sería la fase 2 y necesita OK.
+
+## D11. Propuestas de skill y memoria curada — cara en dos puntos (esquema v3 y política de permisos)
+Fase 2 de la propuesta de automejora. Sin dependencias nuevas (`skynet/propuestas.py`).
+- **Cuándo:** al cerrar una tarea con el verificador en verde y 3 o más pasos (chat o tarea
+  larga). El modelo que el router elige para la tarea redacta, sin herramientas y con contexto
+  mínimo (objetivo, resumen de los últimos 8 pasos, verificador), una skill candidata y hasta 3
+  hechos para la memoria. Si falla, se anota un evento `error` y la tarea no se ve afectada.
+- **Dónde:** `skills/_propuestas/<nombre>/SKILL.md` + `ORIGEN.md` (de qué tarea sale, fecha y
+  modelo) y `skills/_propuestas/memoria.md`. Solo texto: Skynet escribe únicamente esos archivos.
+  Un nombre ya usado recibe sufijo (`-2`); nunca se pisa nada. Carpeta ignorada por git.
+- **Memoria curada:** `memoria/MEMORY.md` (hechos del entorno) y `memoria/USER.md`
+  (preferencias), con tope de 2.048 bytes cada una. Entran siempre en el contexto (prioridad
+  alta). Aprobar un añadido que pase del tope se rechaza entero: hay que recortar a mano.
+- **Revisión:** `/propuestas`, `/aprobar <nombre>` y `/rechazar <nombre>` (`memoria` = los
+  añadidos de memoria). Aprobar pasa por el gate como `skynet.aprobar` = PRIVILEGED (pregunta
+  siempre y queda en el audit log como `permission` + `propuesta`). Los nombres se validan
+  (sin `../`). **Política nueva del gate:** cualquier herramienta que no sea de lectura y apunte
+  a `skills/` o `memoria/` de Skynet se deniega, aunque C:\Skynet sea un repo autorizado.
+- **skill_uses (migración v3, aditiva):** una fila por tarea lanzada con `/skill` (versión =
+  8 primeros caracteres del SHA-1 de SKILL.md); el resultado del verificador se actualiza al
+  cerrar cada paso de la tarea. `/skills` muestra usos y tasa de verificador OK (solo cuentan
+  los usos que llegaron a pasar por el verificador). Los parches automáticos son la fase 3.
+- **Web:** `/api/estado` devuelve `propuestas` (número pendiente) y la cabecera muestra un botón
+  «Propuestas N» que lanza `/propuestas`; aprobar y rechazar se escriben en el chat.

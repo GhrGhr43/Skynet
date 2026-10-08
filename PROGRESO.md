@@ -1,6 +1,6 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-08 (búsqueda en el historial y skills, Claude).
+Última actualización: 2026-10-08 (automejora fase 2: propuestas y memoria, Claude).
 
 ## Estado: MVP implementado
 
@@ -12,7 +12,7 @@
 | 4. Modelo local o cloud según política | Hecho (cloud desactivado hasta poner clave y presupuesto) | `router.py`, `config/router.toml` |
 | 5. Tarea de N horas con modelo local, bucle verificado, commits y PROGRESO.md | Hecho | `scheduler.py`, `/largo`, `skynet largo` |
 
-Verificación: 69 tests (`pytest -q`) con LLM guionizado y servidores MCP reales, 1 test de
+Verificación: 78 tests (`pytest -q`) con LLM guionizado y servidores MCP reales, 1 test de
 integración con LM Studio (`-m lmstudio`), y pruebas manuales con Qwen 3.8 27B (abajo).
 
 ## Interfaz web (2026-10-07)
@@ -36,6 +36,18 @@ uno apaga el otro. Probado en el PC: LM Studio carga en ~2 min, Strata en ~2 min
 - 13 tests nuevos (`tests/test_busqueda.py`, `tests/test_skills.py`).
 - Falta: probar `/skill` con el modelo local real y exponer la búsqueda en la web (hoy se usa
   escribiendo `/buscar` en su chat).
+
+## Automejora, fase 2 (2026-10-08)
+- Tras una tarea verificada con 3 o más pasos, Skynet propone una skill y añadidos de memoria en
+  `skills\_propuestas\` (D11). `/propuestas`, `/aprobar <nombre>` (PRIVILEGED, auditado) y
+  `/rechazar <nombre>`. El gate deniega escribir en `skills\` y `memoria\` fuera de /aprobar.
+- Memoria curada `memoria\MEMORY.md` y `memoria\USER.md` (2 KB cada una), siempre en el contexto.
+- Tabla `skill_uses` (esquema v3; la base real ya migró): `/skills` muestra la tasa de éxito.
+- Web: botón «Propuestas N» en la cabecera cuando hay pendientes.
+- 9 tests nuevos (`tests/test_propuestas.py`), con LLM guionizado.
+- Falta: ver qué propuestas redacta Qwen de verdad (quizá haya que afinar el prompt de
+  `propuestas.py`) y decidir si la redacción va en segundo plano: hoy el chat espera a que
+  termine (una llamada más al modelo). Fase 3 (parches automáticos de skills) sin empezar.
 
 ## Decisiones tomadas por defecto (Daniel puede cambiarlas)
 - Python para el Core.

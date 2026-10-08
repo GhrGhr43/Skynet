@@ -48,7 +48,15 @@ Una skill es una carpeta `skills/<nombre>/SKILL.md` en el formato de
 minúsculas, números y guiones) y `description`, y debajo las instrucciones en Markdown.
 Skynet solo pone en el contexto la lista de nombres y descripciones; el cuerpo entra cuando
 pides `/skill <nombre> <tarea>` (y sigue entrando si dices «continúa»). Ejemplo:
-[skills/escribir-tests](skills/escribir-tests/SKILL.md). Skynet no crea ni edita skills.
+[skills/escribir-tests](skills/escribir-tests/SKILL.md). `/skills` muestra cuántas veces se ha
+usado cada una y cuántas pasó el verificador.
+
+Cuando una tarea pasa el verificador tras 3 o más pasos, Skynet **propone** una skill nueva y
+datos para su memoria en `skills\_propuestas\`. Nada se activa sin ti: `/propuestas`,
+`/aprobar <nombre>` (te pide confirmación) o `/rechazar <nombre>` (`memoria` = los añadidos de
+memoria). La memoria curada son `memoria\MEMORY.md` (hechos del entorno) y `memoria\USER.md`
+(tus preferencias), de 2 KB como mucho cada una; siempre van en el contexto y puedes editarlas
+a mano. Las herramientas del agente no pueden escribir en `skills\` ni en `memoria\`.
 
 ## Interfaz web
 
@@ -125,6 +133,7 @@ skynet/          Core
   audit.py         eventos de auditoría
   context.py       context builder (git + archivos de estado, sin vector DB)
   skills.py        skills de solo lectura (skills/<nombre>/SKILL.md)
+  propuestas.py    propuestas de skill y memoria, /aprobar y /rechazar
   router.py        model router (LiteLLM) con presupuesto
   agent.py         bucle modelo <-> herramientas
   scheduler.py     tareas largas verificadas (sin LLM en el control)
@@ -135,7 +144,8 @@ skynet/          Core
   web/             interfaz web: server.py (HTTP + SSE) y static/ (Three.js, sin build)
 skynet_tools/    servidores MCP propios (workspace, coding_agent)
 config/          configuración TOML
-skills/          skills (formato agentskills.io)
+skills/          skills (formato agentskills.io); _propuestas/ = borradores sin aprobar
+memoria/         memoria curada (MEMORY.md, USER.md)
 tests/           pytest (LLM guionizado + MCP real); tests/test_lmstudio.py usa el modelo real
 data/            base de datos, logs y sandbox (ignorado por git)
 ```

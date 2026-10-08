@@ -83,6 +83,7 @@ export class App {
     });
     $('#stopBtn').addEventListener('click', () => this.stop());
     $('#chipPriv').addEventListener('click', () => this.setPrivate(!(this.snap && this.snap.privado)));
+    $('#chipProp').addEventListener('click', () => this.send('/propuestas'));
     for (const b of document.querySelectorAll('[data-panel]')) {
       b.addEventListener('click', () => this.panels.toggle(b.dataset.panel));
     }
@@ -182,6 +183,8 @@ export class App {
     $('#chipModelV').textContent = s.privado ? 'Local (privado)' : m;
     const priv = $('#chipPriv');
     priv.setAttribute('aria-pressed', String(!!s.privado));
+    $('#chipProp').hidden = !s.propuestas;
+    $('#chipPropV').textContent = String(s.propuestas || 0);
     this.engine?.setSatellites((s.largas_vivas || []).length);
     const badge = document.querySelector('.rail-btn[data-panel="tareas"]');
     badge.querySelector('.badge')?.remove();

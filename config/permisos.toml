@@ -23,6 +23,7 @@ nivel_por_defecto = "PRIVILEGED"
 "coding_agent.history" = "READ"
 "coding_agent.start_task" = "PRIVILEGED"
 "coding_agent.stop_task" = "PRIVILEGED"
+"skynet.aprobar" = "PRIVILEGED"        # /aprobar: activa una skill o fusiona la memoria propuesta
 
 [ejecutar]
 # Prefijos de comando permitidos sin preguntar (además del verificador y la lista de cada repo).

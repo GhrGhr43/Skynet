@@ -13,9 +13,9 @@ import re
 import shlex
 from typing import Any, Protocol
 
-from . import gitops, skills
+from . import gitops, propuestas, skills
 from .agent import summarize_args
-from .gate import Level
+from .gate import Level, PermissionGate
 from .router import Capabilities
 from .runtime import Runtime
 from .scheduler import spawn_background
@@ -32,7 +32,8 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
   /parar <id>               parar una tarea larga      /log [id]               audit log
   /buscar <texto>           buscar en el historial     /skills                 skills disponibles
-  /skill <nombre> <tarea>   tarea siguiendo una skill
+  /skill <nombre> <tarea>   tarea siguiendo una skill  /propuestas             skills y memoria propuestas
+  /aprobar <nombre>         activar una propuesta      /rechazar <nombre>      descartarla
   /doctor                   comprobar instalación      /descartar [id]         dar una tarea por abandonada
   /ayuda                    esta ayuda                 /salir                  salir"""
 
@@ -90,7 +91,7 @@ class Coordinator:
         return "Conversación reciente (por si la petición se refiere a ella):\n" + "\n".join(lines)
 
     # --- tareas ----------------------------------------------------------
-    async def new_task(self, text: str, skill: str | None = None) -> Task:
+    async def new_task(self, text: str, skill: str | None = None, skill_version: str | None = None) -> Task:
         title = text.splitlines()[0][:70]
         caps: dict[str, Any] = {"capacidades": self._caps()}
         if skill:
@@ -101,6 +102,8 @@ class Coordinator:
         )
         self.rt.audit.log("task", task_id=task.id, decision="creada",
                           detail={"mensaje": title, "repo": self.repo_name, **({"skill": skill} if skill else {})})
+        if skill:
+            self.rt.store.add_skill_use(skill, skill_version, task.id)
         return await self._run(task, kind="chat", extra=self._recent())
 
     async def resume(self, extra: str | None, task_id: int | None = None) -> None:
@@ -146,10 +149,10 @@ class Coordinator:
         task = store.update_task(task.id, status=EN_CURSO)
         store.heartbeat(task.id)
         status, summary = PAUSADA, "interrumpida"
+        ver: VerifierResult | None = None
         try:
             run = await self.rt.agent_step(task, kind, extra, asker=self._make_asker(task), on_event=self.ui.event)
             out = run.outcome
-            ver: VerifierResult | None = None
             if (repo and repo.verificador and out.status == "completado" and gitops.is_repo(repo.ruta)
                     and (out.files_touched or gitops.is_dirty(repo.ruta))):
                 self.ui.event("verifying", {"command": repo.verificador})
@@ -185,6 +188,13 @@ class Coordinator:
             store.update_task(task.id, status=status, result_summary=summary)
             store.clear_heartbeat(task.id)
             self.rt.audit.log("task", task_id=task.id, decision=status, detail={"motivo": (summary.splitlines() or [""])[0][:200]})
+        if ver is not None and task.capabilities.get("skill"):
+            store.set_skill_result(task.id, ver.ok)
+        if status == HECHA and ver is not None and propuestas.eligible(self.rt, task, ver.ok):
+            self.ui.info("Tarea verificada tras varios pasos: redacto una propuesta de skill/memoria...")
+            created = await propuestas.propose_after_task(self.rt, store.get_task(task.id), ver.summary())
+            if created:
+                self.ui.info(f"Propuestas nuevas: {', '.join(created)}. Revísalas con /propuestas.")
         return store.get_task(task.id)
 
     # --- comandos --------------------------------------------------------
@@ -264,14 +274,25 @@ class Coordinator:
             self._search(text.split(None, 1)[1] if len(text.split(None, 1)) > 1 else "")
         elif cmd == "/skills":
             found, errors = skills.load_skills(self.rt.skills_dir)
+            stats = self.rt.store.skill_stats()
             for sk in found.values():
-                self.ui.info(f"- {sk.name}: {sk.description}")
+                st_ = stats.get(sk.name)
+                uso = ""
+                if st_:
+                    uso = f" · {st_['usos']} usos"
+                    if st_["evaluados"]:
+                        uso += f", verificador OK {st_['ok']}/{st_['evaluados']} ({100 * st_['ok'] // st_['evaluados']} %)"
+                self.ui.info(f"- {sk.name}: {sk.description}{uso}")
             if not found:
                 self.ui.info(f"No hay skills. Crea {self.rt.skills_dir / '<nombre>' / 'SKILL.md'} (ver README).")
             for e in errors:
                 self.ui.info(f"Skill ignorada · {e}")
         elif cmd == "/skill":
             await self._skill(text)
+        elif cmd == "/propuestas":
+            self._list_proposals()
+        elif cmd in ("/aprobar", "/rechazar"):
+            await self._review(cmd, args)
         else:
             self.ui.info(f"Comando desconocido: {cmd}. Escribe /ayuda.")
         return True
@@ -303,7 +324,48 @@ class Coordinator:
         if len(parts) < 3 or not parts[2].strip():
             self.ui.info(f"{name}: {found[name].description}\nUso: /skill {name} <tarea>")
             return
-        await self.new_task(parts[2].strip(), skill=name)
+        await self.new_task(parts[2].strip(), skill=name, skill_version=found[name].version())
+
+    def _list_proposals(self) -> None:
+        skl, mem = propuestas.list_proposals(self.rt.settings.home)
+        if not skl and not mem:
+            self.ui.info("No hay propuestas pendientes.")
+            return
+        lines = [f"- {p['nombre']}: {p['descripcion']}" + (f"\n    {p['origen']}" if p["origen"] else "") for p in skl]
+        if mem:
+            lines.append("- memoria: " + "; ".join(f"[{d}] {t}" for d, t in mem))
+        where = propuestas.propuestas_dir(self.rt.settings.home)
+        self.ui.info(f"Propuestas (en {where}; /aprobar <nombre> o /rechazar <nombre>):\n" + "\n".join(lines))
+
+    async def _review(self, cmd: str, args: list[str]) -> None:
+        home = self.rt.settings.home
+        if not args:
+            self.ui.info(f"Uso: {cmd} <nombre>   (mira /propuestas)")
+            return
+        name = args[0]
+        try:
+            if not propuestas.exists(home, name):
+                self.ui.info(f"No hay ninguna propuesta '{name}'. Mira /propuestas.")
+                return
+            if cmd == "/rechazar":
+                msg = propuestas.reject(home, name)
+                self.rt.audit.log("propuesta", decision="rechazada", detail={"nombre": name})
+                self.ui.info(msg)
+                return
+            # Aprobar cambia el comportamiento futuro de Skynet: PRIVILEGED, pregunta y queda auditado.
+            async def ask(key: str, level: Level, a: dict[str, Any], reason: str) -> str:
+                return await self.ui.ask(f"{level.name} · {key}({name})\nMotivo: {reason}. "
+                                         f"Se activará la propuesta '{name}'.\n¿Permitir? [s]í / [n]o")
+            gate = PermissionGate(self.rt.settings, None, self.rt.audit, asker=ask)
+            res = await gate.check("skynet.aprobar", {"propuesta": name}, f"propuesta={name}")
+            if not res.allowed:
+                self.ui.info("No aprobada.")
+                return
+            msg = propuestas.approve(home, name)
+            self.rt.audit.log("propuesta", decision="aprobada", permission_level=res.level.name, detail={"nombre": name})
+            self.ui.info(msg)
+        except (ValueError, OSError) as e:
+            self.ui.info(str(e))
 
     def _task_arg(self, args: list[str]) -> Task | None:
         st = self.rt.store

@@ -126,6 +126,19 @@ MIGRATIONS: list[Union[str, Callable[[sqlite3.Connection], None]]] = [
     """,
     # v2: búsqueda en el historial
     _v2_busqueda,
+    # v3: usos de skills y resultado del verificador (tasa de éxito en /skills)
+    """
+    CREATE TABLE skill_uses(
+        id INTEGER PRIMARY KEY,
+        skill TEXT NOT NULL,
+        version TEXT,
+        task_id INTEGER REFERENCES tasks(id),
+        verifier_ok INTEGER,
+        ts TEXT NOT NULL
+    );
+    CREATE INDEX idx_skill_uses_skill ON skill_uses(skill);
+    CREATE INDEX idx_skill_uses_task ON skill_uses(task_id)
+    """,
 ]
 
 
@@ -434,6 +447,23 @@ class Store:
             sql += " AND ts >= ?"
             args.append(since)
         return dict(self.db.execute(sql, args).fetchone())
+
+    # --- usos de skills --------------------------------------------------
+    def add_skill_use(self, skill: str, version: str | None, task_id: int) -> None:
+        with self._lock:
+            self.db.execute("INSERT INTO skill_uses(skill, version, task_id, ts) VALUES(?,?,?,?)",
+                            (skill, version, task_id, now_iso()))
+
+    def set_skill_result(self, task_id: int, ok: bool) -> None:
+        """Resultado del verificador para el uso de skill de la tarea (el último cuenta, también al retomar)."""
+        with self._lock:
+            self.db.execute("UPDATE skill_uses SET verifier_ok = ? WHERE task_id = ?", (int(ok), task_id))
+
+    def skill_stats(self) -> dict[str, dict[str, int]]:
+        rows = self.db.execute(
+            """SELECT skill, COUNT(*) AS usos, COUNT(verifier_ok) AS evaluados,
+                      COALESCE(SUM(verifier_ok), 0) AS ok FROM skill_uses GROUP BY skill""")
+        return {r["skill"]: {"usos": r["usos"], "evaluados": r["evaluados"], "ok": r["ok"]} for r in rows}
 
     # --- búsqueda en el historial ---------------------------------------
     def search(self, text: str, limit: int = 10) -> list[dict[str, Any]]:

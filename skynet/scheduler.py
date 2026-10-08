@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from . import gitops
+from . import gitops, propuestas
 from .agent import DONE_MARK
 from .config import RepoConfig
 from .context import task_dir
@@ -229,6 +229,12 @@ class LongTaskRunner:
             self._write_progress(task, repo, f"{final_status}: {reason}")
             gitops.commit_all(repo.ruta, f"skynet: tarea {task.id} {final_status} ({reason})")
             self.on_event("fin", {"estado": final_status, "motivo": reason})
+        # HECHA aquí exige verificador en verde (D8). La propuesta va a skills/_propuestas, fuera del repo.
+        if final_status == HECHA and propuestas.eligible(self.rt, task, True):
+            ver_txt = next((s.verifier_result for s in reversed(self.store.steps_for(task.id)) if s.verifier_result), "OK")
+            created = await propuestas.propose_after_task(self.rt, task, ver_txt)
+            if created:
+                self.on_event("propuestas", {"nombres": created})
         return task
 
     # --- agente-godot ----------------------------------------------------

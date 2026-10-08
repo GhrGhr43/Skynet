@@ -31,7 +31,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import __version__
+from .. import __version__, propuestas
 from ..agent import summarize_args
 from ..audit import describe_event
 from ..config import ConfigError
@@ -297,6 +297,7 @@ def snapshot(s: Session) -> dict[str, Any]:
         "largas_vivas": long_alive,
         "limites": {"max_horas": rt.settings.long.max_horas},
         "ayuda": HELP,
+        "propuestas": propuestas.count(rt.settings.home),
     }
 
 

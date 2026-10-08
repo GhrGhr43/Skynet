@@ -6,3 +6,4 @@ data/
 config/*.local.toml
 .env
 skynet.egg-info/
+skills/_propuestas/

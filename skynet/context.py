@@ -3,7 +3,8 @@
 Sin base vectorial: objetivo de la tarea, estado de git, archivos de estado de la tarea
 (PROGRESO / ERRORES), resumen de pasos anteriores y, si el último paso se cortó, lo que
 alcanzó a hacer. De las skills (skills/<nombre>/SKILL.md) solo entra el catálogo, salvo
-la que la tarea pidió con /skill, cuyo cuerpo sí entra. Cada sección tiene prioridad; si no cabe en el tope, se recortan las de
+la que la tarea pidió con /skill, cuyo cuerpo sí entra. La memoria curada (memoria/MEMORY.md
+y USER.md, 2 KB como mucho cada una) entra siempre. Cada sección tiene prioridad; si no cabe en el tope, se recortan las de
 menor prioridad.
 """
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import gitops, skills
+from . import gitops, propuestas, skills
 from .config import RepoConfig
 from .store import Store, Task
 
@@ -34,10 +35,17 @@ def _tail(text: str, chars: int) -> str:
 
 
 class ContextBuilder:
-    def __init__(self, store: Store, max_tokens: int = 6000, skills_dir: Path | None = None):
+    def __init__(self, store: Store, max_tokens: int = 6000, home: Path | None = None):
         self.store = store
         self.max_chars = max_tokens * CHARS_PER_TOKEN
-        self.skills_dir = skills_dir
+        self.home = home
+        self.skills_dir = home / "skills" if home else None
+
+    def memory_sections(self) -> list[Section]:
+        if self.home is None:
+            return []
+        titles = {"MEMORY": "Memoria (hechos del entorno)", "USER": "Preferencias del usuario"}
+        return [Section(titles[k], v, 1) for k, v in propuestas.read_memory(self.home).items()]
 
     def skill_sections(self, task: Task) -> list[Section]:
         """Cuerpo de la skill que pidió la tarea (si la hay) y catálogo de las demás.
@@ -58,7 +66,7 @@ class ContextBuilder:
     def build_chat(self, task: Task, extra: str | None = None) -> str:
         """Contexto de una conversación sin repo: el mensaje tal cual, más las skills si las hay."""
         text = task.goal + (f"\n\n{extra}" if extra else "")
-        for sec in self.skill_sections(task):
+        for sec in self.memory_sections() + self.skill_sections(task):
             text += f"\n\n## {sec.title}\n{sec.body}"
         return text
 
@@ -106,7 +114,7 @@ class ContextBuilder:
                     out.append(Section(f"Archivos del repo ({len(files)} primeros)", "\n".join(files), 4))
             if repo.verificador:
                 out.append(Section("Verificador", f"`{repo.verificador}` (exit 0 = la tarea está bien)", 1))
-        out += self.skill_sections(task)
+        out += self.memory_sections() + self.skill_sections(task)
         return out
 
     def build(self, task: Task, repo: RepoConfig | None, extra: str | None = None) -> str:

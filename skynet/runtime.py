@@ -47,7 +47,7 @@ class Runtime:
         self.audit = Audit(self.store)
         self.router = ModelRouter(self.settings, self.store, completion_fn)
         self.skills_dir = self.settings.home / "skills"
-        self.context = ContextBuilder(self.store, self.settings.agent.contexto_max_tokens, self.skills_dir)
+        self.context = ContextBuilder(self.store, self.settings.agent.contexto_max_tokens, self.settings.home)
 
     def repo_for(self, task: Task) -> RepoConfig | None:
         return self.settings.repo(task.repo) if task.repo else None

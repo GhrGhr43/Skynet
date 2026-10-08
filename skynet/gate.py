@@ -7,6 +7,8 @@ Reglas (principio 1, mínimo privilegio):
   PRIVILEGED  se pregunta (o se permite si la tarea lo tiene preaprobado)
   DESTRUCTIVE se pregunta siempre
 Sin humano presente (tareas largas), "preguntar" se convierte en "denegar".
+Las skills y la memoria curada de Skynet (skills/, memoria/) solo cambian con /aprobar:
+cualquier herramienta que no sea de lectura y apunte ahí se deniega.
 Cada decisión queda en el audit log.
 """
 from __future__ import annotations
@@ -17,6 +19,7 @@ from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from . import propuestas
 from .audit import Audit
 from .config import RepoConfig, Settings
 
@@ -91,6 +94,7 @@ class PermissionGate:
         self.grants = list(grants or [])       # patrones preaprobados para la tarea
         self.session_grants: set[str] = set()  # respondido "t" durante esta ejecución
         self.protected = [p.replace("\\", "/").lower() for p in (protected or [])]  # rutas que el agente no toca
+        self.reserved = [d.resolve() for d in propuestas.reserved_dirs(settings.home)]
 
     # --- clasificación ---------------------------------------------------
     def classify(self, key: str) -> Level:
@@ -128,6 +132,9 @@ class PermissionGate:
 
         if level is Level.READ:
             return GateResult(Decision.ALLOW, level, "lectura")
+        hit = self._reserved_hit(args)
+        if hit:
+            return GateResult(Decision.DENY, level, f"'{hit}' es una skill o la memoria de Skynet: solo cambia con /aprobar")
         hit = self._protected_hit(args)
         if hit:
             return GateResult(Decision.DENY, level, f"'{hit}' lo gestiona Skynet; no lo modifiques")
@@ -170,6 +177,18 @@ class PermissionGate:
                 except ValueError:
                     continue
                 if rel in self.protected:
+                    return v
+        return None
+
+    def _reserved_hit(self, args: dict[str, Any]) -> str | None:
+        root = self.repo.ruta.resolve() if self.repo else None
+        for k, v in args.items():
+            if k.lower() in PATH_KEYS and isinstance(v, str) and v:
+                p = Path(v)
+                if not p.is_absolute() and root is None:
+                    continue
+                target = (p if p.is_absolute() else root / p).resolve()
+                if any(target == d or d in target.parents for d in self.reserved):
                     return v
         return None
 

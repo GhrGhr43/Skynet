@@ -7,6 +7,7 @@ Sin PyYAML: el frontmatter se lee con un parser mínimo de `clave: valor` (y blo
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,10 @@ class Skill:
     name: str
     description: str
     path: Path
+
+    def version(self) -> str:
+        """Huella del contenido: cambia cada vez que se edita SKILL.md (sin campo version a mano)."""
+        return hashlib.sha1(self.path.read_bytes()).hexdigest()[:8]
 
     def body(self) -> str:
         """El cuerpo de SKILL.md sin el frontmatter, recortado a MAX_BODY_CHARS."""
@@ -84,7 +89,8 @@ def load_skills(skills_dir: Path) -> tuple[dict[str, Skill], list[str]]:
     errors: list[str] = []
     if not skills_dir.is_dir():
         return skills, errors
-    for d in sorted(p for p in skills_dir.iterdir() if p.is_dir()):
+    # Las carpetas que empiezan por _ (p. ej. _propuestas) no son skills activas.
+    for d in sorted(p for p in skills_dir.iterdir() if p.is_dir() and not p.name.startswith("_")):
         f = d / "SKILL.md"
         if not f.is_file():
             continue
