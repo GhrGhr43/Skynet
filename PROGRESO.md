@@ -1,6 +1,6 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-07 (interfaz web, Claude).
+Última actualización: 2026-10-08 (búsqueda en el historial y skills, Claude).
 
 ## Estado: MVP implementado
 
@@ -12,7 +12,7 @@
 | 4. Modelo local o cloud según política | Hecho (cloud desactivado hasta poner clave y presupuesto) | `router.py`, `config/router.toml` |
 | 5. Tarea de N horas con modelo local, bucle verificado, commits y PROGRESO.md | Hecho | `scheduler.py`, `/largo`, `skynet largo` |
 
-Verificación: 44 tests (`pytest -q`) con LLM guionizado y servidores MCP reales, 1 test de
+Verificación: 69 tests (`pytest -q`) con LLM guionizado y servidores MCP reales, 1 test de
 integración con LM Studio (`-m lmstudio`), y pruebas manuales con Qwen 3.8 27B (abajo).
 
 ## Interfaz web (2026-10-07)
@@ -26,6 +26,16 @@ Daniel** (rendimiento real en la RX 9070 XT, calidad «ultra»).
 LM Studio (Qwen 27B) y Strata (Qwen3.8-Flash-Next Coder, C:Strata) se encienden y apagan desde
 Ajustes de la web (`skynet/engines.py`, `[motores.*]` en config/skynet.toml). Comparten GPU: encender
 uno apaga el otro. Probado en el PC: LM Studio carga en ~2 min, Strata en ~2 min.
+
+## Automejora, fase 1 (2026-10-08)
+- `/buscar <texto>`: búsqueda FTS5 en pasos y eventos de todas las tareas (esquema v2, ver D10).
+  La base real de Daniel ya migró a v2 y se rellenó el índice con el historial existente.
+- Skills de solo lectura en `skills/<nombre>/SKILL.md` (formato agentskills.io): el contexto
+  lleva el catálogo; `/skills` las lista y `/skill <nombre> <tarea>` carga una. Ejemplo:
+  `escribir-tests`. Skynet no escribe skills todavía (fase 2, pendiente de OK).
+- 13 tests nuevos (`tests/test_busqueda.py`, `tests/test_skills.py`).
+- Falta: probar `/skill` con el modelo local real y exponer la búsqueda en la web (hoy se usa
+  escribiendo `/buscar` en su chat).
 
 ## Decisiones tomadas por defecto (Daniel puede cambiarlas)
 - Python para el Core.

@@ -86,3 +86,21 @@ permiso estructurados para el diálogo).
 - Cambios en el Core: el verificador del chat corre en un hilo (no congela la web),
   `Coordinator.resume` acepta una tarea concreta y `cli.doctor_checks()` devuelve los checks
   estructurados (`skynet doctor` imprime lo mismo que antes).
+
+## D10. Búsqueda en el historial y skills de solo lectura — barata (salvo el índice: v2 del esquema)
+Fase 1 de la propuesta de automejora. Sin dependencias nuevas.
+- **Búsqueda:** migración v2 de `skynet/store.py`, aditiva: tabla virtual FTS5 `historial_fts`
+  (tokenizer `unicode61 remove_diacritics 2`: «accion» encuentra «acción») sobre
+  `steps.input_summary/output_summary` y `events.tool/detail_json`, mantenida con triggers y
+  rellenada con lo que ya había. `rowid` = 2·id en pasos y 2·id+1 en eventos, así los triggers
+  borran por rowid sin columnas extra. Si el SQLite no trae FTS5, la migración no crea nada y
+  `Store.search` usa LIKE. Las palabras del usuario van entre comillas: nunca se interpretan
+  como sintaxis FTS. `MIGRATIONS` admite ahora funciones además de SQL (los triggers llevan `;`).
+  `/buscar <texto>` devuelve los 10 más relevantes.
+- **Skills:** `skills/<nombre>/SKILL.md` con el formato de agentskills.io (estándar abierto que
+  ya usan otros agentes: una skill escrita para ellos sirve aquí). Frontmatter leído con un
+  parser mínimo (sin PyYAML). Divulgación progresiva: el Context builder solo añade nombre +
+  descripción (tope 2.000 caracteres, prioridad baja); el cuerpo (tope 12.000) entra con
+  `/skill <nombre> <tarea>`, que guarda el nombre en `tasks.capabilities_json` para que
+  «continúa» lo vuelva a cargar. Se leen del disco en cada paso. Skynet no escribe skills en
+  esta fase: crearlas o mejorarlas sola sería la fase 2 y necesita OK.

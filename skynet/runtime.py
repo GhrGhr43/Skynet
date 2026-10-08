@@ -46,7 +46,8 @@ class Runtime:
         self.store = store or Store(self.settings.db_path)
         self.audit = Audit(self.store)
         self.router = ModelRouter(self.settings, self.store, completion_fn)
-        self.context = ContextBuilder(self.store, self.settings.agent.contexto_max_tokens)
+        self.skills_dir = self.settings.home / "skills"
+        self.context = ContextBuilder(self.store, self.settings.agent.contexto_max_tokens, self.skills_dir)
 
     def repo_for(self, task: Task) -> RepoConfig | None:
         return self.settings.repo(task.repo) if task.repo else None
@@ -77,7 +78,7 @@ class Runtime:
         """Ejecuta un paso de agente con contexto fresco (sesión nueva). No verifica ni hace commit."""
         repo = self.repo_for(task)
         # El contexto se arma antes de abrir el paso nuevo, para que vea el paso que se cortó.
-        context = self.context.build(task, repo, extra) if repo else task.goal + (f"\n\n{extra}" if extra else "")
+        context = self.context.build(task, repo, extra) if repo else self.context.build_chat(task, extra)
         for s in self.store.steps_for(task.id):
             if s.ended_at is None:
                 self.store.finish_step(s.id, "interrumpido", "El paso se cortó (Skynet se cerró o falló).")

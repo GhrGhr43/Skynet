@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator, Union
 
 # Estados de una tarea
 PENDIENTE = "pendiente"
@@ -30,7 +30,47 @@ RESUMABLE = (PENDIENTE, EN_CURSO, ESPERANDO_PERMISO, PAUSADA, FALLIDA)
 # Un runner en marcha refresca heartbeat_at; si lleva más de esto sin hacerlo, se da por muerto.
 HEARTBEAT_STALE = timedelta(minutes=3)
 
-MIGRATIONS: list[str] = [
+
+
+def _v2_busqueda(db: sqlite3.Connection) -> None:
+    """v2: índice FTS5 del historial (steps y events). Si este SQLite no trae FTS5, no crea nada
+    y Store.search usa LIKE. rowid = 2*id en pasos y 2*id+1 en eventos: así los triggers borran
+    por rowid sin columna extra."""
+    try:
+        db.execute("""CREATE VIRTUAL TABLE historial_fts USING fts5(
+                          texto, task_id UNINDEXED, tokenize = 'unicode61 remove_diacritics 2')""")
+    except sqlite3.OperationalError:
+        return
+    paso = "COALESCE({p}.input_summary, '') || ' ' || COALESCE({p}.output_summary, '')"
+    evento = "COALESCE({p}.tool, '') || ' ' || COALESCE({p}.detail_json, '')"
+    for stmt in (
+        f"""CREATE TRIGGER historial_steps_ai AFTER INSERT ON steps BEGIN
+              INSERT INTO historial_fts(rowid, texto, task_id) VALUES (2 * new.id, {paso.format(p='new')}, new.task_id);
+            END""",
+        f"""CREATE TRIGGER historial_steps_au AFTER UPDATE OF input_summary, output_summary ON steps BEGIN
+              DELETE FROM historial_fts WHERE rowid = 2 * old.id;
+              INSERT INTO historial_fts(rowid, texto, task_id) VALUES (2 * new.id, {paso.format(p='new')}, new.task_id);
+            END""",
+        """CREATE TRIGGER historial_steps_ad AFTER DELETE ON steps BEGIN
+              DELETE FROM historial_fts WHERE rowid = 2 * old.id;
+            END""",
+        f"""CREATE TRIGGER historial_events_ai AFTER INSERT ON events WHEN new.detail_json IS NOT NULL BEGIN
+              INSERT INTO historial_fts(rowid, texto, task_id) VALUES (2 * new.id + 1, {evento.format(p='new')}, new.task_id);
+            END""",
+        """CREATE TRIGGER historial_events_ad AFTER DELETE ON events BEGIN
+              DELETE FROM historial_fts WHERE rowid = 2 * old.id + 1;
+            END""",
+        # Relleno inicial con lo que ya hay en la base.
+        f"""INSERT INTO historial_fts(rowid, texto, task_id)
+            SELECT 2 * id, {paso.format(p='steps')}, task_id FROM steps""",
+        f"""INSERT INTO historial_fts(rowid, texto, task_id)
+            SELECT 2 * id + 1, {evento.format(p='events')}, task_id FROM events WHERE detail_json IS NOT NULL""",
+    ):
+        db.execute(stmt)
+
+
+# Cada migración es SQL (sentencias separadas por ;) o una función que recibe la conexión.
+MIGRATIONS: list[Union[str, Callable[[sqlite3.Connection], None]]] = [
     # v1: esquema inicial
     """
     CREATE TABLE tasks(
@@ -84,6 +124,8 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_events_task ON events(task_id, id);
     CREATE INDEX idx_events_ts ON events(ts);
     """,
+    # v2: búsqueda en el historial
+    _v2_busqueda,
 ]
 
 
@@ -194,9 +236,14 @@ class Store:
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         for i, sql in enumerate(MIGRATIONS[version:], start=version + 1):
             with self.tx():
-                for stmt in [s for s in sql.split(";") if s.strip()]:
-                    self.db.execute(stmt)
+                if callable(sql):
+                    sql(self.db)
+                else:
+                    for stmt in [s for s in sql.split(";") if s.strip()]:
+                        self.db.execute(stmt)
                 self.db.execute(f"PRAGMA user_version = {i}")
+        self.fts = self.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = 'historial_fts'").fetchone() is not None
 
     @contextmanager
     def tx(self) -> Iterator[None]:
@@ -387,6 +434,54 @@ class Store:
             sql += " AND ts >= ?"
             args.append(since)
         return dict(self.db.execute(sql, args).fetchone())
+
+    # --- búsqueda en el historial ---------------------------------------
+    def search(self, text: str, limit: int = 10) -> list[dict[str, Any]]:
+        """Pasos y eventos que contienen todas las palabras de `text` (FTS5 por relevancia;
+        sin FTS5, LIKE de los más recientes). Cada resultado: origen, id, task_id, ts, fragmento."""
+        words = text.split()
+        if not words:
+            return []
+        if self.fts:
+            # Cada palabra entre comillas: el texto del usuario nunca se interpreta como sintaxis FTS.
+            query = " ".join('"' + w.replace('"', '""') + '"' for w in words)
+            rows = self.db.execute(
+                """SELECT rowid, task_id, snippet(historial_fts, 0, '«', '»', '…', 16) AS frag
+                   FROM historial_fts WHERE historial_fts MATCH ? ORDER BY rank LIMIT ?""",
+                (query, limit)).fetchall()
+            hits = [(r["rowid"] // 2, "evento" if r["rowid"] % 2 else "paso", r["task_id"], r["frag"]) for r in rows]
+        else:
+            hits = self._search_like(words, limit)
+        out = []
+        for id_, origen, task_id, frag in hits:
+            if origen == "paso":
+                ts = self.db.execute("SELECT started_at FROM steps WHERE id = ?", (id_,)).fetchone()
+            else:
+                ts = self.db.execute("SELECT ts FROM events WHERE id = ?", (id_,)).fetchone()
+            out.append({"origen": origen, "id": id_, "task_id": task_id, "ts": ts[0] if ts else None,
+                        "fragmento": " ".join(frag.split())})
+        return out
+
+    def _search_like(self, words: list[str], limit: int) -> list[tuple[int, str, int | None, str]]:
+        def where(cols: str) -> tuple[str, list[str]]:
+            return " AND ".join(f"({cols}) LIKE ?" for _ in words), [f"%{w}%" for w in words]
+
+        def frag(texto: str) -> str:
+            i = max(texto.lower().find(words[0].lower()), 0)
+            return ("…" if i > 60 else "") + texto[max(i - 60, 0):i + 140]
+
+        hits = []
+        w, args = where("COALESCE(input_summary, '') || ' ' || COALESCE(output_summary, '')")
+        for r in self.db.execute(
+                f"""SELECT id, task_id, COALESCE(input_summary, '') || ' ' || COALESCE(output_summary, '') AS t
+                    FROM steps WHERE {w} ORDER BY id DESC LIMIT ?""", (*args, limit)):
+            hits.append((r["id"], "paso", r["task_id"], frag(r["t"])))
+        w, args = where("COALESCE(tool, '') || ' ' || COALESCE(detail_json, '')")
+        for r in self.db.execute(
+                f"""SELECT id, task_id, COALESCE(tool, '') || ' ' || detail_json AS t FROM events
+                    WHERE detail_json IS NOT NULL AND {w} ORDER BY id DESC LIMIT ?""", (*args, limit)):
+            hits.append((r["id"], "evento", r["task_id"], frag(r["t"])))
+        return hits[:limit]
 
     def month_cost_eur(self) -> float:
         start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)

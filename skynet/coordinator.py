@@ -13,7 +13,7 @@ import re
 import shlex
 from typing import Any, Protocol
 
-from . import gitops
+from . import gitops, skills
 from .agent import summarize_args
 from .gate import Level
 from .router import Capabilities
@@ -31,6 +31,8 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   /largo <horas> <objetivo> tarea larga en segundo plano con verificador y commits
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
   /parar <id>               parar una tarea larga      /log [id]               audit log
+  /buscar <texto>           buscar en el historial     /skills                 skills disponibles
+  /skill <nombre> <tarea>   tarea siguiendo una skill
   /doctor                   comprobar instalación      /descartar [id]         dar una tarea por abandonada
   /ayuda                    esta ayuda                 /salir                  salir"""
 
@@ -88,14 +90,17 @@ class Coordinator:
         return "Conversación reciente (por si la petición se refiere a ella):\n" + "\n".join(lines)
 
     # --- tareas ----------------------------------------------------------
-    async def new_task(self, text: str) -> Task:
+    async def new_task(self, text: str, skill: str | None = None) -> Task:
         title = text.splitlines()[0][:70]
+        caps: dict[str, Any] = {"capacidades": self._caps()}
+        if skill:
+            caps["skill"] = skill  # el Context builder mete su cuerpo en cada paso, también al retomar
         task = self.rt.store.create_task(
             title=title, goal=text, agent="skynet" if self.repo_name else "chat", repo=self.repo_name,
-            status=PENDIENTE, capabilities={"capacidades": self._caps()},
+            status=PENDIENTE, capabilities=caps,
         )
         self.rt.audit.log("task", task_id=task.id, decision="creada",
-                          detail={"mensaje": title, "repo": self.repo_name})
+                          detail={"mensaje": title, "repo": self.repo_name, **({"skill": skill} if skill else {})})
         return await self._run(task, kind="chat", extra=self._recent())
 
     async def resume(self, extra: str | None, task_id: int | None = None) -> None:
@@ -255,9 +260,50 @@ class Coordinator:
                 self.ui.info(f"Tarea {task.id} descartada: «continúa» ya no la retomará.")
         elif cmd == "/largo":
             await self._long(args)
+        elif cmd == "/buscar":
+            self._search(text.split(None, 1)[1] if len(text.split(None, 1)) > 1 else "")
+        elif cmd == "/skills":
+            found, errors = skills.load_skills(self.rt.skills_dir)
+            for sk in found.values():
+                self.ui.info(f"- {sk.name}: {sk.description}")
+            if not found:
+                self.ui.info(f"No hay skills. Crea {self.rt.skills_dir / '<nombre>' / 'SKILL.md'} (ver README).")
+            for e in errors:
+                self.ui.info(f"Skill ignorada · {e}")
+        elif cmd == "/skill":
+            await self._skill(text)
         else:
             self.ui.info(f"Comando desconocido: {cmd}. Escribe /ayuda.")
         return True
+
+    def _search(self, query: str) -> None:
+        query = query.strip()
+        if not query:
+            self.ui.info("Uso: /buscar <texto>   (busca en pasos y eventos de todas las tareas)")
+            return
+        hits = self.rt.store.search(query, limit=10)
+        if not hits:
+            self.ui.info(f"Nada en el historial para «{query}».")
+            return
+        lines = [f"tarea {h['task_id'] or '-'} · {h['origen']} {h['id']} · {(h['ts'] or '')[:16].replace('T', ' ')}: "
+                 f"{h['fragmento'][:220]}" for h in hits]
+        self.ui.info(f"{len(hits)} resultados para «{query}»:\n" + "\n".join(lines))
+
+    async def _skill(self, text: str) -> None:
+        # Sin shlex: la tarea es texto libre (puede llevar comillas o apóstrofos).
+        parts = text.split(None, 2)
+        found, _ = skills.load_skills(self.rt.skills_dir)
+        if len(parts) < 2:
+            self.ui.info("Uso: /skill <nombre> <tarea>. Mira /skills.")
+            return
+        name = parts[1]
+        if name not in found:
+            self.ui.info(f"No existe la skill '{name}'. Mira /skills.")
+            return
+        if len(parts) < 3 or not parts[2].strip():
+            self.ui.info(f"{name}: {found[name].description}\nUso: /skill {name} <tarea>")
+            return
+        await self.new_task(parts[2].strip(), skill=name)
 
     def _task_arg(self, args: list[str]) -> Task | None:
         st = self.rt.store

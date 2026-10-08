@@ -32,12 +32,23 @@ En el chat:
 | `/log` o `/log 3` | Herramientas usadas, decisión de permisos, modelo, tokens y coste. |
 | `/repo demo`, `/repos` | Elegir repo autorizado. `/repo ninguno` = conversación sin herramientas. |
 | `/modelo local\|cloud\|auto`, `/privado` | Forzar modelo o exigir privacidad (solo local). |
+| `/buscar parser toml` | Busca en el historial de todas las tareas (pasos y eventos); 10 resultados por relevancia. |
+| `/skills`, `/skill escribir-tests añade tests a textos.py` | Lista las skills o lanza una tarea siguiendo una ([Skills](#skills)). |
 
 Fuera del chat: `skynet log [--tarea N]`, `skynet tareas`, `skynet estado N`,
 `skynet largo --repo demo --horas 1 "objetivo"`.
 
 Cuando una acción es de riesgo (comando fuera de la lista blanca, acción privilegiada o
 destructiva), Skynet pregunta: `s` (sí), `n` (no) o `t` (sí a esa herramienta durante la tarea).
+
+### Skills
+
+Una skill es una carpeta `skills/<nombre>/SKILL.md` en el formato de
+[agentskills.io](https://agentskills.io): frontmatter con `name` (igual que la carpeta;
+minúsculas, números y guiones) y `description`, y debajo las instrucciones en Markdown.
+Skynet solo pone en el contexto la lista de nombres y descripciones; el cuerpo entra cuando
+pides `/skill <nombre> <tarea>` (y sigue entrando si dices «continúa»). Ejemplo:
+[skills/escribir-tests](skills/escribir-tests/SKILL.md). Skynet no crea ni edita skills.
 
 ## Interfaz web
 
@@ -113,6 +124,7 @@ skynet/          Core
   gate.py          permission gate
   audit.py         eventos de auditoría
   context.py       context builder (git + archivos de estado, sin vector DB)
+  skills.py        skills de solo lectura (skills/<nombre>/SKILL.md)
   router.py        model router (LiteLLM) con presupuesto
   agent.py         bucle modelo <-> herramientas
   scheduler.py     tareas largas verificadas (sin LLM en el control)
@@ -123,6 +135,7 @@ skynet/          Core
   web/             interfaz web: server.py (HTTP + SSE) y static/ (Three.js, sin build)
 skynet_tools/    servidores MCP propios (workspace, coding_agent)
 config/          configuración TOML
+skills/          skills (formato agentskills.io)
 tests/           pytest (LLM guionizado + MCP real); tests/test_lmstudio.py usa el modelo real
 data/            base de datos, logs y sandbox (ignorado por git)
 ```
