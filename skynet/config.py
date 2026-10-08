@@ -44,6 +44,7 @@ class ModelProfile:
     max_tokens: int = 8192
     timeout_seg: float = 600
     reasoning_effort: str | None = None  # low | medium | high (si el modelo lo admite)
+    razonamiento_por_tokens: bool = False  # Strata: el nivel se manda como reasoning_budget_tokens
 
     def resolved_api_key(self) -> str | None:
         if self.api_key_env:

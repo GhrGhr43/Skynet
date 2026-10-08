@@ -27,6 +27,7 @@ RESUME_RE = re.compile(r"^\s*(contin[uú]a|continuar|sigue)\b[\s,:.\-]*(.*)$", r
 HELP = """Escribe lo que quieres que haga. Comandos:
   continúa [indicaciones]   retoma la última tarea sin terminar
   /repos                    repos autorizados          /repo <nombre|ninguno>  elegir repo
+  /razonamiento auto|rápido|medio|alto                  cuánto piensa el modelo
   /modelo local|cloud|auto  forzar modelo              /privado                privacidad alta on/off
   /largo <horas> <objetivo> tarea larga en segundo plano con verificador y commits
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
@@ -54,6 +55,7 @@ class Coordinator:
         self.repo_name: str | None = repos[0] if len(repos) == 1 else None
         self.force_model: str | None = None
         self.private = False
+        self.effort: str | None = None  # razonamiento elegido en el chat (None = automático)
         self.history: list[tuple[str, str]] = []  # (petición, respuesta) recientes de esta sesión
 
     # --- entrada ---------------------------------------------------------
@@ -77,7 +79,7 @@ class Coordinator:
         return True
 
     def _caps(self, **extra: Any) -> dict[str, Any]:
-        caps = Capabilities(coding="alto" if self.repo_name else "bajo", force=self.force_model)
+        caps = Capabilities(coding="alto" if self.repo_name else "bajo", force=self.force_model, effort=self.effort)
         if self.private:
             caps.privacy = "alta"
         for k, v in extra.items():
@@ -238,6 +240,15 @@ class Coordinator:
                 self.ui.info(f"Modelos: {', '.join(self.rt.settings.models)} o auto")
                 return True
             self.ui.info(f"Modelo: {self.force_model or 'automático (router)'}")
+        elif cmd == "/razonamiento":
+            levels = {"auto": None, "rapido": "low", "rápido": "low", "bajo": "low", "medio": "medium",
+                      "equilibrado": "medium", "alto": "high", "mas": "high", "más": "high"}
+            choice = (args[0] if args else "auto").lower()
+            if choice not in levels:
+                self.ui.info("Uso: /razonamiento auto|rápido|medio|alto")
+                return True
+            self.effort = levels[choice]
+            self.ui.info(f"Razonamiento: {choice if self.effort else 'automático'}")
         elif cmd == "/privado":
             self.private = not self.private
             self.ui.info(f"Privacidad alta {'activada: solo modelo local' if self.private else 'desactivada'}.")

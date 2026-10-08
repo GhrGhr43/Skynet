@@ -82,6 +82,9 @@ export class App {
       if (this.engine && now - (this.lastKeyPulse || 0) > 140) { this.lastKeyPulse = now; this.engine.pulse(0.12); }
     });
     $('#stopBtn').addEventListener('click', () => this.stop());
+    $('#effort').addEventListener('change', async (e) => {
+      try { this.applySnap(await api.ajustes({ razonamiento: e.target.value })); } catch (err) { this.toast(err.message, 'bad'); }
+    });
     $('#chipPriv').addEventListener('click', () => this.setPrivate(!(this.snap && this.snap.privado)));
     $('#chipProp').addEventListener('click', () => this.send('/propuestas'));
     for (const b of document.querySelectorAll('[data-panel]')) {
@@ -179,6 +182,7 @@ export class App {
     this.snap = s;
     this.setBusy(!!s.ocupado);
     $('#chipRepoV').textContent = s.repo || 'ninguno';
+    $('#effort').value = s.razonamiento || 'auto';
     const m = s.modelo === 'auto' ? 'Automático' : s.modelo;
     $('#chipModelV').textContent = s.privado ? 'Local (privado)' : m;
     const priv = $('#chipPriv');

@@ -22,6 +22,7 @@ reasoning_effort = "medium"   # como agente-godot; "low" = más rápido
 litellm = "openai/qwen3.8-flash-next-coder-iq1_m"
 api_base = "http://127.0.0.1:8080/v1"
 api_key = "strata"
+razonamiento_por_tokens = true
 privado = true
 coste_entrada_usd_mtok = 0
 coste_salida_usd_mtok = 0

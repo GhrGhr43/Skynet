@@ -25,6 +25,7 @@ class Capabilities:
     reasoning: str = "medio"  # bajo | medio | alto
     cost: str = "medio"       # bajo | medio | alto  (bajo = hay que gastar poco)
     force: str | None = None  # "local" / "cloud": preferencia explícita del usuario
+    effort: str | None = None  # low | medium | high: cuánto razona el modelo (None = lo del perfil)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None) -> "Capabilities":
@@ -62,6 +63,8 @@ class LLMResult:
 class RouterError(Exception):
     pass
 
+
+REASONING_TOKENS = {"low": 1024, "medium": 4096, "high": 16384}
 
 THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
@@ -145,6 +148,7 @@ class ModelRouter:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
         audit: Audit,
+        effort: str | None = None,
     ) -> LLMResult:
         p = decision.profile
         kwargs: dict[str, Any] = {
@@ -159,8 +163,12 @@ class ModelRouter:
             kwargs["tool_choice"] = "auto"
         if p.api_base:
             kwargs["api_base"] = p.api_base
-        if p.reasoning_effort:
-            kwargs["reasoning_effort"] = p.reasoning_effort
+        level = effort or p.reasoning_effort
+        if level:
+            if p.razonamiento_por_tokens:
+                kwargs["extra_body"] = {"reasoning_budget_tokens": REASONING_TOKENS.get(level, 4096)}
+            else:
+                kwargs["reasoning_effort"] = level
         key = p.resolved_api_key()
         if key:
             kwargs["api_key"] = key

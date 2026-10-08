@@ -505,3 +505,13 @@ body.has-panel.has-convo .dock { transform: translateX(calc(-50% + (var(--panel-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Selector de razonamiento junto al cuadro de texto (estilo Claude/ChatGPT) */
+.prompt-effort { flex: none; position: relative; display: flex; align-items: center; }
+.prompt-effort select { appearance: none; background: rgba(255,255,255,0.06); color: var(--fg2); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 999px; padding: 6px 26px 6px 12px; font: inherit; font-size: 12.5px; cursor: pointer; transition: background .2s, color .2s; }
+.prompt-effort select:hover, .prompt-effort select:focus-visible { background: rgba(255,255,255,0.1); color: var(--fg); outline: none; }
+.prompt-effort::after { content: ""; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; margin-top: -4px;
+  border-right: 1.5px solid var(--fg2); border-bottom: 1.5px solid var(--fg2); transform: rotate(45deg); pointer-events: none; }
+.prompt-effort option { background: #0d0f1a; color: var(--fg); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -82,3 +82,14 @@ def test_free_gemini_needs_no_budget(router, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     assert r.choose(Capabilities(reasoning="alto")).profile.nombre == "gemini"
     assert r.choose(Capabilities(reasoning="alto", privacy="alta")).profile.nombre == "local"
+
+
+async def test_reasoning_level_is_sent(router):
+    r, s, store = router
+    llm = ScriptedLLM([("a", None), ("b", None)])
+    r._completion = llm
+    await r.complete(r.choose(Capabilities()), [{"role": "user", "content": "x"}], None, Audit(store), effort="high")
+    assert llm.calls[0]["reasoning_effort"] == "high"
+    strata = r.choose(Capabilities(force="strata"))
+    await r.complete(strata, [{"role": "user", "content": "x"}], None, Audit(store), effort="low")
+    assert llm.calls[1]["extra_body"] == {"reasoning_budget_tokens": 1024} and "reasoning_effort" not in llm.calls[1]

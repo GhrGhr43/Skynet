@@ -115,7 +115,7 @@ class Agent:
             out.turns = turn
             self.on_event("thinking", {"turn": turn})
             try:
-                res = await self.router.complete(decision, messages, tools, self.audit)
+                res = await self.router.complete(decision, messages, tools, self.audit, effort=caps.effort)
             except RouterError as e:
                 out.status, out.error = "error", str(e)
                 out.final_text = str(e)

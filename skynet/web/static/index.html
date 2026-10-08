@@ -77,6 +77,15 @@
   <form class="prompt" id="prompt" autocomplete="off">
     <span class="prompt-glow" aria-hidden="true"></span>
     <textarea id="input" rows="1" placeholder="Pídele algo a Skynet…" aria-label="Mensaje para Skynet"></textarea>
+    <label class="prompt-effort" title="Cuánto piensa el modelo antes de responder">
+      <span class="sr-only">Razonamiento</span>
+      <select id="effort" aria-label="Razonamiento">
+        <option value="auto">Auto</option>
+        <option value="low">Rápido</option>
+        <option value="medium">Equilibrado</option>
+        <option value="high">Pensar más</option>
+      </select>
+    </label>
     <button type="button" class="prompt-btn prompt-stop" id="stopBtn" data-icon="stop" aria-label="Detener" title="Detener (la tarea queda pausada)"></button>
     <button type="submit" class="prompt-btn prompt-send" id="sendBtn" data-icon="arrow" aria-label="Enviar"></button>
   </form>

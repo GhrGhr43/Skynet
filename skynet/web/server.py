@@ -283,6 +283,7 @@ def snapshot(s: Session) -> dict[str, Any]:
         "repo": c.repo_name,
         "modelo": c.force_model or "auto",
         "privado": c.private,
+        "razonamiento": c.effort or "auto",
         "ocupado": s.busy,
         "etiqueta": s.label,
         "preguntas": s.ui.open_questions(),
@@ -430,6 +431,11 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
                 session.ui.info(f"Repo: {r}")
             else:
                 return bad(f"'{r}' no está autorizado en config/repos.toml")
+        if "razonamiento" in b:
+            r = b["razonamiento"]
+            if r not in ("auto", "low", "medium", "high"):
+                return bad(f"Nivel de razonamiento desconocido: {r}")
+            c.effort = None if r == "auto" else r
         if "modelo" in b:
             m = b["modelo"]
             if m in (None, "", "auto"):
