@@ -1,8 +1,8 @@
 // Controlador de la interfaz: conversación, estados, diálogos, paleta y avisos.
 // Los paneles (tareas, registro, ajustes...) viven en panels.js.
-import { api, connect } from './api.js?v=version-20261009';
+import { api, connect } from './api.js?v=version-20261009b';
 import { md, esc } from './md.js';
-import { icon, paintIcons } from './icons.js?v=version-20261009';
+import { icon, paintIcons } from './icons.js?v=version-20261009b';
 import { STATES } from './scene/engine.js';
 import { Panels } from './panels.js';
 
