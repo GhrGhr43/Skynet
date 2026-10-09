@@ -178,12 +178,13 @@ class ModelRouter:
         tools: list[dict[str, Any]] | None,
         audit: Audit,
         effort: str | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResult:
         p = decision.profile
         kwargs: dict[str, Any] = {
             "model": p.litellm,
             "messages": messages,
-            "max_tokens": p.max_tokens,
+            "max_tokens": max_tokens or p.max_tokens,
             "timeout": p.timeout_seg,
             "num_retries": 1,
         }
@@ -192,12 +193,26 @@ class ModelRouter:
             kwargs["tool_choice"] = "auto"
         if p.api_base:
             kwargs["api_base"] = p.api_base
+        extra: dict[str, Any] = {}
+        if p.temperatura is not None:
+            kwargs["temperature"] = p.temperatura
+        if p.top_p is not None:
+            kwargs["top_p"] = p.top_p
+        if p.presence_penalty is not None:
+            kwargs["presence_penalty"] = p.presence_penalty
+        # top_k y min_p no son de la API de OpenAI: llama-server los lee del cuerpo de la petición.
+        if p.top_k is not None:
+            extra["top_k"] = p.top_k
+        if p.min_p is not None:
+            extra["min_p"] = p.min_p
         level = effort or p.reasoning_effort
         if level:
             if p.razonamiento_por_tokens:
-                kwargs["extra_body"] = {"reasoning_budget_tokens": REASONING_TOKENS.get(level, 4096)}
+                extra["reasoning_budget_tokens"] = REASONING_TOKENS.get(level, 4096)
             else:
                 kwargs["reasoning_effort"] = level
+        if extra:
+            kwargs["extra_body"] = extra
         key = p.resolved_api_key()
         if key:
             kwargs["api_key"] = key

@@ -64,11 +64,13 @@ class ContextBuilder:
         return out
 
     def build_chat(self, task: Task, extra: str | None = None) -> str:
-        """Contexto de una conversación sin repo: el mensaje tal cual, más las skills si las hay."""
-        text = task.goal + (f"\n\n{extra}" if extra else "")
-        for sec in self.memory_sections() + self.skill_sections(task):
-            text += f"\n\n## {sec.title}\n{sec.body}"
-        return text
+        """Mensaje de una conversación sin Coder: lo que escribió Daniel, tal cual."""
+        return task.goal + (f"\n\n{extra}" if extra else "")
+
+    def chat_system(self, task: Task) -> str:
+        """Memoria y skills de una conversación: van al system prompt (fondo estable, como OpenClaw y Hermes),
+        no pegadas al mensaje, para que el modelo no las tome como parte de la petición."""
+        return "".join(f"\n\n## {sec.title}\n{sec.body}" for sec in self.memory_sections() + self.skill_sections(task))
 
     def sections(self, task: Task, repo: RepoConfig | None, extra: str | None = None) -> list[Section]:
         out = [Section("Objetivo de la tarea", task.goal.strip(), 0)]

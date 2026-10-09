@@ -6,20 +6,26 @@ decide si su trabajo es bueno: eso lo hace el verificador fuera de este bucle.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .audit import Audit
 from .config import RepoConfig
 from .gate import PermissionGate
+from .llamadas import calls_in_text, parse_args
 from .router import Capabilities, ModelRouter, RouteDecision, RouterError
 from .toolhub import ToolHub
+from .ventana import Ventana
 
 DONE_MARK = "OBJETIVO_CUMPLIDO"
 
-SYSTEM_CODER = """Eres Skynet, un agente de programación que trabaja en el repo "{repo}" en Windows.
-Todas las rutas son relativas a la raíz del repo.
-Reglas:
+SYSTEM_CODER = """Eres Skynet, el agente personal de Daniel, en Windows. Tienes abierto el repo "{repo}"
+(las rutas son relativas a su raíz). Ajusta la respuesta al peso de lo que te piden: a un saludo o una
+pregunta corta, una respuesta corta y sin herramientas. El contexto del repo que acompaña al mensaje
+(PROGRESO, git, archivos) es de fondo: úsalo si el mensaje lo necesita y no lo comentes si no te lo piden.
+Sin relleno ni repetir la petición.
+Cuando haya que trabajar en el repo:
 - Usa las herramientas para leer, buscar y editar. No inventes el contenido de archivos que no has leído.
 - Haz cambios pequeños y precisos (edit_file mejor que reescribir archivos enteros).
 - {verificador}
@@ -27,10 +33,11 @@ Reglas:
 - Cuando termines, responde SIN llamar a herramientas con un resumen breve: qué cambiaste y cómo lo comprobaste.
 Responde siempre en español."""
 
-SYSTEM_CHAT = """Eres Skynet, el asistente personal de Daniel. Responde en español, breve y claro.
-Si no tienes herramientas en esta conversación, no tienes acceso a archivos: si hace falta trabajar sobre
-un repo, dile que lo elija con /repo <nombre>; si hace falta tocar su PC, que suba el modo de permisos
-del modelo en Ajustes (o con /permisos)."""
+SYSTEM_CHAT = """Eres Skynet, el agente personal de Daniel. Responde en español. Ajusta la respuesta al peso
+de lo que te piden: a un saludo, un saludo; sin relleno ni repetir la petición.
+Usa las herramientas que tengas cuando la petición lo necesite; si no tienes las adecuadas, dilo en una frase:
+para programar sobre un repo, que active Coder; para buscar en la web, Internet; para tocar su PC, que suba
+el modo de permisos del modelo."""
 
 EventFn = Callable[[str, dict[str, Any]], None]
 
@@ -97,26 +104,38 @@ class Agent:
         user_content: str,
         caps: Capabilities,
         max_turns: int = 30,
+        history: list[tuple[str, str]] | None = None,
     ) -> AgentOutcome:
         decision: RouteDecision = self.router.choose(caps)
         self.audit.log("route", model=decision.profile.litellm,
                        detail={"motivo": decision.reason, "capacidades": caps.to_dict()})
         self.on_event("route", {"model": decision.profile.litellm, "reason": decision.reason})
 
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
+        for q, a in history or []:  # la conversación de verdad, como turnos (no un resumen dentro del mensaje)
+            messages += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
+        messages.append({"role": "user", "content": user_content})
         tools = self.hub.openai_tools() if self.hub else None
-        out = AgentOutcome(status="error", final_text="", model=decision.profile.litellm)
+        known = {t["function"]["name"] for t in tools or []}
+        p = decision.profile
+        ventana = Ventana(p.contexto_tokens, p.max_tokens)
+        out = AgentOutcome(status="error", final_text="", model=p.litellm)
         seen: dict[str, int] = {}
         touched: set[str] = set()
 
         for turn in range(1, max_turns + 1):
             out.turns = turn
             self.on_event("thinking", {"turn": turn})
+            recortes, resumenes = ventana.recortes, ventana.resumenes
+            messages = ventana.ajustar(messages, tools)
+            if (ventana.recortes, ventana.resumenes) != (recortes, resumenes):
+                self.audit.log("contexto", model=p.litellm,
+                               detail={"recortes": ventana.recortes, "resumenes": ventana.resumenes,
+                                       "turno": turn})
+            t0 = time.monotonic()
             try:
-                res = await self.router.complete(decision, messages, tools, self.audit, effort=caps.effort)
+                res = await self.router.complete(decision, messages, tools, self.audit, effort=caps.effort,
+                                                 max_tokens=ventana.max_tokens(messages, tools))
             except RouterError as e:
                 out.status, out.error = "error", str(e)
                 out.final_text = str(e)
@@ -124,8 +143,15 @@ class Agent:
             out.tokens_in += res.tokens_in
             out.tokens_out += res.tokens_out
             self.on_event("usage", {"tokens_in": res.tokens_in, "tokens_out": res.tokens_out,
-                                    "model": decision.profile.litellm})
+                                    "model": decision.profile.litellm,
+                                    "segundos": round(time.monotonic() - t0, 3)})
             out.cost_eur += res.cost_eur
+            if not res.tool_calls and known:
+                calls, rest = calls_in_text(res.content, known)
+                if calls:  # el modelo escribió la llamada como texto: se ejecuta igual
+                    res.message = {"role": "assistant", "content": rest, "tool_calls": calls}
+                    self.audit.log("tool", decision="reparado",
+                                   detail={"motivo": "llamada escrita como texto", "n": len(calls)})
             messages.append(res.message)
 
             if not res.tool_calls:
@@ -151,9 +177,9 @@ class Agent:
         name = tc["function"]["name"]
         raw = tc["function"].get("arguments") or "{}"
         try:
-            args = json.loads(raw) if isinstance(raw, str) else dict(raw)
-            if not isinstance(args, dict):
-                raise ValueError("los argumentos no son un objeto")
+            args, repaired = parse_args(raw)
+            if repaired:
+                self.audit.log("tool", tool=name, decision="reparado", detail={"motivo": "JSON de argumentos reparado"})
         except (ValueError, TypeError) as e:
             self.audit.log("tool", tool=name, decision="error", detail={"motivo": f"argumentos inválidos: {e}"})
             return f"ERROR: argumentos JSON inválidos ({e}). Repite la llamada con JSON válido."

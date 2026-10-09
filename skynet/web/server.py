@@ -182,10 +182,16 @@ class WebCoordinator(Coordinator):
         lines = [f"- Pedido: {q[:300]}\n  Respuesta: {a[:500]}" for q, a in pares]
         return "Conversación reciente (por si la petición se refiere a ella):\n" + "\n".join(lines)
 
-    async def _run(self, task: Task, kind: str, extra: str | None) -> Task:
+    def _pairs(self, n: int = 6) -> list[tuple[str, str]]:
+        if not (self.sesiones and self.sesion_id):
+            return super()._pairs(n)
+        return self.sesiones.recientes(self.sesion_id, n)
+
+    async def _run(self, task: Task, kind: str, extra: str | None,
+                   history: list[tuple[str, str]] | None = None) -> Task:
         if self.sesiones and self.sesion_id and not task.is_long:
             self.sesiones.enlazar(self.sesion_id, task.id)
-        return await super()._run(task, kind, extra)
+        return await super()._run(task, kind, extra, history=history)
 
     def _make_asker(self, task: Task):
         async def ask(key: str, level: Level, args: dict[str, Any], reason: str) -> str:
@@ -409,6 +415,7 @@ def snapshot(s: Session) -> dict[str, Any]:
         "privado": c.private,
         "internet": c.internet and not internet_blocked(s),
         "internet_bloqueado": internet_blocked(s),
+        "coder": c.coder and c.repo_name is not None,
         "razonamiento": c.effort or "auto",
         "ocupado": s.busy,
         "etiqueta": s.label,
@@ -751,10 +758,18 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             if b["internet"] and target_repo and target_repo.privacidad == "alta":
                 return bad("Este repo tiene privacidad alta: la búsqueda web está desactivada.")
             c.internet = b["internet"]
+        if "coder" in b:
+            if not isinstance(b["coder"], bool):
+                return bad("Coder debe ser true o false")
+            if session.busy:
+                return bad("Espera a que termine o pulsa Detener antes de cambiar Coder.", 409)
+            if b["coder"] and not (b.get("repo", c.repo_name) in rt.settings.repos):
+                return bad("Elige un repo antes de activar Coder.")
+            c.coder = b["coder"]
         if "repo" in b:
             r = b["repo"]
             if r in (None, "", "ninguno"):
-                c.repo_name = None
+                c.repo_name, c.coder = None, False
                 session.ui.info("Sin repo: conversación sin herramientas.")
             elif r in rt.settings.repos:
                 c.repo_name = r

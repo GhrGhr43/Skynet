@@ -153,6 +153,7 @@ async def test_skill_uses_and_success_rate(make_rt, home):
     rt = make_rt(llm)
     ui = FakeUI()
     c = Coordinator(rt, ui)
+    c.coder = True
     await c.handle("/skill doblar implementa doble")
     rows = [dict(r) for r in rt.store.db.execute("SELECT * FROM skill_uses")]
     assert len(rows) == 1 and rows[0]["skill"] == "doblar" and rows[0]["verifier_ok"] == 1 and len(rows[0]["version"]) == 8

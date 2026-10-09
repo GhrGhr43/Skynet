@@ -1,7 +1,25 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-09 (rediseño web con sesiones; antes, búsqueda en internet).
+Última actualización: 2026-10-09 (conversación primero y Coder como interruptor; antes, rediseño web).
 
+## Conversación primero y Coder aparte (2026-10-09, D17)
+- Daniel: el modo por defecto debe ser rápido y listo como OpenClaw; lo pesado, en interruptores como Internet.
+- Mensaje normal = turno de conversación con el historial real de la sesión, memoria/skills en el system prompt,
+  sin contexto de repo ni verificador; razonamiento Auto bajo. «hola»: de ~3.000 a ~125 tokens (750 en
+  «Ver y editar»).
+- Coder (`/coder on|off`, `coder` en /api/ajustes y snapshot) recupera el modo programador sobre el repo.
+  La UI del interruptor está en el PR #3 (caja de texto nueva).
+- Siguiente: MCP vivos por sesión, aprendizaje estilo Hermes (herramientas de memoria y skills + repaso).
+
+## Local más listo, fase 1 (2026-10-09)
+- Propuesta aprobada por Daniel: docs/PROPUESTA-LOCAL-LISTO.md. Fase 1 hecha en la nube (D16): ventana de
+  contexto que recorta y resume (`ventana.py`), llamadas rotas reparadas (`llamadas.py`), herramientas de
+  `sistema` según el modo y muestreo de Qwen en el perfil local.
+- Verificado en la nube con LLM guionizado: 147 tests pasan (falla solo el de rutas de Windows en Linux).
+  Falta medir en este PC con `bench\agentico.py -m local` antes y después.
+- Siguiente: fase 2 (skills que el modelo carga solo, mapa del repo, plan corto) y fase 3 (aprender de
+  fallos y correcciones). La UI y la API de aprobar propuestas las hace el rediseño (/api/aprendizaje):
+  mantener compatibles `propuestas.list_proposals/approve/reject`.
 ## Rediseño web y sesiones (2026-10-09, PR #2)
 - Barra lateral con sesiones al estilo Claude/Codex: nueva (Ctrl+Mayús+O), buscar, renombrar,
   borrar (archiva; tareas y registro se conservan). Ctrl+B la oculta. Tablas propias en

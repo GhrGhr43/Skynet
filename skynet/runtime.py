@@ -90,6 +90,7 @@ class Runtime:
         max_turns: int | None = None,
         instructions: str | None = None,
         protected: list[str] | None = None,
+        history: list[tuple[str, str]] | None = None,
     ) -> StepRun:
         """Ejecuta un paso de agente con contexto fresco (sesión nueva). No verifica ni hace commit."""
         repo = self.repo_for(task)
@@ -115,6 +116,8 @@ class Runtime:
                 if repo or mode != "repo" or internet else None)
         specs = [s for s in self.server_specs(repo) if s.nombre != "internet"]
         system = system_prompt_for(repo)
+        if repo is None:
+            system += self.context.chat_system(task)
         if internet:
             specs.append(self.settings.server_spec("internet", None))
             system += "\n\n" + INTERNET_PROMPT
@@ -122,13 +125,25 @@ class Runtime:
             specs.append(self.sistema_spec())
             system += "\n\n" + mode_prompt(mode, repo is not None, free)
         if specs:
-            async with ToolHub(specs, self.settings.logs_dir) as hub:
+            async with ToolHub(specs, self.settings.logs_dir, only=visible_tools(mode)) as hub:
                 agent = Agent(self.router, gate, hub, audit, **agent_kwargs)
-                outcome = await agent.run(system, context, caps, turns)
+                outcome = await agent.run(system, context, caps, turns, history=history)
         else:
             agent = Agent(self.router, None, None, audit, **agent_kwargs)
-            outcome = await agent.run(system, context, caps, turns)
+            outcome = await agent.run(system, context, caps, turns, history=history)
         return StepRun(step, outcome)
+
+
+# Herramientas de todo el PC que cada modo puede usar. Las demás ni se le enseñan al modelo: el gate
+# las denegaría igual, y cada esquema de más son tokens y una opción más para equivocarse (sobre todo en local).
+SISTEMA_POR_MODO = {
+    "lectura": {"read_file", "list_dir"},
+    "editar": {"read_file", "list_dir", "write_file", "edit_file", "delete_file"},
+}
+
+
+def visible_tools(mode: str) -> dict[str, set[str]]:
+    return {"sistema": SISTEMA_POR_MODO[mode]} if mode in SISTEMA_POR_MODO else {}
 
 
 def mode_prompt(mode: str, has_repo: bool, sin_preguntar: bool = False) -> str:

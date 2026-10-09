@@ -24,6 +24,8 @@ from .verifier import VerifierResult, run_verifier
 
 RESUME_RE = re.compile(r"^\s*(contin[uú]a|continuar|sigue)\b[\s,:.\-]*(.*)$", re.IGNORECASE | re.DOTALL)
 
+CHARS_TURNO = 4000  # tope por mensaje del historial que se le pasa al modelo (la ventana recorta el resto)
+
 HELP = """Escribe lo que quieres que haga. Comandos:
   continúa [indicaciones]   retoma la última tarea sin terminar
   /repos                    repos autorizados          /repo <nombre|ninguno>  elegir repo
@@ -32,6 +34,7 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   /permisos [modelo modo]   modos: repo | lectura | editar | total                /privado  privacidad alta on/off
   /nube <modelo> on|off     activar o desactivar un modelo en la nube en esta sesión
   /internet on|off         búsqueda web opcional (apagada al arrancar; sin navegador)
+  /coder on|off             modo programador sobre el repo elegido (verificador y commits; apagado al arrancar)
   /largo <horas> <objetivo> tarea larga en segundo plano con verificador y commits
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
   /parar <id>               parar una tarea larga      /log [id]               audit log
@@ -59,6 +62,9 @@ class Coordinator:
         self.force_model: str | None = "local"  # por defecto siempre el local; la nube se activa a mano
         self.private = False
         self.internet = False  # búsqueda opcional, independiente del acceso al PC
+        # Modo Coder: el repo elegido entra en el contexto, con sus herramientas, verificador y commits. Apagado,
+        # cada mensaje es un turno de conversación (rápido, como OpenClaw) aunque haya repo elegido.
+        self.coder = False
         self.effort: str | None = None  # razonamiento elegido en el chat (None = automático)
         self.history: list[tuple[str, str]] = []  # (petición, respuesta) recientes de esta sesión
 
@@ -82,14 +88,26 @@ class Coordinator:
         await self.new_task(text)
         return True
 
+    @property
+    def active_repo(self) -> str | None:
+        """Repo con el que trabaja el próximo mensaje: solo con Coder activado."""
+        return self.repo_name if self.coder else None
+
     def _caps(self, **extra: Any) -> dict[str, Any]:
-        caps = Capabilities(coding="alto" if self.repo_name else "bajo", force=self.force_model, effort=self.effort,
+        # Razonamiento automático: en conversación, poco (un saludo no necesita minutos de pensar);
+        # con Coder, lo del perfil del modelo.
+        effort = self.effort or (None if self.active_repo else "low")
+        caps = Capabilities(coding="alto" if self.active_repo else "bajo", force=self.force_model, effort=effort,
                             internet=self.internet and not self.private)
         if self.private:
             caps.privacy = "alta"
         for k, v in extra.items():
             setattr(caps, k, v)
         return caps.to_dict()
+
+    def _pairs(self, n: int = 6) -> list[tuple[str, str]]:
+        """Últimos intercambios de la conversación, para dárselos al modelo como turnos."""
+        return self.history[-n:]
 
     def _recent(self) -> str | None:
         if not self.history:
@@ -104,14 +122,17 @@ class Coordinator:
         if skill:
             caps["skill"] = skill  # el Context builder mete su cuerpo en cada paso, también al retomar
         task = self.rt.store.create_task(
-            title=title, goal=text, agent="skynet" if self.repo_name else "chat", repo=self.repo_name,
+            title=title, goal=text, agent="skynet" if self.active_repo else "chat", repo=self.active_repo,
             status=PENDIENTE, capabilities=caps,
         )
         self.rt.audit.log("task", task_id=task.id, decision="creada",
-                          detail={"mensaje": title, "repo": self.repo_name, **({"skill": skill} if skill else {})})
+                          detail={"mensaje": title, "repo": self.active_repo, **({"skill": skill} if skill else {})})
         if skill:
             self.rt.store.add_skill_use(skill, skill_version, task.id)
-        return await self._run(task, kind="chat", extra=self._recent())
+        if self.active_repo:
+            return await self._run(task, kind="chat", extra=self._recent())
+        pairs = [(q[:CHARS_TURNO], a[:CHARS_TURNO]) for q, a in self._pairs()]
+        return await self._run(task, kind="chat", extra=None, history=pairs)
 
     async def resume(self, extra: str | None, task_id: int | None = None) -> None:
         """Retoma la última tarea sin terminar, o la tarea `task_id` si se indica (lo usa la web)."""
@@ -133,7 +154,8 @@ class Coordinator:
         if task.runner_alive() and task.pid != os.getpid():
             self.ui.info(f"La tarea {task.id} parece estar en marcha en otra ventana (pid {task.pid}).")
             return
-        self.repo_name = task.repo
+        if task.repo:  # retomar una tarea de código vuelve a Coder sobre su repo
+            self.repo_name, self.coder = task.repo, True
         saved = dict(task.capabilities.get("capacidades", {}))
         saved["internet"] = self.internet and not self.private
         if self.private:
@@ -155,7 +177,8 @@ class Coordinator:
                 self.rt.store.update_task(task.id, status=EN_CURSO)
         return ask
 
-    async def _run(self, task: Task, kind: str, extra: str | None) -> Task:
+    async def _run(self, task: Task, kind: str, extra: str | None,
+                   history: list[tuple[str, str]] | None = None) -> Task:
         store = self.rt.store
         repo = self.rt.repo_for(task)
         task = store.update_task(task.id, status=EN_CURSO)
@@ -163,7 +186,8 @@ class Coordinator:
         status, summary = PAUSADA, "interrumpida"
         ver: VerifierResult | None = None
         try:
-            run = await self.rt.agent_step(task, kind, extra, asker=self._make_asker(task), on_event=self.ui.event)
+            run = await self.rt.agent_step(task, kind, extra, asker=self._make_asker(task), on_event=self.ui.event,
+                                           history=history)
             out = run.outcome
             if (repo and repo.verificador and out.status == "completado" and gitops.is_repo(repo.ruta)
                     and (out.files_touched or gitops.is_dirty(repo.ruta))):
@@ -233,7 +257,7 @@ class Coordinator:
             if not args:
                 self.ui.info(f"Repo actual: {self.repo_name or 'ninguno'}")
             elif args[0] in ("ninguno", "-", "none"):
-                self.repo_name = None
+                self.repo_name, self.coder = None, False
                 self.ui.info("Sin repo: conversación sin herramientas.")
             elif args[0] in self.rt.settings.repos:
                 self.repo_name = args[0]
@@ -288,6 +312,18 @@ class Coordinator:
             if choice != "estado":
                 self.internet = choice == "on"
             self.ui.info(f"Internet {'activado: puede buscar cuando lo necesite' if self.internet else 'desactivado'}.")
+        elif cmd == "/coder":
+            choice = (args[0] if args else "estado").lower()
+            if choice not in ("on", "off", "estado"):
+                self.ui.info("Uso: /coder on|off")
+                return True
+            if choice == "on" and not self.repo_name:
+                self.ui.info("Elige antes un repo con /repo <nombre> (mira /repos).")
+                return True
+            if choice != "estado":
+                self.coder = choice == "on"
+            self.ui.info(f"Coder activado sobre {self.repo_name}: verificador y commits." if self.coder
+                         else "Coder desactivado: conversación rápida.")
         elif cmd == "/privado":
             self.private = not self.private
             if self.private:

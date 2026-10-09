@@ -214,3 +214,32 @@ funciona igual.
   ni se gestionan dispositivos. Emparejados, mensajes, permisos respondidos y rechazos van al registro.
 - **Cara de cambiar:** poco. Si un día se quiere sin Tailscale (p. ej. Cloudflare Access), basta con otra
   comprobación de origen en `Acceso` (web/server.py); las llaves por dispositivo siguen valiendo.
+
+## D16. Bucle pensado para el modelo local (2026-10-09)
+- **Ventana de contexto** (`ventana.py`, sin LLM): pasada la mitad del contexto del modelo, las salidas de
+  herramientas antiguas (todas menos las 3 últimas) se quedan en una línea; si aún no cabe, los turnos del medio
+  se cambian por un resumen (herramientas usadas + primera línea del resultado). Objetivo, contexto inicial y
+  últimos 4 turnos no se tocan. `max_tokens` se ajusta para que prompt + salida nunca pasen del contexto.
+  El contexto de cada perfil sale de `contexto_tokens` en router.toml o del `contexto` de su motor (32K local).
+- **Llamadas rotas** (`llamadas.py`): JSON con comas finales, comillas simples, ```json o cortado se repara;
+  una llamada escrita como texto (`<tool_call>` de Qwen) se ejecuta igual. Si `json-repair` está instalado se usa.
+- **Herramientas por modo**: «Ver mi PC» solo ve leer/listar de `sistema`, «Ver y editar» además escribir;
+  ejecutar, abrir e instalar solo en «Control total». Antes las veía todas y el gate las denegaba.
+- **Muestreo por perfil** (`temperatura`, `top_p`, `top_k`, `min_p`, `presence_penalty`): el local usa los de Qwen
+  para pensar/programar (0.6 / 0.95 / 20 / 0) en vez de la temperatura 0.8 de llama-server.
+- **Cara de cambiar:** qué se conserva al resumir (decide qué recuerda en tareas largas). Umbrales en `ventana.py`.
+
+## D17. Conversación primero; Coder como interruptor (2026-10-09)
+- Pedido por Daniel tras comparar con OpenClaw: un «hola» con repo elegido recibía ~3.000 tokens (informe del
+  repo + 15 herramientas), razonaba en «medio» y arrancaba 2 servidores MCP; contestaba sobre el repo.
+- **Por defecto, cada mensaje es un turno de conversación**: el mensaje tal cual, el historial de la sesión como
+  turnos user/assistant de verdad (antes, 3 pares recortados dentro del mensaje), memoria y skills en el system
+  prompt, sin herramientas de repo, sin verificador ni commits. Razonamiento Auto = bajo. Internet y los modos
+  de permisos siguen añadiendo sus herramientas como antes.
+- **Coder** (interruptor, apagado al arrancar; `/coder on|off`, `POST /api/ajustes {coder}`, `snapshot.coder`):
+  el comportamiento anterior sobre el repo elegido (contexto del repo, workspace, verificador, commits,
+  propuestas). Necesita repo; quitar el repo lo apaga. Retomar una tarea de código lo activa.
+- Medido en la nube con LLM guionizado: «hola» ≈ 125 tokens en «Solo repo» y ≈ 750 en «Ver y editar» (5
+  herramientas de `sistema`), frente a ~3.000.
+- Pendiente: mantener vivos los servidores MCP durante la sesión (hoy ~1,2 s por mensaje con `sistema`).
+- **Cara de cambiar:** poco; la tarea en SQLite se sigue creando (registro y consumo) aunque sea conversación.
