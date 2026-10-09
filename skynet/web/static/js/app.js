@@ -72,6 +72,7 @@ export class App {
     this.initSide();
     this.bind();
     this.setState();
+    this.updateFocus();
     this.disconnect = connect({
       onHello: (s) => this.onHello(s),
       onMessage: (m) => this.onMessage(m),
@@ -491,13 +492,18 @@ export class App {
 
   // Centra la nebulosa en el hueco que dejan la barra lateral y el panel.
   updateFocus() {
-    if (!this.engine) return;
     const w = window.innerWidth;
-    if (w < 860) return this.engine.setFocusShift(0);
+    const set = (px) => {
+      document.documentElement.style.setProperty('--focus-x', `${px}px`);  // el brillo sin WebGL también
+      this.engine?.setFocusShift(px);
+    };
+    if (w < 860) return set(0);
     const css = getComputedStyle(document.documentElement);
     const sideW = document.body.classList.contains('side-collapsed') ? 0 : parseFloat(css.getPropertyValue('--side-w')) || 264;
-    const panelW = this.panels.current ? (parseFloat(css.getPropertyValue('--panel-w')) || 420) + 12 : 0;
-    this.engine.setFocusShift((panelW - sideW) / 2);
+    // Solo cuenta el panel cuando empuja la conversación (pantallas anchas, ver app.css).
+    const panelW = this.panels.current && w >= 1180 ? (parseFloat(css.getPropertyValue('--panel-w')) || 420) + 12 : 0;
+    // Desplazamiento positivo = nebulosa a la derecha: el centro de .main está en (sideW - panelW) / 2.
+    set((sideW - panelW) / 2);
   }
 
   append(el) {

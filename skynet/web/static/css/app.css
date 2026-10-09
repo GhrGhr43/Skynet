@@ -96,7 +96,8 @@ body.has-convo #gl { opacity: 0.26; }
 body.no-webgl .fallback-glow {
   display: block; position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(circle at 50% 42%, rgba(255,255,255,0.85) 0, rgba(200,215,255,0.3) 6vmin, rgba(120,150,255,0.07) 18vmin, transparent 34vmin);
-  animation: breathe 6s ease-in-out infinite; transition: opacity 1.2s var(--ease);
+  animation: breathe 6s ease-in-out infinite; transition: opacity 1.2s var(--ease), translate .45s var(--ease);
+  translate: var(--focus-x, 0px) 0;
 }
 body.no-webgl.has-convo .fallback-glow { opacity: 0.2; }
 @keyframes breathe { 50% { transform: scale(1.06); opacity: 0.85; } }
