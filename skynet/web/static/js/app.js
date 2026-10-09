@@ -1,8 +1,8 @@
 // Controlador de la interfaz: conversación, estados, diálogos, paleta y avisos.
 // Los paneles (tareas, registro, ajustes...) viven en panels.js.
-import { api, connect } from './api.js?v=sesiones-20261009';
+import { api, connect } from './api.js?v=caja-20261009';
 import { md, esc } from './md.js';
-import { icon, paintIcons } from './icons.js?v=sesiones-20261009';
+import { icon, paintIcons } from './icons.js?v=caja-20261009';
 import { STATES } from './scene/engine.js';
 import { Panels } from './panels.js';
 
@@ -99,23 +99,9 @@ export class App {
     $('#btnModel').addEventListener('click', (e) => this.menuModel(e.currentTarget));
     $('#btnEffort').addEventListener('click', (e) => this.menuEffort(e.currentTarget));
     $('#btnPerm').addEventListener('click', (e) => this.menuPerm(e.currentTarget));
-    $('#btnInternet').addEventListener('click', async () => {
-      if (!this.snap || this.internetPending) return;
-      const enabled = !this.snap.internet;
-      this.internetPending = true;
-      this.renderComposer(this.snap);
-      try {
-        if (await this.ajustes({ internet: enabled })) {
-          if (typeof this.snap?.internet !== 'boolean') {
-            this.toast('El servidor usa una versión anterior. Reinicia Skynet para activar la búsqueda.', 'bad');
-          } else if (this.snap.internet === enabled) {
-            this.toast(enabled ? 'Búsqueda en internet activada.' : 'Búsqueda en internet desactivada.');
-          }
-        }
-      } finally { this.internetPending = false; this.renderComposer(this.snap || {}); }
-    });
+    $('#plusBtn').addEventListener('click', (e) => this.menuPlus(e.currentTarget));
     document.addEventListener('pointerdown', (e) => {
-      if (!$('#menu').hidden && !e.target.closest('#menu, .mini, .ses-more')) this.closeMenu();
+      if (!$('#menu').hidden && !e.target.closest('#menu, .mini, .ses-more, .prompt-plus')) this.closeMenu();
       if (!$('#meterPop').hidden && !e.target.closest('#meterPop, #meter')) this.closeMeter();
     });
     // Barra lateral: sesiones
@@ -259,13 +245,54 @@ export class App {
     const libre = s.modo_actual === 'total' && s.sin_preguntar_actual;
     bp.innerHTML = `${icon('shield')}<span>${esc(mode ? mode.nombre : 'Solo repo')}${libre ? ' · sin preguntar' : ''}</span>${chev}`;
     bp.dataset.level = libre ? 'libre' : (s.modo_actual || 'repo');
-    const bi = $('#btnInternet');
-    bi.setAttribute('aria-pressed', String(!!s.internet));
-    bi.disabled = !!s.ocupado || !!s.internet_bloqueado || !!this.internetPending;
-    bi.querySelector('.internet-label').textContent = s.internet ? 'Internet activo' : 'Internet';
-    bi.title = s.internet_bloqueado ? 'Internet desactivado por privacidad alta' : s.internet
-      ? 'Internet activado: Skynet puede buscar cuando lo necesite. Pulsa para desactivar.'
-      : 'Activar búsqueda en internet: las consultas se envían al buscador.';
+    // Interruptores activos (lo que se enciende desde «+»): visibles y se apagan con un clic.
+    const on = [];
+    if (s.internet) on.push(['internet', 'globe', 'Internet']);
+    if (s.coder) on.push(['coder', 'terminal', 'Coder']);
+    const key = on.map((x) => x[0]).join('|') + (s.ocupado ? '!' : '');
+    if (key !== this.modesKey) {
+      this.modesKey = key;
+      const box = $('#modes');
+      box.innerHTML = on.map(([k, ico, label]) => `<button type="button" class="mode-chip" data-k="${k}" title="${label} activo. Pulsa para apagarlo" ${s.ocupado ? 'disabled' : ''}>${icon(ico)}<span>${label}</span></button>`).join('');
+      for (const b of box.querySelectorAll('.mode-chip')) b.addEventListener('click', () => this.toggleMode(b.dataset.k));
+    }
+  }
+
+  menuPlus(anchor) {
+    const s = this.snap || {};
+    const coderOk = typeof s.coder === 'boolean';
+    this.openMenu(anchor, [{ title: 'Activar', items: [
+      { value: 'internet', label: 'Internet', ico: 'globe', on: !!s.internet,
+        sub: s.internet_bloqueado ? 'Bloqueado por privacidad alta' : 'Busca en la web cuando lo necesita' },
+      { value: 'coder', label: 'Modo coder', ico: 'terminal', on: !!s.coder,
+        sub: !coderOk ? 'Próximamente' : s.repo ? 'Programa en el repo. Más lento' : 'Elige antes un repo (abajo)' },
+    ] }], (v) => this.toggleMode(v));
+  }
+
+  async toggleMode(k) {
+    const s = this.snap || {};
+    if (this.modePending) return;
+    if (s.ocupado) { this.toast('Espera a que termine para cambiar esto.'); return; }
+    if (k === 'internet') {
+      if (s.internet_bloqueado) { this.toast('Internet está bloqueado por privacidad alta.'); return; }
+      const enabled = !s.internet;
+      this.modePending = true;
+      try {
+        if (await this.ajustes({ internet: enabled }) && this.snap?.internet === enabled) {
+          this.toast(enabled ? 'Internet activado.' : 'Internet desactivado.');
+        }
+      } finally { this.modePending = false; }
+    } else if (k === 'coder') {
+      if (typeof s.coder !== 'boolean') { this.toast('El modo coder llegará pronto: ahora Skynet programa cuando eliges un repo.'); return; }
+      if (!s.coder && !s.repo) { this.toast('Elige un repo antes de activar Coder.'); return; }
+      const enabled = !s.coder;
+      this.modePending = true;
+      try {
+        if (await this.ajustes({ coder: enabled }) && this.snap?.coder === enabled) {
+          this.toast(enabled ? 'Modo coder activado.' : 'Modo coder desactivado.');
+        }
+      } finally { this.modePending = false; }
+    }
   }
 
   openMenu(anchor, sections, pick, opts = {}) {
@@ -749,13 +776,14 @@ export class App {
     const items = [];
     const fresh = this.convo.children.length === 0;  // solo al principio, antes de la primera conversación
     if (!this.busy) {
-      if (s.pendiente && !(s.pendiente.larga && s.pendiente.vivo)) {
-        items.push({ ico: 'resume', text: `Continuar «${s.pendiente.title}»`, cls: 'accent', run: () => this.resumeTask(s.pendiente.id) });
-      }
       if (!fresh) {
         // nada: las sugerencias solo salen al empezar
       } else if (s.repo) {
-        items.push({ ico: 'sparkle', text: 'Revisa el repo y dime qué falta', run: () => this.fill('Revisa el estado del repo y dime qué falta o qué está roto') });
+        // Revisar el repo necesita Coder (sin él, la conversación no lleva el contexto del repo): se enciende al pulsar.
+        items.push({ ico: 'sparkle', text: 'Revisa el repo y dime qué falta', run: async () => {
+          if (this.snap?.coder === false && !(await this.ajustes({ coder: true }))) return;
+          this.fill('Revisa el estado del repo y dime qué falta o qué está roto');
+        } });
         items.push({ ico: 'orbit', text: 'Tarea larga…', run: () => this.panels.open('largo') });
       } else {
         items.push({ ico: 'repo', text: 'Elegir un repo para programar', run: () => this.panels.open('ajustes') });
@@ -1044,12 +1072,15 @@ export class App {
     ses.consumo.llamadas += 1;
     ses.consumo.tokens_in += +d.tokens_in || 0;
     ses.consumo.tokens_out += +d.tokens_out || 0;
+    if (+d.segundos > 0 && +d.tokens_out > 0) ses.tps = +d.tokens_out / +d.segundos;
     this.renderMeter();
   }
 
   renderMeter() {
     const ses = this.snap?.sesion;
     const m = $('#meter');
+    const tps = $('#tps');
+    tps.textContent = ses?.tps ? `${Math.round(ses.tps)} tok/s` : '';
     if (!ses) { m.hidden = true; return; }
     m.hidden = false;
     const used = ses.contexto || 0;
