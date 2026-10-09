@@ -1,6 +1,16 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-09 (búsqueda en internet opcional, Codex).
+Última actualización: 2026-10-09 (bucle pensado para el modelo local, fase 1).
+
+## Local más listo, fase 1 (2026-10-09)
+- Propuesta aprobada por Daniel: docs/PROPUESTA-LOCAL-LISTO.md. Fase 1 hecha en la nube (D16): ventana de
+  contexto que recorta y resume (`ventana.py`), llamadas rotas reparadas (`llamadas.py`), herramientas de
+  `sistema` según el modo y muestreo de Qwen en el perfil local.
+- Verificado en la nube con LLM guionizado: 147 tests pasan (falla solo el de rutas de Windows en Linux).
+  Falta medir en este PC con `bench\agentico.py -m local` antes y después.
+- Siguiente: fase 2 (skills que el modelo carga solo, mapa del repo, plan corto) y fase 3 (aprender de
+  fallos y correcciones). La UI y la API de aprobar propuestas las hace el rediseño (/api/aprendizaje):
+  mantener compatibles `propuestas.list_proposals/approve/reject`.
 
 ## Búsqueda en internet (2026-10-09)
 - Pedida por Daniel. Globo junto al chat, con estado resaltado y solo icono en móvil;
