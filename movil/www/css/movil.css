@@ -6,18 +6,13 @@ body { -webkit-user-select: none; user-select: none; }
 textarea, input, .md, .card-text, .ask-tool, .bubble { -webkit-user-select: text; user-select: text; }
 #input { font-size: 16px; }
 
-.top { padding-top: var(--safe-t); height: calc(var(--top-h) + var(--safe-t)); }
+.top { padding-top: var(--safe-t); }
+.side { padding-top: var(--safe-t); padding-bottom: var(--safe-b); }
 .status-detail { display: none; }
-.status { max-width: calc(100vw - 255px); margin-right: 50px !important; overflow: hidden; }
 .status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.demo-chip { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg3);
-  border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; margin-left: 10px; white-space: nowrap; vertical-align: middle; }
-.brand { display: flex; align-items: center; }
-.config-btn { top: calc(12px + var(--safe-t)) !important; }
-.rail { top: calc(var(--top-h) - 4px + var(--safe-t)) !important; }
-.rail-btn { width: 42px !important; height: 40px !important; }
-.convo { top: calc(var(--top-h) + 52px + var(--safe-t)) !important; }
-.dock, body.has-convo .dock, body.has-panel .dock, body.has-panel.has-convo .dock { bottom: calc(10px + var(--safe-b)) !important; }
+.demo-chip { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg3); flex: none;
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; margin-right: 8px; white-space: nowrap; }
+.dock { padding-bottom: var(--safe-b); }
 
 /* Paneles: hoja a pantalla completa que sube desde abajo. */
 .panel { left: 0 !important; right: 0 !important; top: calc(var(--safe-t) + 8px) !important; bottom: 0 !important;

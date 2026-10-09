@@ -19,6 +19,7 @@ const HELP = `continúa            retoma la última tarea a medias
 /largo <h> <obj>    tarea larga verificada
 /log [tarea]        registro y consumo
 /modelo <nombre>    fija el modelo (auto, local, gemini, anthropic)
+/coder on|off       modo coder: repo, verificador y commits
 /razonamiento <n>   auto, rápido, equilibrado, pensar más
 /doctor             diagnóstico`;
 
@@ -26,6 +27,8 @@ const state = {
   repo: 'skynet',
   modelo: 'auto',
   privado: false,
+  internet: false,
+  coder: false,
   razonamiento: 'auto',
   ocupado: false,
   etiqueta: null,
@@ -34,7 +37,7 @@ const state = {
     { nombre: 'agente-godot', ruta: 'C:\\Users\\HACHO\\Documents\\agente-godot', verificador: 'godot --headless --check-only', agente: 'agente-godot', privacidad: 'normal', existe: true },
   ],
   modelos: [
-    { nombre: 'local', litellm: 'openai/qwen3.8-27b-ud-iq3_xxs', privado: true, gratis: true, disponible: true, motivo: '', activado: true, modo: 'repo', sin_preguntar: false, coste: [0, 0] },
+    { nombre: 'local', litellm: 'openai/qwen3.6-35b-a3b-ud-q4_k_m', privado: true, gratis: true, disponible: true, motivo: '', activado: true, modo: 'repo', sin_preguntar: false, coste: [0, 0] },
     { nombre: 'gemini', litellm: 'gemini/gemini-flash-latest', privado: false, gratis: true, disponible: false, motivo: 'desactivado (modelo en la nube)', activado: false, modo: 'repo', sin_preguntar: false, coste: [0, 0] },
     { nombre: 'anthropic', litellm: 'anthropic/claude-sonnet-5-5', privado: false, gratis: false, disponible: false, motivo: 'desactivado (modelo en la nube)', activado: false, modo: 'repo', sin_preguntar: false, coste: [3, 15] },
   ],
@@ -79,14 +82,58 @@ function efectivo() {
   return 'local';
 }
 
+// --- sesiones (historial de conversaciones) -------------------------------------
+const sesiones = [
+  { id: 3, titulo: 'Selector de razonamiento en el chat', creada: ago(200), actualizada: ago(170), mensajes: 2, hist: [
+    { tipo: 'usuario', texto: 'Añade un selector de razonamiento al chat' },
+    { tipo: 'respuesta', texto: 'Hecho: selector **Auto / Rápido / Equilibrado / Pensar más** junto al modelo, y comando `/razonamiento`. Tests: 42 pasan.' },
+  ] },
+  { id: 2, titulo: '¿Qué modelos locales caben en mi GPU?', creada: ago(1500), actualizada: ago(1495), mensajes: 1, hist: [
+    { tipo: 'usuario', texto: '¿Qué modelos locales caben en mi GPU?' },
+    { tipo: 'respuesta', texto: 'Con 16 GB de VRAM, **Qwen3.6-35B-A3B** en Q4 con los expertos en RAM va a ~35 tok/s y es el que mejor hace tareas solo.' },
+  ] },
+];
+let sid = 4;
+sesiones.unshift({ id: sid, titulo: '', creada: now(), actualizada: now(), mensajes: 0, hist: [] });
+const sesionActual = () => sesiones.find((x) => x.id === sid);
+const uso = { llamadas: 0, tokens_in: 0, tokens_out: 0, cost_eur: 0, contexto: 0, tps: null };
+const lista = (q = '') => sesiones.filter((x) => !q || `${x.titulo} ${x.hist.map((m) => m.texto).join(' ')}`.toLowerCase().includes(q.toLowerCase()))
+  .map(({ hist, ...x }) => x);
+function sesionInfo() {
+  const x = sesionActual();
+  return { id: x.id, titulo: x.titulo, consumo: { llamadas: uso.llamadas, tokens_in: uso.tokens_in, tokens_out: uso.tokens_out, cost_eur: 0 },
+    contexto: uso.contexto, contexto_max: 32768, tps: uso.tps };
+}
+function abrirSesion(id) {
+  if (state.ocupado) throw new ApiError(`Skynet está trabajando en «${state.etiqueta}». Espera o pulsa Detener antes de cambiar de sesión.`, 409);
+  if (!sesiones.some((x) => x.id === id)) throw new ApiError(`No existe la sesión ${id}`, 404);
+  if (id !== sid) Object.assign(uso, { llamadas: 0, tokens_in: 0, tokens_out: 0, contexto: 0, tps: null });
+  sid = id;
+  publish('sesion', { sesion: sesionInfo(), mensajes: sesionActual().hist });
+  publish('estado', snapshot());
+  return snapshot();
+}
+
+// --- aprendizaje: lo que Skynet propone recordar -----------------------------------
+const aprendido = [
+  { id: 'ordenar-imports', tipo: 'skill', titulo: 'ordenar-imports', descripcion: 'Ordena los imports de Python como en el resto del repo', origen: 'tarea 14',
+    texto: '1. Agrupa: estándar, terceros, locales.\n2. Orden alfabético dentro de cada grupo.' },
+  { id: 'memoria', tipo: 'memoria', titulo: 'Recordar', descripcion: '1 dato para la memoria', origen: '', texto: '- Daniel prefiere respuestas cortas.',
+    lineas: [{ destino: 'usuario', texto: 'Daniel prefiere respuestas cortas.' }] },
+];
+
 function snapshot() {
   const m = state.modelos.find((x) => x.nombre === efectivo()) || state.modelos[0];
   const pend = tasks.find((t) => t.status === 'pausada');
   return {
-    version: '0.4-movil',
+    version: '0.3-movil',
+    build: { commit: 'demo' },
     repo: state.repo,
     modelo: state.modelo,
     privado: state.privado,
+    internet: state.internet,
+    internet_bloqueado: false,
+    coder: state.coder && !!state.repo,
     razonamiento: state.razonamiento,
     ocupado: state.ocupado,
     etiqueta: state.etiqueta,
@@ -105,23 +152,24 @@ function snapshot() {
     largas_vivas: tasks.filter(vivo).map((t) => t.id),
     limites: { max_horas: 8 },
     ayuda: HELP,
-    propuestas: 1,
+    propuestas: aprendido.length,
     modos: MODOS,
     modo_actual: m.modo,
     sin_preguntar_actual: m.sin_preguntar,
     sin_preguntar_texto: SIN_PREGUNTAR,
     modelo_efectivo: m.nombre,
     siempre: SIEMPRE,
+    sesion: sesionInfo(),
   };
 }
 
 // --- bus de eventos (lo que en el PC llega por SSE) ----------------------------
 let seq = 0;
-const history = [];
+const history = { push: (m) => { const x = sesionActual(); x.hist.push(m); x.actualizada = now(); } };
 const listeners = new Set();
 function publish(tipo, data = {}) {
   const m = { seq: ++seq, tipo, ...data };
-  if (!['estado', 'tareas', 'ocupado'].includes(tipo)) history.push(m);
+  if (!['estado', 'tareas', 'ocupado', 'sesion'].includes(tipo)) history.push(m);
   for (const l of listeners) l.onMessage(m);
   return m;
 }
@@ -170,16 +218,17 @@ async function simulate(text, myRun) {
   const alive = () => myRun === run;
   const id = nextTask++;
   const repo = state.repo;
+  const coder = state.coder && repo;
   tasks.unshift({ id, title: text.slice(0, 70), goal: text, agent: repo ? 'skynet' : 'chat', repo, status: 'en_curso', created_at: now(), updated_at: now(), larga: false, iters_done: 0, max_hours: null, result_summary: null });
   const task = tasks[0];
   const ev = (kind, datos) => alive() && publish('evento', { kind, datos });
   const m = state.modelos.find((x) => x.nombre === efectivo());
-  ev('route', { model: m.litellm, reason: repo ? 'código en repo · privado y gratis' : 'conversación · privado y gratis' });
+  ev('route', { model: m.litellm, reason: coder ? 'modo coder · privado y gratis' : 'conversación · privado y gratis' });
   await sleep(500); ev('thinking', { turn: 1 }); await sleep(1300);
   if (!alive()) return;
   let tools = 0;
-  const wantsRun = repo && /test|prueba|ejecuta|instala/i.test(text);
-  if (repo) {
+  const wantsRun = coder && /test|prueba|ejecuta|instala/i.test(text);
+  if (coder) {
     ev('tool', { key: 'workspace.read_file', args: "path='README.md'" }); tools++; await sleep(700);
     ev('tool_result', { ok: true });
     ev('tool', { key: 'workspace.search', args: "pattern='TODO'" }); tools++; await sleep(800);
@@ -211,6 +260,9 @@ async function simulate(text, myRun) {
   task.updated_at = now();
   task.result_summary = answer.split('\n')[0];
   const tin = 1800 + Math.round(Math.random() * 3000), tout = 200 + Math.round(Math.random() * 500);
+  const seg = tout / (30 + Math.random() * 10);
+  ev('usage', { tokens_in: tin, tokens_out: tout, model: m.litellm, segundos: seg });
+  Object.assign(uso, { llamadas: uso.llamadas + 1, tokens_in: uso.tokens_in + tin, tokens_out: uso.tokens_out + tout, contexto: tin + tout, tps: tout / seg });
   events.push({ ts: now(), type: 'llm', model: m.litellm, task_id: id, tokens_in: tin, tokens_out: tout, cost_eur: 0, descripcion: 'Respuesta final' });
   publish('info', { texto: `${m.nombre} · ${tin}+${tout} tokens · 0 € · ${tools} herramientas · tarea ${id}: hecha${verified ? ` · verificador ${verified}` : ''}` });
   setBusy(false);
@@ -238,10 +290,15 @@ export const api = {
     if (state.ocupado) throw new ApiError(`Skynet está trabajando en «${state.etiqueta}». Espera o pulsa Detener.`, 409);
     if (texto.startsWith('/')) {
       publish('usuario', { texto });
+      const cod = texto.match(/^\/coder\s+(on|off)/i);
       if (/^\/doctor/i.test(texto)) publish('diagnostico', { checks: DOCTOR });
+      else if (cod) await api.ajustes({ coder: cod[1].toLowerCase() === 'on' }).catch((e) => publish('error', { texto: e.message }));
       else publish('info', { texto: 'Los comandos de texto llegarán cuando la app se conecte a tu PC.' });
       return { ok: true };
     }
+    const x = sesionActual();
+    if (!x.titulo) x.titulo = texto.split('\n')[0].slice(0, 60);
+    x.mensajes += 1;
     publish('usuario', { texto });
     setBusy(true, texto.split('\n')[0].slice(0, 70));
     simulate(texto, ++run);
@@ -275,6 +332,15 @@ export const api = {
       publish('info', { texto: state.repo ? `Repo: ${state.repo}` : 'Sin repo: conversación sin herramientas.' });
     }
     if ('razonamiento' in b) state.razonamiento = b.razonamiento;
+    if ('internet' in b) {
+      state.internet = !!b.internet;
+      publish('info', { texto: `Internet ${state.internet ? 'activado' : 'desactivado'} (demo).` });
+    }
+    if ('coder' in b) {
+      if (b.coder && !state.repo) throw new ApiError('Elige antes un repo para el modo coder.', 400);
+      state.coder = !!b.coder;
+      publish('info', { texto: state.coder ? `Modo coder: ${state.repo}, con verificador y commits.` : 'Modo conversación.' });
+    }
     if (b.nube) {
       const m = byName(b.nube.modelo);
       if (b.nube.activar && !m.activado && !b.confirmar) {
@@ -354,6 +420,47 @@ export const api = {
     return { eventos: events.filter((e) => !tarea || e.task_id === +tarea).slice(-150), total: totals(tarea), mes: totals() };
   },
   async doctor() { await sleep(600); return { checks: DOCTOR }; },
+  async modelosLocales() {
+    await sleep(200);
+    return { actual: 'Qwen3.6-35B-A3B-UD-Q4_K_M', modelos: [
+      { nombre: 'Qwen3.6-35B-A3B-UD-Q4_K_M', ruta: 'D:\\LM Studio\\models\\Qwen3.6-35B-A3B-UD-Q4_K_M.gguf', detalle: '20.6 GB, MoE, expertos en RAM' },
+      { nombre: 'Qwen3.8-27B-UD-IQ3_XXS', ruta: 'D:\\LM Studio\\models\\Qwen3.8-27B-UD-IQ3_XXS.gguf', detalle: '11.2 GB, MTP' },
+    ] };
+  },
+  async elegirLocal(nombre) {
+    publish('info', { texto: `Modelo local: ${nombre} (demo).` });
+    return snapshot();
+  },
+  async sesiones(q = '') { return { sesiones: lista(q), actual: sid }; },
+  async sesionNueva() {
+    const x = sesionActual();
+    if (x.hist.length) sesiones.unshift({ id: Math.max(...sesiones.map((y) => y.id)) + 1, titulo: '', creada: now(), actualizada: now(), mensajes: 0, hist: [] });
+    return abrirSesion(sesiones[0].hist.length ? sid : sesiones[0].id);
+  },
+  async sesionAbrir(id) { return abrirSesion(+id); },
+  async sesionRenombrar(id, titulo) {
+    const x = sesiones.find((y) => y.id === +id);
+    if (!x) throw new ApiError(`No existe la sesión ${id}`, 404);
+    x.titulo = String(titulo || '').trim().slice(0, 120);
+    if (+id === sid) publish('estado', snapshot());
+    return { sesiones: lista(), actual: sid };
+  },
+  async sesionArchivar(id) {
+    const i = sesiones.findIndex((y) => y.id === +id);
+    if (i < 0) throw new ApiError(`No existe la sesión ${id}`, 404);
+    sesiones.splice(i, 1);
+    if (!sesiones.length) sesiones.push({ id: +id + 1, titulo: '', creada: now(), actualizada: now(), mensajes: 0, hist: [] });
+    if (+id === sid) abrirSesion(sesiones[0].id);
+    return { sesiones: lista(), actual: sid };
+  },
+  async aprendizaje() { await sleep(150); return { items: aprendido }; },
+  async aprendizajeAccion(id, accion) {
+    const i = aprendido.findIndex((x) => x.id === id);
+    if (i >= 0) aprendido.splice(i, 1);
+    publish('info', { texto: `${accion === 'aprobar' ? 'Aprobado' : 'Descartado'}: ${id} (demo).` });
+    publish('estado', snapshot());
+    return { ok: true, items: aprendido };
+  },
 };
 
 export function connect({ onHello, onMessage, onStatus }) {
@@ -361,7 +468,7 @@ export function connect({ onHello, onMessage, onStatus }) {
   setTimeout(() => {
     onStatus(true);
     onHello(snapshot());
-    for (const m of history) onMessage({ ...m, replay: true });
+    for (const m of sesionActual().hist) onMessage({ ...m, replay: true });
     listeners.add(l);
   }, 250);
   return () => listeners.delete(l);
