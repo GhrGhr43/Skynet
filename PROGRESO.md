@@ -1,6 +1,27 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-08 (automejora fase 2: propuestas y memoria, Claude).
+Última actualización: 2026-10-09 (búsqueda en internet opcional, Codex).
+
+## Búsqueda en internet (2026-10-09)
+- Pedida por Daniel. Globo junto al chat, con estado resaltado y solo icono en móvil;
+  `/internet on|off` en terminal. Apagada al arrancar. No carga herramientas ni servidor web
+  cuando está apagada; activada añade solo búsqueda y lectura de páginas públicas (D15).
+- MCP `internet` sobre DDGS 9.16 y httpx, instalado en `.venv`. Resultados breves con enlaces,
+  sin navegador, claves API ni JavaScript. El modelo busca cuando necesita datos, no en cada turno.
+- Privacidad alta (también por repo) y tareas largas bloquean estas herramientas. El gate exige
+  activación explícita. Lectura excluye URLs locales, credenciales, archivos y redirecciones privadas.
+  Al continuar una tarea se respeta el interruptor actual.
+- Verificado en este PC: 119 tests pasan, 1 omitido (LM Studio optativo); doctor OK (cloud sin
+  clave figura desactivado). Modelo local real: buscó The Farmer Was Replaced y devolvió AppID
+  2060160 con enlace oficial. 47,63 s total con razonamiento; una búsqueda directa tardó 1,71 s.
+  UI comprobada en escritorio y 390 px: sin desbordamiento; botón enciende y apaga la búsqueda.
+- Seguimiento: cursor nativo de flecha, mano y texto en blanco/azul, sin JS ni animaciones.
+  Tras el aviso de Daniel en Edge, se versionaron los módulos/CSS y se fuerza su revalidación;
+  el botón muestra «Internet activo» y un aviso de confirmación. Probado activar/desactivar en
+  el navegador integrado y 58 tests de web/permisos. La pestaña real de Edge no está conectada
+  a las herramientas; falta que Daniel confirme ahí tras recargar la página.
+- Límites: buscadores externos pueden bloquear o limitar consultas; los datos enviados salen del
+  PC. Activado hay coste de contexto, arranque MCP y red. No se han añadido MCP de navegador.
 
 ## Estado: MVP implementado
 
@@ -22,10 +43,20 @@ tareas, tarea larga, registro, modelos/repos, diagnóstico y ayuda. Probada en l
 Chromium (sin GPU real) y 10 tests nuevos en `tests/test_web.py`. **Falta probarla en el PC de
 Daniel** (rendimiento real en la RX 9070 XT, calidad «ultra»).
 
-## Motores locales (2026-10-08)
-LM Studio (Qwen 27B) y Strata (Qwen3.8-Flash-Next Coder, C:Strata) se encienden y apagan desde
-Ajustes de la web (`skynet/engines.py`, `[motores.*]` en config/skynet.toml). Comparten GPU: encender
-uno apaga el otro. Probado en el PC: LM Studio carga en ~2 min, Strata en ~2 min.
+## Motor local (2026-10-08)
+Único motor local: Qwen3.8-27B UD-IQ3_XXS en llama-server (Vulkan de LM Studio, FA, KV q8_0,
+32K, MTP), elegido con el benchmark de `bench/` (ver D12). Se enciende y apaga en Ajustes
+(`skynet/engines.py`, `[motores.local]`); carga en ~30 s. Strata y el 27B Q4_K_M ya no son
+opciones (los modelos siguen en disco). Probado: doctor OK y `pytest -m lmstudio` pasa en 15 s
+(~52 tok/s, aceptación MTP 68–86 %). El código del tipo `strata` sigue en engines.py, sin usar.
+
+## OmniRoute (2026-10-08)
+Pasarela cloud opcional (D13): motor `omniroute` (tipo `proceso`, no usa GPU) en Ajustes y perfil
+`omniroute` (no privado). Instalado en `vendor/omniroute`; escucha solo en 127.0.0.1. Probado:
+arranca y se apaga desde Skynet (~7–50 s), doctor lo ve, el router le llega. **Falta:** que
+Daniel elija proveedores (claves API oficiales) y crear el combo "skynet" con ellos
+(`omniroute combo create skynet --model <proveedor/modelo>` o en el panel http://127.0.0.1:20128).
+Hasta entonces las llamadas fallan en local sin salir del PC.
 
 ## Automejora, fase 1 (2026-10-08)
 - `/buscar <texto>`: búsqueda FTS5 en pasos y eventos de todas las tareas (esquema v2, ver D10).
@@ -67,6 +98,12 @@ uno apaga el otro. Probado en el PC: LM Studio carga en ~2 min, Strata en ~2 min
   `data/logs/tarea-N.log`.
 
 Ritmo observado: 10 s a 2,5 min por llamada al modelo, según cuánto razone.
+
+## Modos de permisos y nube (2026-10-08, D14)
+- Cuatro modos por modelo (Solo repo, Ver mi PC, Ver y editar, Control total) y herramienta
+  `sistema` para todo el PC. Admin, sistema, borrar y secretos se preguntan siempre.
+- Al arrancar solo el modelo local; la nube se activa con confirmación y un modo fuerte en la
+  nube avisa. Probado en la nube (tests + Chromium headless); falta probar en el PC real.
 
 ## Lecciones ya incorporadas
 - El agente local editaba `PROGRESO.md` por su cuenta: ahora el gate lo protege en tareas largas.

@@ -1,8 +1,10 @@
+import dataclasses
+
 import pytest
 
 from skynet.audit import Audit
 from skynet.config import load_settings
-from skynet.router import Capabilities, ModelRouter
+from skynet.router import Capabilities, ModelRouter, RouteDecision
 from skynet.store import Store
 
 from conftest import ScriptedLLM
@@ -90,6 +92,14 @@ async def test_reasoning_level_is_sent(router):
     r._completion = llm
     await r.complete(r.choose(Capabilities()), [{"role": "user", "content": "x"}], None, Audit(store), effort="high")
     assert llm.calls[0]["reasoning_effort"] == "high"
-    strata = r.choose(Capabilities(force="strata"))
-    await r.complete(strata, [{"role": "user", "content": "x"}], None, Audit(store), effort="low")
+    # perfiles con razonamiento por tokens (p. ej. Strata) mandan un presupuesto en vez del nivel
+    tokens = dataclasses.replace(s.models["local"], razonamiento_por_tokens=True)
+    await r.complete(RouteDecision(tokens, "x"), [{"role": "user", "content": "x"}], None, Audit(store), effort="low")
     assert llm.calls[1]["extra_body"] == {"reasoning_budget_tokens": 1024} and "reasoning_effort" not in llm.calls[1]
+
+
+def test_omniroute_nunca_con_privacidad(router):
+    r, _, _ = router
+    assert r.choose(Capabilities(force="omniroute")).profile.nombre == "omniroute"
+    d = r.choose(Capabilities(force="omniroute", privacy="alta"))
+    assert d.profile.nombre == "local" and "privacidad" in d.reason

@@ -26,6 +26,7 @@ class Capabilities:
     cost: str = "medio"       # bajo | medio | alto  (bajo = hay que gastar poco)
     force: str | None = None  # "local" / "cloud": preferencia explícita del usuario
     effort: str | None = None  # low | medium | high: cuánto razona el modelo (None = lo del perfil)
+    internet: bool = False    # herramientas web opcionales; no cambia la elección del modelo
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None) -> "Capabilities":
@@ -78,10 +79,12 @@ def _litellm_completion() -> CompletionFn:
 
 
 class ModelRouter:
-    def __init__(self, settings: Settings, store: Store, completion_fn: CompletionFn | None = None):
+    def __init__(self, settings: Settings, store: Store, completion_fn: CompletionFn | None = None,
+                 access: Any = None):
         self.settings = settings
         self.store = store
         self._completion = completion_fn
+        self.access = access  # modos.Accesos: los modelos en la nube solo se usan si están activados
 
     @property
     def completion(self) -> CompletionFn:
@@ -98,6 +101,8 @@ class ModelRouter:
         ok, why = profile.available()
         if not ok:
             return False, why
+        if self.access is not None and not self.access.nube_ok(profile.nombre):
+            return False, "modelo en la nube sin activar (actívalo en Ajustes)"
         gratis = profile.coste_entrada_usd_mtok == 0 and profile.coste_salida_usd_mtok == 0
         if not profile.privado and not gratis:
             if self.settings.budget_eur <= 0:

@@ -17,6 +17,8 @@ import asyncio
 import io
 import itertools
 import json
+import os
+import re
 import webbrowser
 from collections import deque
 from dataclasses import asdict
@@ -31,12 +33,13 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import __version__, propuestas
+from .. import __version__, modos, modelos_locales, propuestas
 from ..agent import summarize_args
 from ..audit import describe_event
-from ..config import ConfigError
+from ..config import ConfigError, add_repo
 from ..coordinator import HELP, Coordinator
-from ..gate import Level
+from ..gate import SIEMPRE_TAG, Level
+from ..router import Capabilities
 from ..runtime import Runtime
 from ..store import EN_CURSO, ESPERANDO_PERMISO, FALLIDA, HECHA, PAUSADA, Task
 
@@ -131,7 +134,8 @@ class WebUI:
     async def ask_permission(self, task_id: int, key: str, level: Level, args: dict[str, Any], reason: str) -> str:
         return await self._request({
             "clase": "permiso", "tarea": task_id, "herramienta": key, "nivel": level.name,
-            "args": summarize_args(args), "motivo": reason, "todas": level is not Level.DESTRUCTIVE,
+            "args": summarize_args(args), "motivo": reason,
+            "todas": level is not Level.DESTRUCTIVE and SIEMPRE_TAG not in reason,
         })
 
     def resolve(self, qid: str, value: str) -> bool:
@@ -266,8 +270,13 @@ def models_info(rt: Runtime, engines: list[dict[str, Any]]) -> list[dict[str, An
             ok, why = on[name]["encendido"], "" if on[name]["encendido"] else "motor apagado"
         else:
             ok, why = (True, "") if name == "local" else rt.router._usable(m)
+            if why.startswith("modelo en la nube sin activar"):  # se explica con «activado»
+                ok, why = m.available()
+        nube_on = rt.access.nube_ok(name)
+        if ok and not nube_on:
+            ok, why = False, "desactivado (modelo en la nube)"
         out.append({"nombre": name, "litellm": m.litellm, "privado": m.privado, "gratis": free,
-                    "disponible": ok, "motivo": why,
+                    "disponible": ok, "motivo": why, "activado": nube_on, "modo": rt.access.modo(name),
                     "coste": [m.coste_entrada_usd_mtok, m.coste_salida_usd_mtok]})
     return out
 
@@ -283,6 +292,8 @@ def snapshot(s: Session) -> dict[str, Any]:
         "repo": c.repo_name,
         "modelo": c.force_model or "auto",
         "privado": c.private,
+        "internet": c.internet and not internet_blocked(s),
+        "internet_bloqueado": internet_blocked(s),
         "razonamiento": c.effort or "auto",
         "ocupado": s.busy,
         "etiqueta": s.label,
@@ -299,7 +310,25 @@ def snapshot(s: Session) -> dict[str, Any]:
         "limites": {"max_horas": rt.settings.long.max_horas},
         "ayuda": HELP,
         "propuestas": propuestas.count(rt.settings.home),
+        "modos": [{"clave": m.clave, "nombre": m.nombre, "descripcion": m.descripcion, "fuerte": m.fuerte}
+                  for m in modos.MODOS.values()],
+        "modo_actual": rt.access.modo(_current_model(s)),
+        "modelo_efectivo": _current_model(s),
+        "siempre": modos.SIEMPRE,
     }
+
+
+def internet_blocked(s: Session) -> bool:
+    repo = s.rt.settings.repos.get(s.coord.repo_name)
+    return s.coord.private or bool(repo and repo.privacidad == "alta")
+
+
+def _current_model(s: Session) -> str:
+    """Modelo que usaría el próximo mensaje (para mostrar su modo de permisos junto al chat)."""
+    try:
+        return s.rt.router.choose(Capabilities.from_dict(s.coord._caps())).profile.nombre
+    except Exception:
+        return "local"
 
 
 def _month_start() -> str:
@@ -342,6 +371,15 @@ async def _deny(scope: Scope, receive: Receive, send: Send, why: str) -> None:
 
 
 # --- aplicación ----------------------------------------------------------
+class FreshStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        # Edge debe revalidar los módulos al actualizar Skynet, sin mezclar versiones.
+        if path.endswith((".js", ".css")) and not path.startswith("vendor/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def create_app(rt: Runtime, port: int | None = None) -> Starlette:
     session = Session(rt)
     port_ref: dict[str, int] = {"port": port} if port else {}
@@ -358,6 +396,15 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
 
     def bad(msg: str, code: int = 400) -> JSONResponse:
         return JSONResponse({"ok": False, "error": msg}, status_code=code)
+
+    def confirm(kind: str, title: str, text: str, ok_label: str) -> JSONResponse:
+        """La web tiene que confirmar antes de repetir la petición con "confirmar": true (409)."""
+        return JSONResponse({"ok": False, "error": title, "confirmar": {"tipo": kind, "titulo": title, "texto": text,
+                                                                      "boton": ok_label}}, status_code=409)
+
+    def cloud_confirm(model: str) -> JSONResponse:
+        return confirm("nube", f"¿Activar {model}?", modos.CONFIRMAR_NUBE.format(modelo=model).rsplit("¿", 1)[0].strip(),
+                       f"Activar {model}")
 
     async def index(request: Request) -> Response:
         return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
@@ -415,12 +462,41 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             return bad("Esa pregunta ya no está abierta", 404)
         return ok()
 
+    async def repos_nuevo(request: Request) -> Response:
+        b = await body(request)
+        nombre = str(b.get("nombre") or "").strip()
+        ruta = str(b.get("ruta") or "").strip().strip('"')
+        verificador = str(b.get("verificador") or "").strip() or None
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", nombre):
+            return bad("El nombre solo puede tener letras, números, guiones y guiones bajos (máx. 40).")
+        if nombre in rt.settings.repos:
+            return bad(f"Ya hay un repo llamado '{nombre}'.", 409)
+        if not ruta:
+            return bad("Indica la carpeta del repo.")
+        folder = Path(os.path.expandvars(os.path.expanduser(ruta))).resolve()
+        if not folder.is_dir():
+            return bad(f"La carpeta no existe: {folder}")
+        rt.settings.repos[nombre] = add_repo(rt.settings.home, nombre, folder, verificador)
+        session.bus.publish("estado", snapshot(session))
+        return jresp(snapshot(session))
+
     async def cancelar(request: Request) -> Response:
         return ok(cancelado=await session.cancel())
 
     async def ajustes(request: Request) -> Response:
         b = await body(request)
         c = session.coord
+        if "internet" in b:
+            if not isinstance(b["internet"], bool):
+                return bad("Internet debe ser true o false")
+            if session.busy:
+                return bad("Espera a que termine o pulsa Detener antes de cambiar Internet.", 409)
+            if b["internet"] and bool(b.get("privado", c.private)):
+                return bad("Desactiva la privacidad alta antes de activar Internet.")
+            target_repo = rt.settings.repos.get(b.get("repo", c.repo_name))
+            if b["internet"] and target_repo and target_repo.privacidad == "alta":
+                return bad("Este repo tiene privacidad alta: la búsqueda web está desactivada.")
+            c.internet = b["internet"]
         if "repo" in b:
             r = b["repo"]
             if r in (None, "", "ninguno"):
@@ -436,17 +512,50 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             if r not in ("auto", "low", "medium", "high"):
                 return bad(f"Nivel de razonamiento desconocido: {r}")
             c.effort = None if r == "auto" else r
+        acc = rt.access
+        confirmed = bool(b.get("confirmar"))
+        if "nube" in b:
+            n = b["nube"] if isinstance(b["nube"], dict) else {}
+            name, on = n.get("modelo"), bool(n.get("activar"))
+            if not acc.es_nube(str(name)):
+                return bad(f"{name} no es un modelo en la nube")
+            if on and not acc.nube_ok(name) and not confirmed:
+                return cloud_confirm(name)
+            acc.activar_nube(name, on)
+            rt.audit.log("permission", tool="skynet.nube", decision="activada" if on else "desactivada",
+                         detail={"modelo": name})
+            if not on and c.force_model == name:
+                c.force_model = "local"
+            session.ui.info(f"{name} {'activado para esta sesión' if on else 'desactivado: Skynet vuelve al modelo local'}.")
+        if "permiso" in b:
+            p = b["permiso"] if isinstance(b["permiso"], dict) else {}
+            name, mode = p.get("modelo"), p.get("modo")
+            if name not in rt.settings.models or not modos.modo_valido(str(mode)):
+                return bad(f"Modelo o modo desconocido: {name} / {mode}")
+            if acc.necesita_aviso(name, mode) and not confirmed:
+                return confirm("aviso", f"Modo «{modos.MODOS[mode].nombre}» en un modelo en la nube",
+                               modos.aviso_nube(name, mode), "Entiendo, darle este modo")
+            acc.set_modo(name, mode)
+            rt.audit.log("permission", tool="skynet.permisos", decision=mode, detail={"modelo": name})
+            session.ui.info(f"{name}: modo «{modos.MODOS[mode].nombre}». {modos.MODOS[mode].descripcion}")
         if "modelo" in b:
             m = b["modelo"]
             if m in (None, "", "auto"):
                 c.force_model = None
             elif m in rt.settings.models:
+                if not acc.nube_ok(m):
+                    if not confirmed:
+                        return cloud_confirm(m)
+                    acc.activar_nube(m, True)
+                    rt.audit.log("permission", tool="skynet.nube", decision="activada", detail={"modelo": m})
                 c.force_model = m
             else:
                 return bad(f"Modelo desconocido: {m}")
             session.ui.info(f"Modelo: {c.force_model or 'automático (router)'}")
         if "privado" in b:
             c.private = bool(b["privado"])
+            if c.private:
+                c.internet = False
             session.ui.info(f"Privacidad alta {'activada: solo modelo local' if c.private else 'desactivada'}.")
         snap = snapshot(session)
         session.bus.publish("estado", snap)
@@ -554,7 +663,10 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
                 msg = await asyncio.to_thread(eng.start if on else eng.stop, name)
                 session.ui.info(msg)
                 if on and name in rt.settings.models:
-                    session.coord.force_model = name  # usar el motor que se acaba de encender
+                    if rt.access.nube_ok(name):
+                        session.coord.force_model = name  # usar el motor que se acaba de encender
+                    else:
+                        session.ui.info(f"{name} es un modelo en la nube: para usarlo, actívalo en Ajustes (pide confirmación).")
             except Exception as e:
                 session.ui.info(f"No se pudo {'encender' if on else 'apagar'} {name}: {e}")
             finally:
@@ -565,7 +677,49 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         asyncio.create_task(work())
         return jresp(snapshot(session))
 
+    def _actual_local() -> str:
+        spec = session.engines.specs.get("local") if session.engines else None
+        return Path(os.path.expandvars(spec.modelo)).name.removesuffix(".gguf") if spec and spec.modelo else ""
+
+    async def modelos_locales_lista(request: Request) -> Response:
+        ms = await asyncio.to_thread(modelos_locales.buscar)
+        return jresp({"modelos": [m.info() for m in ms], "actual": _actual_local()})
+
+    async def modelo_local(request: Request) -> Response:
+        b = await body(request)
+        eng = session.engines
+        if not eng or "local" not in eng.specs or eng.specs["local"].tipo != "llamacpp":
+            return bad("No hay motor local de llama.cpp")
+        hit = next((m for m in modelos_locales.buscar() if m.nombre == b.get("nombre")), None)
+        if not hit:
+            return bad(f"No encuentro el modelo: {b.get('nombre')}")
+        if "local" in eng.busy:
+            return bad("El motor local se está encendiendo o apagando")
+        was_on = await asyncio.to_thread(eng.is_on, "local")
+        eng.set_local_model("local", hit)
+        modelos_locales.guardar(rt.settings.logs_dir.parent, hit.nombre)
+
+        async def work() -> None:
+            eng.busy.add("local")
+            session.bus.publish("estado", snapshot(session))
+            try:
+                if was_on:
+                    await asyncio.to_thread(eng.stop, "local")
+                    await asyncio.to_thread(eng.start, "local")
+                session.ui.info(f"Modelo local: {hit.nombre}" + ("" if was_on else " (se usará al encender el motor)"))
+            except Exception as e:
+                session.ui.info(f"No se pudo cargar {hit.nombre}: {e}")
+            finally:
+                eng.busy.discard("local")
+                eng.invalidate()
+                session.bus.publish("estado", snapshot(session))
+
+        asyncio.create_task(work())
+        return jresp(snapshot(session))
+
     routes = [
+        Route("/api/modelos-locales", modelos_locales_lista),
+        Route("/api/modelo-local", modelo_local, methods=["POST"]),
         Route("/api/motor", motor, methods=["POST"]),
         Route("/", index),
         Route("/api/stream", stream),
@@ -574,13 +728,14 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         Route("/api/responder", responder, methods=["POST"]),
         Route("/api/cancelar", cancelar, methods=["POST"]),
         Route("/api/ajustes", ajustes, methods=["POST"]),
+        Route("/api/repos", repos_nuevo, methods=["POST"]),
         Route("/api/tareas", tareas),
         Route("/api/tareas/{id:int}", tarea),
         Route("/api/tareas/{id:int}/{accion}", tarea_accion, methods=["POST"]),
         Route("/api/largo", largo, methods=["POST"]),
         Route("/api/log", log),
         Route("/api/doctor", doctor),
-        Mount("/static", StaticFiles(directory=STATIC), name="static"),
+        Mount("/static", FreshStaticFiles(directory=STATIC), name="static"),
     ]
     app = Starlette(routes=routes, middleware=[Middleware(LocalOnly, port_ref=port_ref)])
     app.state.session = session

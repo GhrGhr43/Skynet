@@ -13,6 +13,8 @@ dependencies = [
     "rich>=13",
     "starlette>=0.40",   # interfaz web (ya llegan con el SDK de MCP)
     "uvicorn>=0.30",
+    "ddgs>=9.16,<10",    # búsqueda web sin navegador ni clave API
+    "httpx>=0.28,<1",    # lectura de páginas públicas
 ]
 
 [project.optional-dependencies]

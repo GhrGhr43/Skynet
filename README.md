@@ -13,7 +13,7 @@ herramientas (servidores MCP), agentes y modelos sin reescribirlo.
 ```powershell
 cd C:\Skynet
 .\.venv\Scripts\Activate.ps1      # o usa .\.venv\Scripts\skynet.exe directamente
-skynet doctor                     # comprueba LM Studio, git, repos y servidores MCP
+skynet doctor                     # comprueba el modelo local, git, repos y servidores MCP
 skynet demo                       # crea el repo de prueba data\sandbox\demo
 skynet                            # abre el chat
 ```
@@ -30,6 +30,9 @@ En el chat:
 | `/largo 2 haz que pasen todos los tests` | Tarea larga en segundo plano con el modelo local: iteraciones verificadas, commit si avanza, rollback si empeora y `PROGRESO.md` en el repo. |
 | `/estado 3`, `/parar 3`, `/tareas` | Seguir o parar tareas. |
 | `/log` o `/log 3` | Herramientas usadas, decisión de permisos, modelo, tokens y coste. |
+| `/permisos local total` | Modo de permisos de un modelo: `repo`, `lectura`, `editar` o `total`. Sin argumentos, los lista. |
+| `/nube gemini on` | Activa un modelo en la nube para esta sesión (pide confirmación). |
+| `/internet on`, `/internet off` | Activa o desactiva la búsqueda web. Apagada al arrancar; también se cambia con el globo junto al chat. |
 | `/repo demo`, `/repos` | Elegir repo autorizado. `/repo ninguno` = conversación sin herramientas. |
 | `/modelo local\|cloud\|auto`, `/privado` | Forzar modelo o exigir privacidad (solo local). |
 | `/buscar parser toml` | Busca en el historial de todas las tareas (pasos y eventos); 10 resultados por relevancia. |
@@ -80,9 +83,23 @@ con todo visible sin saberse comandos:
   del router, calidad visual), Diagnóstico y Qué puede hacer Skynet.
 - **Permisos:** las acciones de riesgo salen en un diálogo: Permitir (`S`), Denegar (`N`) o
   Permitir en toda la tarea (`T`).
+- **Modos de permisos por modelo** (junto al cuadro de texto y en Modelos y repos): Solo repo,
+  Ver mi PC, Ver y editar y Control total (ejecuta comandos y abre programas, p. ej. instalar un
+  juego de Steam). Administrador, carpetas del sistema, borrar y secretos se preguntan siempre.
+- **Nube:** al arrancar solo se usa el modelo local; los modelos en la nube se activan con una
+  confirmación y un modo fuerte en ellos muestra un aviso.
 - `Ctrl+K` abre todas las acciones con buscador. Los comandos `/` siguen funcionando.
 
 Solo escucha en `127.0.0.1` y rechaza peticiones de otras webs (comprueba Host y Origin).
+
+**Internet opcional:** pulsa el globo junto al cuadro de texto. Se ilumina cuando está activado;
+Skynet puede buscar datos que le falten y leer fuentes públicas, con enlaces en la respuesta.
+No busca en cada mensaje: decide cuándo hace falta. Apagado, no arranca el servidor de búsqueda ni
+añade sus herramientas al modelo. Activado, añade dos herramientas pequeñas y las consultas tardan
+lo que tarde la red y el modelo en leerlas. Funciona con o sin repo, sin clave API y sin abrir Chrome.
+Las consultas salen del PC a buscadores externos (DDGS); privacidad alta y tareas largas bloquean
+estas herramientas. No navega por cuentas ni ejecuta JavaScript. Los buscadores pueden limitar
+consultas o fallar: Skynet debe indicar el fallo en vez de inventar resultados.
 Sin dependencias nuevas: usa Starlette y uvicorn, que ya instala el SDK de MCP; Three.js va
 incluido en `skynet/web/static/vendor` (funciona sin internet). Calidad visual automática
 según la GPU; se puede forzar con `?calidad=baja|media|alta|ultra` o en Modelos y repos, y
@@ -94,7 +111,7 @@ según la GPU; se puede forzar con `?calidad=baja|media|alta|ultra` o en Modelos
 |---|---|
 | `repos.toml` | Repos autorizados (fuera de ellos no se lee ni escribe nada), su verificador, privacidad y agente. |
 | `permisos.toml` | Nivel de cada herramienta y lista blanca de comandos. |
-| `router.toml` | Perfiles de modelo (local LM Studio, cloud Anthropic), reglas por capacidades y presupuesto mensual. |
+| `router.toml` | Perfiles de modelo (local llama-server, cloud Anthropic), reglas por capacidades y presupuesto mensual. |
 | `skynet.toml` | Rutas, límites del agente y de las tareas largas, y servidores MCP. |
 
 Para cambios personales sin tocar los archivos versionados, crea `config/<nombre>.local.toml`
@@ -154,5 +171,5 @@ data/            base de datos, logs y sandbox (ignorado por git)
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-$env:SKYNET_TEST_LMSTUDIO = "1"; .\.venv\Scripts\python.exe -m pytest -q -m lmstudio   # con LM Studio abierto
+$env:SKYNET_TEST_LMSTUDIO = "1"; .\.venv\Scripts\python.exe -m pytest -q -m lmstudio   # con el motor local encendido
 ```

@@ -9,6 +9,8 @@
 nivel_por_defecto = "PRIVILEGED"
 
 [herramientas]
+"internet.buscar" = "READ"          # además exige Internet activado en el chat
+"internet.leer" = "READ"
 "workspace.read_file" = "READ"
 "workspace.list_dir" = "READ"
 "workspace.search" = "READ"
@@ -23,6 +25,13 @@ nivel_por_defecto = "PRIVILEGED"
 "coding_agent.history" = "READ"
 "coding_agent.start_task" = "PRIVILEGED"
 "coding_agent.stop_task" = "PRIVILEGED"
+"sistema.read_file" = "READ"          # herramientas de todo el PC: solo con el modo del modelo
+"sistema.list_dir" = "READ"           # (Ajustes > Permisos o /permisos). Ver skynet/modos.py
+"sistema.write_file" = "WRITE"
+"sistema.edit_file" = "WRITE"
+"sistema.run_command" = "EXECUTE"
+"sistema.abrir" = "EXECUTE"
+"sistema.delete_file" = "DESTRUCTIVE"
 "skynet.aprobar" = "PRIVILEGED"        # /aprobar: activa una skill o fusiona la memoria propuesta
 
 [ejecutar]

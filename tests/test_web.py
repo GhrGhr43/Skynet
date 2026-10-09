@@ -45,12 +45,15 @@ def web(make_rt):
 def test_estado_basico(web):
     c, rt, _ = web()
     s = c.get("/api/estado").json()
-    assert s["repo"] == "prueba" and s["modelo"] == "auto" and s["privado"] is False
+    assert s["repo"] == "prueba" and s["modelo"] == "local" and s["privado"] is False
     assert s["ocupado"] is False and s["preguntas"] == []
     assert {m["nombre"] for m in s["modelos"]} >= {"local", "cloud"}
     assert any(r["nombre"] == "prueba" and r["existe"] for r in s["repos"])
     assert c.get("/").status_code == 200
-    assert c.get("/static/js/main.js").status_code == 200
+    assert c.get("/static/js/app.js").status_code == 200
+    assert c.get("/static/js/app.js").headers["cache-control"] == "no-cache"
+    assert c.get("/static/css/app.css").headers["cache-control"] == "no-cache"
+    assert c.get("/static/cursors/arrow.svg").status_code == 200
 
 
 def test_solo_local_host_origen_y_json(web):
@@ -121,6 +124,24 @@ def test_ajustes(web):
     assert c.post("/api/ajustes", json={"modelo": "inventado"}).status_code == 400
     s = c.post("/api/ajustes", json={"repo": "prueba", "modelo": "auto", "privado": False}).json()
     assert s["repo"] == "prueba" and s["modelo"] == "auto" and not s["privado"]
+
+
+def test_internet_switch_and_privacy(web):
+    c, rt, app = web()
+    assert c.get("/api/estado").json()["internet"] is False
+    assert c.post("/api/ajustes", json={"internet": "false"}).status_code == 400
+    assert c.post("/api/ajustes", json={"internet": True}).json()["internet"] is True
+    assert c.post("/api/ajustes", json={"internet": False}).json()["internet"] is False
+    app.state.session.running = True
+    assert c.post("/api/ajustes", json={"internet": True}).status_code == 409
+    app.state.session.running = False
+    s = c.post("/api/ajustes", json={"privado": True}).json()
+    assert s["internet"] is False and s["internet_bloqueado"] is True
+    assert c.post("/api/ajustes", json={"internet": True}).status_code == 400
+    c.post("/api/ajustes", json={"privado": False})
+    rt.settings.repos["prueba"].privacidad = "alta"
+    assert c.get("/api/estado").json()["internet_bloqueado"] is True
+    assert c.post("/api/ajustes", json={"internet": True}).status_code == 400
 
 
 def test_tareas_detalle_y_acciones(web):

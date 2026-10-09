@@ -11,7 +11,7 @@ const TITLES = {
   tareas: 'Tareas',
   largo: 'Tarea larga',
   registro: 'Registro y consumo',
-  ajustes: 'Modelos y repos',
+  ajustes: 'Configuración',
   diagnostico: 'Diagnóstico',
   ayuda: 'Qué puede hacer Skynet',
 };
@@ -314,83 +314,150 @@ export class Panels {
   }
 
   async setModel(name) {
-    try { this.app.applySnap(await api.ajustes({ modelo: name })); } catch (e) { this.app.toast(e.message, 'bad'); }
+    return this.app.ajustes({ modelo: name });
   }
 
   renderSettings() {
     const s = this.app.snap;
     if (!s) return;
     const quality = localStorage.getItem('skynet.calidad') || 'auto';
-    let html = '<div class="section-k" style="margin-top:4px">Dónde trabaja</div>';
-    html += `<div class="card clickable ${!s.repo ? 'selected' : ''}" data-repo="">
-      <div class="card-row">${icon('chat')}<div class="grow"><div class="card-title">Sin repo</div><div class="card-sub">Solo conversación: Skynet no toca archivos.</div></div></div></div>`;
+    const motores = Object.fromEntries((s.motores || []).map((e) => [e.nombre, e]));
+    const modos = (s.modos || []);
+
+    let html = '<div class="section-k" style="margin-top:4px">Repos</div>';
     for (const r of s.repos || []) {
       html += `<div class="card clickable ${s.repo === r.nombre ? 'selected' : ''}" data-repo="${esc(r.nombre)}">
         <div class="card-row">${icon('repo')}<div class="grow"><div class="card-title">${esc(r.nombre)}</div>
-        <div class="card-sub mono ellipsis" title="${esc(r.ruta)}">${esc(r.ruta)}</div>
-        <div class="card-sub">verificador: <span class="mono">${esc(r.verificador || '—')}</span> · ${esc(r.agente)}${r.privacidad === 'alta' ? ' · privado' : ''}${r.existe ? '' : ' · <span style="color:var(--bad)">la carpeta no existe</span>'}</div></div></div></div>`;
+        <div class="card-sub mono ellipsis" title="${esc(r.ruta)}">${esc(r.ruta)}${r.existe ? '' : ' · <span class="warn-text">no existe</span>'}</div></div></div></div>`;
     }
-    html += '<p class="note">Los repos autorizados se añaden en <span class="mono">config/repos.toml</span>. Fuera de ellos Skynet no lee ni escribe nada.</p>';
+    html += `<form class="add-repo" id="addRepo">
+      <label class="field-k" for="repoNombre">Añadir repo</label>
+      <input class="input" id="repoNombre" placeholder="Nombre, p. ej. mi-juego" autocomplete="off" required>
+      <input class="input mono" id="repoRuta" placeholder="Carpeta, p. ej. C:\\Users\\HACHO\\Documents\\mi-juego" autocomplete="off" required>
+      <input class="input" id="repoVerif" placeholder="Comando para comprobarlo (opcional), p. ej. npm test" autocomplete="off">
+      <button class="btn primary" type="submit">Añadir</button>
+    </form>`;
 
-    html += '<div class="section-k">Modelo</div>';
-    html += `<div class="card clickable ${s.modelo === 'auto' ? 'selected' : ''}" data-model="auto">
-      <div class="card-row">${icon('route')}<div class="grow"><div class="card-title">Automático</div><div class="card-sub">El router elige según la tarea (privacidad, coste, razonamiento).</div></div></div></div>`;
-    const motores = Object.fromEntries((s.motores || []).map((e) => [e.nombre, e]));
+    html += '<div class="section-k">Modelos</div>';
     for (const m of s.modelos || []) {
-      const tags = [m.privado ? 'en tu PC' : 'en la nube', m.gratis ? 'gratis' : `${m.coste[0]} $ / ${m.coste[1]} $ por M tokens`];
       const e = motores[m.nombre];
-      const sw = e ? `<button class="toggle" data-engine="${esc(m.nombre)}" role="switch" aria-checked="${e.encendido}"
-        aria-label="${e.encendido ? 'Apagar' : 'Encender'} ${esc(m.nombre)}" ${e.ocupado ? 'disabled' : ''}
-        title="${e.ocupado ? 'Un momento…' : e.encendido ? 'Encendido: clic para apagar' : 'Apagado: clic para encender (apaga el otro motor local)'}"></button>` : '';
-      html += `<div class="card clickable ${s.modelo === m.nombre ? 'selected' : ''}" data-model="${esc(m.nombre)}">
-        <div class="card-row">${icon(m.privado ? 'cpu' : 'cloud')}<div class="grow"><div class="card-title">${esc(m.nombre)} <span class="card-sub mono">${esc(m.litellm.split('/').slice(1).join('/'))}</span></div>
-        <div class="card-sub">${esc(tags.join(' · '))}</div>
-        ${e?.ocupado ? '<div class="card-sub" style="color:var(--warn)">Cambiando… cargar el modelo tarda hasta unos minutos.</div>'
-          : m.disponible ? '' : e ? '<div class="card-sub" style="color:var(--warn)">Apagado. Enciéndelo con el interruptor.</div>'
-          : `<div class="card-sub" style="color:var(--warn)">No disponible: ${esc(m.motivo)}. Si lo eliges, Skynet usará el local.</div>`}</div>${sw}</div></div>`;
+      const busy = !!e?.ocupado;
+      const on = m.privado ? (e ? !!e.encendido : true) : !!(m.activado && (!e || e.encendido));
+      let estado;
+      if (busy) estado = 'Cambiando… puede tardar unos minutos';
+      else if (m.privado) estado = e ? (e.encendido ? 'Encendido' : 'Apagado') : 'Listo';
+      else if (!m.activado) estado = 'Desactivado · pide confirmación';
+      else if (e && !e.encendido) estado = 'Activado · motor apagado';
+      else if (!m.disponible) estado = `No disponible: ${m.motivo}`;
+      else estado = 'Activo';
+      const bad = !m.privado && m.activado && !m.disponible && !busy;
+      html += `<div class="card model-row ${s.modelo === m.nombre ? 'selected' : ''}">
+        <div class="card-row">${icon(m.privado ? 'cpu' : 'cloud')}<div class="grow">
+          <div class="card-title">${esc(m.nombre)} <span class="card-sub mono">${esc(m.litellm.split('/').slice(1).join('/'))}</span></div>
+          <div class="card-sub ${bad ? 'warn-text' : ''}">${esc(m.privado ? 'En tu PC' : 'Online')} · ${esc(estado)}</div>
+        </div>
+        <button class="toggle" data-model-toggle="${esc(m.nombre)}" role="switch" aria-checked="${on}" ${busy ? 'disabled' : ''}
+          aria-label="${on ? 'Apagar' : 'Encender'} ${esc(m.nombre)}"></button></div>
+        <div class="perm-row"><span class="perm-k">Permisos</span>
+          <select class="select" data-perm="${esc(m.nombre)}" aria-label="Permisos de ${esc(m.nombre)}">
+            ${modos.map((o) => `<option value="${esc(o.clave)}" ${o.clave === m.modo ? 'selected' : ''}>${esc(o.nombre)}</option>`).join('')}
+          </select></div></div>`;
     }
-    html += `<div class="card" style="margin-top:14px"><div class="card-row">${icon('lock')}<div class="grow"><div class="card-title">Privacidad alta</div>
-      <div class="card-sub">Fuerza el modelo local: nada sale de tu PC.</div></div>
-      <button class="toggle" id="privToggle" role="switch" aria-checked="${s.privado}" aria-label="Privacidad alta"></button></div></div>`;
-    if (s.reglas?.length) {
-      html += '<div class="section-k">Cómo decide el router</div><div class="card">';
-      s.reglas.forEach((r, i) => {
-        const cond = Object.entries(r.si || {}).map(([k, v]) => `${k} = ${v}`).join(', ') || 'en cualquier otro caso';
-        html += `<div class="card-sub" style="margin-top:${i ? 8 : 0}px">${i + 1}. Si <span class="mono">${esc(cond)}</span> → <b style="color:var(--fg)">${esc(r.usar)}</b>${r.motivo ? ` · ${esc(r.motivo)}` : ''}</div>`;
-      });
-      html += '</div>';
-    }
+
+    html += '<details class="adv"><summary>Avanzado</summary>';
+    html += '<div class="section-k" style="margin-top:12px">Cómo elige el modelo «Automático»</div><div class="card">';
+    (s.reglas || []).forEach((r, i) => {
+      const cond = Object.entries(r.si || {}).map(([k, v]) => `${k} = ${v}`).join(', ') || 'en cualquier otro caso';
+      html += `<div class="card-sub" style="margin-top:${i ? 8 : 0}px">${i + 1}. ${esc(r.motivo || cond)} → <b style="color:var(--fg)">${esc(r.usar)}</b></div>`;
+    });
+    html += '<div class="card-sub" style="margin-top:8px">Un modelo online solo se usa si lo has activado.</div></div>';
+    html += '<div class="section-k">Permisos</div><div class="card">';
+    html += modos.map((o) => `<div class="card-sub" style="margin-top:6px"><b style="color:var(--fg)">${esc(o.nombre)}:</b> ${esc(o.descripcion)}</div>`).join('');
+    html += `<div class="card-sub" style="margin-top:8px">${esc(s.siempre || '')}</div></div>`;
+    html += `<div class="section-k">Modelo local</div><div class="card"><select class="select" id="localSel" aria-label="Modelo local" disabled><option>Buscando modelos…</option></select>
+      <div class="card-sub" id="localInfo" style="margin-top:8px">Los GGUF de LM Studio y Strata. Si el motor está encendido, se reinicia con el elegido.</div></div>`;
     const notif = 'Notification' in window ? Notification.permission : 'unsupported';
     html += `<div class="section-k">Interfaz</div><div class="card"><div class="card-row">${icon('warn')}<div class="grow"><div class="card-title">Avisos de Windows</div>
-      <div class="card-sub">${notif === 'granted' ? 'Activados: si Skynet necesita tu confirmación con la pestaña en segundo plano, te avisa.'
-        : notif === 'denied' ? 'Bloqueados en el navegador. Actívalos desde el candado de la barra de direcciones.'
-        : notif === 'unsupported' ? 'Este navegador no los admite.' : 'Te avisa cuando Skynet necesita tu confirmación y estás en otra ventana.'}</div></div>
+      <div class="card-sub">${notif === 'granted' ? 'Activados.'
+        : notif === 'denied' ? 'Bloqueados en el navegador.'
+        : notif === 'unsupported' ? 'Este navegador no los admite.' : 'Te avisa cuando Skynet necesita tu confirmación.'}</div></div>
       ${notif === 'default' ? '<button class="btn small" id="notifBtn">Activar</button>' : ''}</div></div>`;
     html += `<div class="field-k" style="margin-top:14px">Calidad visual</div>
       <label class="field" style="margin-top:0"><select class="select" id="quality">
         ${['auto', ...Object.keys(QUALITY)].map((q) => `<option value="${q}" ${q === quality ? 'selected' : ''}>${q === 'auto' ? 'Automática' : `${q[0].toUpperCase()}${q.slice(1)} · ${(QUALITY[q] ** 2).toLocaleString('es-ES')} partículas`}</option>`).join('')}
-      </select></label>
-      <p class="note">Ultra está pensada para GPUs potentes (tu RX 9070 XT va sobrada). Se aplica al recargar.</p>`;
+      </select></label>`;
+    html += '</details>';
+
     this.paint(html);
     for (const c of this.body.querySelectorAll('[data-repo]')) c.addEventListener('click', () => this.setRepo(c.dataset.repo || null));
     for (const c of this.body.querySelectorAll('[data-model]')) c.addEventListener('click', () => this.setModel(c.dataset.model));
-    for (const b of this.body.querySelectorAll('[data-engine]')) b.addEventListener('click', async (ev) => {
-      ev.stopPropagation();  // el interruptor no selecciona la tarjeta
-      b.disabled = true;
-      try { this.app.applySnap(await api.motor(b.dataset.engine, b.getAttribute('aria-checked') !== 'true')); }
-      catch (e) { this.app.toast(e.message, 'bad'); b.disabled = false; }
+    for (const sel of this.body.querySelectorAll('[data-perm]')) sel.addEventListener('change', async () => {
+      const prev = (s.modelos || []).find((m) => m.nombre === sel.dataset.perm)?.modo || 'repo';
+      if (!(await this.app.ajustes({ permiso: { modelo: sel.dataset.perm, modo: sel.value } }))) sel.value = prev;
     });
-    $('#privToggle').addEventListener('click', () => this.app.setPrivate(!s.privado));
+    for (const b of this.body.querySelectorAll('[data-model-toggle]')) b.addEventListener('click', () => this.toggleModel(b.dataset.modelToggle, b.getAttribute('aria-checked') !== 'true'));
+    this.loadLocalModels();
+    $('#repoRuta').addEventListener('input', (e) => {
+      const nombre = $('#repoNombre');
+      if (!nombre.value.trim()) nombre.value = e.target.value.trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop().replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 40);
+    });
+    $('#addRepo').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        this.app.applySnap(await api.repo({ nombre: $('#repoNombre').value.trim(), ruta: $('#repoRuta').value.trim(), verificador: $('#repoVerif').value.trim() }));
+        this.app.toast('Repo añadido');
+        this.render(true);
+      } catch (e) { this.app.toast(e.message, 'bad'); }
+    });
     $('#notifBtn')?.addEventListener('click', async () => { await Notification.requestPermission(); this.render(true); });
-    $('#quality').addEventListener('change', (e) => {
+    $('#quality')?.addEventListener('change', (e) => {
       try { localStorage.setItem('skynet.calidad', e.target.value); } catch { /* sin almacenamiento */ }
       location.reload();
     });
   }
 
+  async loadLocalModels() {
+    const sel = this.body.querySelector('#localSel');
+    if (!sel) return;
+    try {
+      const { modelos, actual } = await api.modelosLocales();
+      if (!this.body.contains(sel)) return;
+      const busy = (this.app.snap?.motores || []).some((e) => e.nombre === 'local' && e.ocupado);
+      sel.innerHTML = modelos.length
+        ? modelos.map((m) => `<option value="${esc(m.nombre)}" ${m.nombre === actual ? 'selected' : ''}>${esc(m.nombre)} · ${esc(m.detalle)}</option>`).join('')
+        : '<option>No encuentro modelos GGUF</option>';
+      sel.disabled = !modelos.length || busy;
+      sel.addEventListener('change', async () => {
+        sel.disabled = true;
+        try { this.app.applySnap(await api.elegirLocal(sel.value)); } catch (e) { this.app.toast(e.message, 'bad'); }
+        this.render(true);
+      });
+    } catch (e) { this.app.toast(e.message, 'bad'); }
+  }
+
+  // Un solo interruptor por modelo. En los online, encender activa el modelo (con confirmación) y
+  // arranca su motor si lo tiene (OmniRoute); apagar hace lo contrario.
+  async toggleModel(name, on) {
+    const s = this.app.snap;
+    const m = s.modelos.find((x) => x.nombre === name);
+    const e = (s.motores || []).find((x) => x.nombre === name);
+    try {
+      if (m.privado) {
+        if (e) this.app.applySnap(await api.motor(name, on));
+      } else if (on) {
+        if (!m.activado && !(await this.app.ajustes({ nube: { modelo: name, activar: true } }))) return;
+        if (e && !e.encendido) this.app.applySnap(await api.motor(name, true));
+      } else {
+        if (!(await this.app.ajustes({ nube: { modelo: name, activar: false } }))) return;
+        if (e && e.encendido) this.app.applySnap(await api.motor(name, false));
+      }
+    } catch (err) { this.app.toast(err.message, 'bad'); }
+    this.render(true);
+  }
+
   // --- diagnóstico ---------------------------------------------------------
   renderDiag() {
-    this.paint(`<p class="lead">Comprueba la configuración, la base de datos, git, LM Studio, los modelos en la nube y los servidores MCP de cada repo.</p>
+    this.paint(`<p class="lead">Comprueba la configuración, la base de datos, git, el modelo local, los modelos en la nube y los servidores MCP de cada repo.</p>
       <div class="btn-row" style="margin-top:0"><button class="btn primary" id="dRun">${icon('pulse')} Comprobar ahora</button></div>
       <div class="checks" id="dOut"></div>`);
     $('#dRun').addEventListener('click', () => this.runDiag());
@@ -431,7 +498,7 @@ export class Panels {
       ['check', 'No se da la razón a sí mismo', 'Al terminar, un verificador objetivo (por ejemplo, los tests del repo) decide si la tarea queda hecha o fallida.', null, null],
       ['resume', 'Continúa donde lo dejó', 'Si cierras Skynet, lo detienes o falla, la tarea queda pausada. Pulsa «Continuar» (o escribe «continúa») y la retoma.', 'Ver tareas', () => this.open('tareas')],
       ['orbit', 'Trabaja solo durante horas', 'Las tareas largas avanzan en pasos verificados con commits y PROGRESO.md, con el modelo local. Cada una aparece como una luz en órbita alrededor de la nebulosa.', 'Lanzar una', () => this.open('largo')],
-      ['route', 'Elige el modelo por ti', 'Local (Qwen en LM Studio, privado y gratis), Gemini Flash (gratis) o Anthropic. El router decide según privacidad y coste, o lo eliges tú.', 'Modelos', () => this.open('ajustes')],
+      ['route', 'Elige el modelo por ti', 'Local (Qwen3.8-27B en tu PC, privado y gratis), Gemini Flash (gratis) o Anthropic. El router decide según privacidad y coste, o lo eliges tú.', 'Modelos', () => this.open('ajustes')],
       ['log', 'Todo queda registrado', 'Herramientas usadas, permisos, modelo, tokens y coste de cada tarea.', 'Ver registro', () => this.open('registro')],
     ];
     let html = '<p class="lead">La nebulosa del centro es Skynet: su color te dice qué está haciendo.</p>';

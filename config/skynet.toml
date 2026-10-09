@@ -23,20 +23,35 @@ timeout_verificador_seg = 900
 comando = "{python}"
 args = ["-m", "skynet_tools.workspace", "--root", "{repo}"]
 
+# Solo se arranca cuando Daniel activa Internet en el chat.
+[mcp.internet]
+comando = "{python}"
+args = ["-m", "skynet_tools.internet"]
+
 [mcp.coding_agent]
 comando = "{python}"
 args = ["-m", "skynet_tools.coding_agent", "--agente-godot", "C:/Users/HACHO/Documents/agente-godot"]
 
-# Motores locales que se encienden y apagan desde la web (Ajustes). Comparten GPU: encender uno
-# apaga el otro. El nombre coincide con el perfil de router.toml que sirven.
+# Motor local que se enciende y apaga desde la web (Ajustes). El nombre coincide con el perfil de
+# router.toml que sirve. llama-server directo (el que trae LM Studio) con los ajustes del benchmark
+# (bench/resultados.md): 27B IQ3_XXS cabe entero en 16 GB; FA + KV q8_0 + MTP integrado ~45 tok/s.
 [motores.local]
-tipo = "lmstudio"
-url = "http://127.0.0.1:1234/v1"
-modelo = "qwen/qwen3.8-27b"
-contexto = 49152
+tipo = "llamacpp"
+url = "http://127.0.0.1:8090/v1"
+exe = "%USERPROFILE%/.lmstudio/extensions/backends/llama.cpp-win-x86_64-vulkan-avx2-2.54.0/llama-server.exe"
+modelo = "%USERPROFILE%/.lmstudio/models/unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
+contexto = 32768
+args = ["-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "--no-webui", "--n-cpu-moe", "13"]
 
-[motores.strata]
-tipo = "strata"
-url = "http://127.0.0.1:8080/v1"
-carpeta = "C:/Strata/Strata-main"
-config = "strata-coder-iq1_m.json"
+# OmniRoute (vendor/omniroute, npm 3.8.51): pasarela a proveedores cloud con API OpenAI. No usa la
+# GPU, así que convive con el motor local. Solo escucha en 127.0.0.1; datos y claves en data/omniroute.
+# Sin TLS stealth ni suplantar al CLI de OpenCode (su free tier solo vale desde OpenCode).
+[motores.omniroute]
+tipo = "proceso"
+url = "http://127.0.0.1:20128/v1"
+exe = "node"
+args = ['C:\Skynet\vendor\omniroute\node_modules\omniroute\bin\omniroute.mjs', "serve", "--no-open", "--no-tray", "--port", "20128"]
+env = { OMNIROUTE_SERVER_HOST = "127.0.0.1", HOST = "127.0.0.1", DATA_DIR = "C:/Skynet/data/omniroute", ENABLE_TLS_FINGERPRINT = "false", OPENCODE_SYNTHESIZE_CLI_HEADERS = "false", OPENCODE_FREE_TIER_REQUEST_CONTRACT = "off", NO_COLOR = "1" }
+salud = "http://127.0.0.1:20128/api/health"
+firma = 'vendor\omniroute'
+gpu = false

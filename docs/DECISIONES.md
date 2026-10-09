@@ -1,5 +1,25 @@
 # Decisiones (ADR) del MVP
 
+## D15. Búsqueda web opcional y ligera (2026-10-09)
+Pedido por Daniel: búsqueda en internet con interruptor en la UI, evitando cargar varios MCP
+de navegador. Servidor propio `skynet_tools/internet.py` sobre DDGS 9.x y httpx: dos herramientas,
+`internet.buscar` y `internet.leer`, resultados limitados a 5 extractos y 5.000 caracteres por página.
+El Core solo lo conecta si `capacidades.internet` está activado; no cambia la selección del modelo.
+Apagado al arrancar; al retomar una tarea se respeta el interruptor actual. Funciona sin repo y en
+Solo repo: consultar una web no concede acceso a archivos o ejecución de programas.
+
+Política (cara de cambiar): el gate exige habilitación explícita además del nivel READ. Privacidad
+alta (incluida la del repo) y tareas largas deshabilitan el MCP. Lectura HTTP/HTTPS pública, sin
+credenciales, proxies de entorno, archivos, red local ni puertos internos; cada redirección se valida.
+No usa cookies del navegador ni ejecuta JavaScript. El prompt manda comprobar datos desconocidos,
+citar fuentes e ignorar instrucciones externas. Estas instrucciones no hacen infalible al modelo.
+
+Contrato MCP (ampliación, nombres a mantener): `internet.buscar(query)` y `internet.leer(url)`.
+Sin migraciones SQLite: el interruptor de la tarea se guarda en el JSON de capacidades existente.
+Barato de cambiar: proveedor de búsqueda o extracción. DDGS no necesita claves, pero depende de
+buscadores públicos y sus límites. No se promete latencia cero: apagado no añade proceso ni esquemas;
+activado añade dos esquemas pequeños, arranque MCP y las llamadas de red solo cuando se usan.
+
 Cada decisión indica si es **cara de cambiar** (afecta a datos guardados o a contratos) o barata.
 
 ## D1. Python para el Core — cara
@@ -128,3 +148,58 @@ Fase 2 de la propuesta de automejora. Sin dependencias nuevas (`skynet/propuesta
   los usos que llegaron a pasar por el verificador). Los parches automáticos son la fase 3.
 - **Web:** `/api/estado` devuelve `propuestas` (número pendiente) y la cabecera muestra un botón
   «Propuestas N» que lanza `/propuestas`; aprobar y rechazar se escriben en el chat.
+
+## D12. Modelo local único: Qwen3.8-27B UD-IQ3_XXS en llama-server (2026-10-08)
+Aprobado por Daniel tras el benchmark de `bench/resultados.md` (A 27B Q4_K_M, B Strata,
+C 27B IQ3_XXS, D 35B-A3B). C ganó: ~45 tok/s de generación, ~710 tok/s de prefill, 100 % en las
+10 tareas, cabe entero en los 16 GB. El Q4_K_M no cabe (9–12 tok/s) y Strata sacó 90 % y tarda
+~80 s en arrancar. Por decisión de Daniel, Strata y el Q4_K_M salen de las opciones de Skynet
+(los archivos y C:\Strata no se tocan).
+- **Motor `llamacpp`** (`skynet/engines.py`): lanza el `llama-server.exe` Vulkan que trae LM Studio
+  con los flags de `[motores.local]` (FA on, KV q8_0, 32K, `--spec-type draft-mtp`), porque
+  `lms load` no expone FA ni el tipo de KV. Puerto 8090, alias `local`; se apaga matando el
+  llama-server de ese puerto. Log en `data/logs/local.log`.
+- **Cara de cambiar:** poco. El perfil sigue llamándose `local` (router, reglas y tests igual);
+  volver a LM Studio es cambiar `[motores.local]` a `tipo = "lmstudio"` y el perfil del router.
+  La ruta del runtime (`vulkan-avx2-2.54.0`) se rompe si LM Studio borra esa versión.
+
+## D13. OmniRoute como pasarela cloud opcional (2026-10-08)
+Pedido por Daniel. OmniRoute (npm `omniroute`, fijado a 3.8.51, MIT) instalado en local en
+`vendor/omniroute` (ignorado por git), sin `-g`. npm 11 no ejecutó sus scripts de instalación y
+funciona igual.
+- **Motor `proceso`** (`skynet/engines.py`), genérico: ejecutable + args + env, `salud` (URL que
+  dice `{"status": "ok"}`) y `firma` para apagarlo (mata los procesos cuya línea de comandos la
+  lleva). `gpu = false`: convive con el motor local en vez de apagarlo. llama-server comparte el
+  lanzador (`_spawn`); su log pasa a `data/logs/<motor>.log`.
+- **Seguro por configuración** (`[motores.omniroute].env`): escucha solo en 127.0.0.1 (por
+  defecto Next escucharía en 0.0.0.0), datos y claves cifradas en `data/omniroute`, sin TLS
+  fingerprint, `OPENCODE_SYNTHESIZE_CLI_HEADERS=false` y `OPENCODE_FREE_TIER_REQUEST_CONTRACT=off`
+  (por defecto OmniRoute se hace pasar por el CLI de OpenCode para usar su free tier, que según
+  OpenCode solo vale desde OpenCode). Contraseña del panel en `data/omniroute/dashboard-password.txt`.
+- **Proveedores:** ninguno de momento. OpenCode Free queda fuera (403: "solo desde OpenCode").
+  No se copió ninguna clave existente (Gemini) a OmniRoute sin preguntar.
+- **Perfil `omniroute`** (router.toml): `openai/skynet`, es decir, un combo "skynet" que hay que
+  crear con los proveedores aprobados; se evita `auto` porque trae OpenCode precableado. No
+  privado: con privacidad alta el router usa siempre `local`. No está en ninguna regla, solo se
+  usa si se elige en Ajustes. Coste 0: si se le meten claves de pago, Skynet no contará ese gasto.
+- **Cara de cambiar:** poco; quitar el motor y el perfil lo deja como estaba.
+
+## D14. Modos de permisos por modelo y nube con confirmación (2026-10-08)
+- **Cuatro modos por modelo** (`skynet/modos.py`, guardados en `data/permisos_modelos.json`):
+  Solo repo (por defecto), Ver mi PC (leer todo el PC), Ver y editar (además escribir en la
+  carpeta de usuario) y Control total (además ejecutar PowerShell y abrir programas o enlaces,
+  p. ej. `steam://install/<AppID>`). Se cambian en Ajustes, junto al cuadro de texto o con `/permisos`.
+- **Siempre se pregunta**, en cualquier modo y sin «sí a toda la tarea»: administrador
+  (runas, sudo, HKLM, servicios, apagar...), carpetas del sistema (Windows, Program Files,
+  ProgramData), la carpeta de Skynet, borrar (delete_file, rm/del/Remove-Item) y secretos
+  (.ssh, .env, Login Data, cookies, *.pem, data/omniroute...).
+- **Herramienta nueva `sistema`** (`skynet_tools/sistema.py`): solo se arranca si el modelo del
+  paso tiene un modo distinto de Solo repo; el gate (no el servidor) decide qué se permite.
+  En Control total también se relaja la lista blanca de comandos del repo (salvo lo de arriba).
+- **Tareas largas: siempre Solo repo** (nadie delante para confirmar).
+- **Nube desactivada por defecto:** el modelo seleccionado al arrancar es `local` y los perfiles
+  no privados no se usan hasta activarlos con confirmación (Ajustes, `/modelo`, `/nube`). La
+  activación dura lo que la sesión de Skynet; el router cae al local si no lo están. Un modo
+  fuerte (Ver y editar, Control total) en un modelo en la nube muestra un aviso antes.
+- **Cara de cambiar:** poco. Lo caro es la política: qué cuenta como «siempre se pregunta»
+  (patrones en `gate.py`). Son listas negras: útiles para avisar, no una barrera infalible.

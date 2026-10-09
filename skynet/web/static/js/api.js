@@ -1,8 +1,9 @@
 // Cliente del servidor local de Skynet: JSON por HTTP y eventos en vivo por SSE.
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, data = null) {
     super(message);
     this.status = status;
+    this.data = data;  // p. ej. {confirmar: {...}} cuando el servidor pide una confirmación (409)
   }
 }
 
@@ -20,7 +21,7 @@ async function request(method, url, body) {
   }
   let data = null;
   try { data = await res.json(); } catch { /* respuesta vacía */ }
-  if (!res.ok) throw new ApiError((data && data.error) || `Error ${res.status}`, res.status);
+  if (!res.ok) throw new ApiError((data && data.error) || `Error ${res.status}`, res.status, data);
   return data;
 }
 
@@ -30,6 +31,9 @@ export const api = {
   responder: (id, respuesta) => request('POST', '/api/responder', { id, respuesta }),
   cancelar: () => request('POST', '/api/cancelar', {}),
   ajustes: (cambios) => request('POST', '/api/ajustes', cambios),
+  repo: (datos) => request('POST', '/api/repos', datos),
+  modelosLocales: () => request('GET', '/api/modelos-locales'),
+  elegirLocal: (nombre) => request('POST', '/api/modelo-local', { nombre }),
   motor: (nombre, encender) => request('POST', '/api/motor', { nombre, encender }),
   tareas: (n = 40) => request('GET', `/api/tareas?n=${n}`),
   tarea: (id) => request('GET', `/api/tareas/${id}`),

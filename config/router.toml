@@ -7,27 +7,16 @@ moneda_usd_eur = 0.86      # para convertir el coste que da LiteLLM (USD) a euro
 mensual_eur = 0            # 0 = cloud desactivado. Ponlo > 0 cuando tengas la clave.
 
 [modelos.local]
-litellm = "lm_studio/qwen/qwen3.8-27b"
-api_base = "http://localhost:1234/v1"
-api_key = "lm-studio"
+# Modelo local por defecto: Qwen3.6-35B-A3B UD-Q4_K_M en llama-server (motor "local" de skynet.toml); se cambia en Ajustes.
+litellm = "openai/local"
+api_base = "http://127.0.0.1:8090/v1"
+api_key = "local"
 privado = true             # los datos no salen del PC
 coste_entrada_usd_mtok = 0
 coste_salida_usd_mtok = 0
 max_tokens = 8192
 timeout_seg = 900
 reasoning_effort = "medium"   # como agente-godot; "low" = más rápido
-
-[modelos.strata]
-# Strata (C:/Strata): Qwen3.8-Flash-Next Coder en tu PC, más rápido que el 27B. Se enciende en Ajustes.
-litellm = "openai/qwen3.8-flash-next-coder-iq1_m"
-api_base = "http://127.0.0.1:8080/v1"
-api_key = "strata"
-razonamiento_por_tokens = true
-privado = true
-coste_entrada_usd_mtok = 0
-coste_salida_usd_mtok = 0
-max_tokens = 8192
-timeout_seg = 900
 
 [modelos.gemini]
 # Gratis (plan gratuito de Google AI Studio). Clave en la variable de entorno GEMINI_API_KEY.
@@ -38,6 +27,21 @@ privado = false
 coste_entrada_usd_mtok = 0
 coste_salida_usd_mtok = 0
 max_tokens = 16000
+timeout_seg = 600
+
+[modelos.omniroute]
+# OmniRoute (motor "omniroute" de skynet.toml): un endpoint para varios proveedores cloud. NO privado:
+# el router nunca le manda tareas con privacidad alta. Solo se usa si lo eliges en Ajustes. Coste 0
+# porque solo lleva proveedores gratis; si le añades claves de pago, el gasto no se contabiliza aquí.
+# Combo "skynet" de OmniRoute: solo los proveedores que apruebe Daniel. No se usa "auto" porque
+# trae precableado OpenCode Free (sus términos solo permiten usarlo desde OpenCode).
+litellm = "openai/skynet"
+api_base = "http://127.0.0.1:20128/v1"
+api_key = "omniroute"
+privado = false
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 8192
 timeout_seg = 600
 
 [modelos.cloud]

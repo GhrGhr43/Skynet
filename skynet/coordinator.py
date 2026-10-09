@@ -13,7 +13,7 @@ import re
 import shlex
 from typing import Any, Protocol
 
-from . import gitops, propuestas, skills
+from . import gitops, modos, propuestas, skills
 from .agent import summarize_args
 from .gate import Level, PermissionGate
 from .router import Capabilities
@@ -28,7 +28,10 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   continúa [indicaciones]   retoma la última tarea sin terminar
   /repos                    repos autorizados          /repo <nombre|ninguno>  elegir repo
   /razonamiento auto|rápido|medio|alto                  cuánto piensa el modelo
-  /modelo local|cloud|auto  forzar modelo              /privado                privacidad alta on/off
+  /modelo local|<nube>|auto elegir modelo (local por defecto; los de la nube piden confirmación)
+  /permisos [modelo modo]   modos: repo | lectura | editar | total                /privado  privacidad alta on/off
+  /nube <modelo> on|off     activar o desactivar un modelo en la nube en esta sesión
+  /internet on|off         búsqueda web opcional (apagada al arrancar; sin navegador)
   /largo <horas> <objetivo> tarea larga en segundo plano con verificador y commits
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
   /parar <id>               parar una tarea larga      /log [id]               audit log
@@ -53,8 +56,9 @@ class Coordinator:
         self.ui = ui
         repos = list(rt.settings.repos)
         self.repo_name: str | None = repos[0] if len(repos) == 1 else None
-        self.force_model: str | None = None
+        self.force_model: str | None = "local"  # por defecto siempre el local; la nube se activa a mano
         self.private = False
+        self.internet = False  # búsqueda opcional, independiente del acceso al PC
         self.effort: str | None = None  # razonamiento elegido en el chat (None = automático)
         self.history: list[tuple[str, str]] = []  # (petición, respuesta) recientes de esta sesión
 
@@ -79,7 +83,8 @@ class Coordinator:
         return True
 
     def _caps(self, **extra: Any) -> dict[str, Any]:
-        caps = Capabilities(coding="alto" if self.repo_name else "bajo", force=self.force_model, effort=self.effort)
+        caps = Capabilities(coding="alto" if self.repo_name else "bajo", force=self.force_model, effort=self.effort,
+                            internet=self.internet and not self.private)
         if self.private:
             caps.privacy = "alta"
         for k, v in extra.items():
@@ -129,6 +134,11 @@ class Coordinator:
             self.ui.info(f"La tarea {task.id} parece estar en marcha en otra ventana (pid {task.pid}).")
             return
         self.repo_name = task.repo
+        saved = dict(task.capabilities.get("capacidades", {}))
+        saved["internet"] = self.internet and not self.private
+        if self.private:
+            saved["privacy"] = "alta"
+        task = self.rt.store.update_task(task.id, capabilities={**task.capabilities, "capacidades": saved})
         self.ui.info(f"Retomo la tarea {task.id} «{task.title}» (estado: {task.status}).")
         await self._run(task, kind="reanudar",
                         extra=(extra or "Continúa la tarea donde se quedó. Revisa los pasos anteriores y el "
@@ -235,11 +245,29 @@ class Coordinator:
             if choice == "auto":
                 self.force_model = None
             elif choice in self.rt.settings.models:
+                if not await self._confirm_cloud(choice):
+                    return True
                 self.force_model = choice
             else:
                 self.ui.info(f"Modelos: {', '.join(self.rt.settings.models)} o auto")
                 return True
             self.ui.info(f"Modelo: {self.force_model or 'automático (router)'}")
+        elif cmd == "/nube":
+            acc = self.rt.access
+            nube = [n for n in self.rt.settings.models if acc.es_nube(n)]
+            if not args or args[0] not in nube:
+                estado = ", ".join(f"{n} ({'activado' if n in acc.nube_activada else 'desactivado'})" for n in nube)
+                self.ui.info(f"Modelos en la nube: {estado or 'ninguno'}. Uso: /nube <modelo> on|off")
+                return True
+            if len(args) > 1 and args[1].lower() in ("off", "no", "desactivar"):
+                acc.activar_nube(args[0], False)
+                if self.force_model == args[0]:
+                    self.force_model = "local"
+                self.ui.info(f"{args[0]} desactivado: Skynet vuelve al modelo local.")
+            elif await self._confirm_cloud(args[0]):
+                self.ui.info(f"{args[0]} activado para esta sesión.")
+        elif cmd == "/permisos":
+            await self._permisos(args)
         elif cmd == "/razonamiento":
             levels = {"auto": None, "rapido": "low", "rápido": "low", "bajo": "low", "medio": "medium",
                       "equilibrado": "medium", "alto": "high", "mas": "high", "más": "high"}
@@ -249,8 +277,21 @@ class Coordinator:
                 return True
             self.effort = levels[choice]
             self.ui.info(f"Razonamiento: {choice if self.effort else 'automático'}")
+        elif cmd == "/internet":
+            choice = (args[0] if args else "estado").lower()
+            if choice not in ("on", "off", "estado"):
+                self.ui.info("Uso: /internet on|off")
+                return True
+            if choice == "on" and self.private:
+                self.ui.info("Desactiva /privado antes de activar Internet: las consultas salen del PC.")
+                return True
+            if choice != "estado":
+                self.internet = choice == "on"
+            self.ui.info(f"Internet {'activado: puede buscar cuando lo necesite' if self.internet else 'desactivado'}.")
         elif cmd == "/privado":
             self.private = not self.private
+            if self.private:
+                self.internet = False
             self.ui.info(f"Privacidad alta {'activada: solo modelo local' if self.private else 'desactivada'}.")
         elif cmd == "/tareas":
             self.ui.show(views.tasks_table(st.list_tasks(limit=int(args[0]) if args else 15)))
@@ -307,6 +348,41 @@ class Coordinator:
         else:
             self.ui.info(f"Comando desconocido: {cmd}. Escribe /ayuda.")
         return True
+
+    async def _confirm_cloud(self, model: str) -> bool:
+        """Un modelo en la nube solo se usa tras confirmarlo (una vez por sesión de Skynet)."""
+        acc = self.rt.access
+        if acc.nube_ok(model):
+            return True
+        answer = (await self.ui.ask(modos.CONFIRMAR_NUBE.format(modelo=model) + " [s/n]")).strip().lower()
+        if answer not in ("s", "si", "sí", "y", "yes"):
+            self.ui.info(f"{model} sigue desactivado: Skynet usa el modelo local.")
+            return False
+        acc.activar_nube(model, True)
+        self.rt.audit.log("permission", tool="skynet.nube", decision="activada", detail={"modelo": model})
+        return True
+
+    async def _permisos(self, args: list[str]) -> None:
+        acc = self.rt.access
+        if len(args) < 2:
+            lines = [f"- {n}: {modos.MODOS[acc.modo(n)].nombre}{' (nube)' if acc.es_nube(n) else ''}"
+                     for n in self.rt.settings.models]
+            lines += [f"  {m.clave}: {m.nombre}. {m.descripcion}" for m in modos.MODOS.values()]
+            self.ui.info("Modos de permisos por modelo:\n" + "\n".join(lines) + "\n" + modos.SIEMPRE
+                         + "\nUso: /permisos <modelo> repo|lectura|editar|total")
+            return
+        model, mode = args[0], args[1].lower()
+        if model not in self.rt.settings.models or not modos.modo_valido(mode):
+            self.ui.info(f"Modelos: {', '.join(self.rt.settings.models)}. Modos: {', '.join(modos.ORDEN)}.")
+            return
+        if acc.necesita_aviso(model, mode):
+            answer = (await self.ui.ask("AVISO: " + modos.aviso_nube(model, mode) + "\n¿Darle este modo igualmente? [s/n]"))
+            if answer.strip().lower() not in ("s", "si", "sí", "y", "yes"):
+                self.ui.info(f"{model} se queda en «{modos.MODOS[acc.modo(model)].nombre}».")
+                return
+        acc.set_modo(model, mode)
+        self.rt.audit.log("permission", tool="skynet.permisos", decision=mode, detail={"modelo": model})
+        self.ui.info(f"{model}: modo «{modos.MODOS[mode].nombre}». {modos.MODOS[mode].descripcion}")
 
     def _search(self, query: str) -> None:
         query = query.strip()

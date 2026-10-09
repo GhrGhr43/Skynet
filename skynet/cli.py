@@ -169,15 +169,25 @@ def doctor_checks(rt: Runtime) -> list[dict[str, Any]]:
             with urllib.request.urlopen(local.api_base.rstrip("/") + "/models", timeout=5) as r:
                 ids = [m["id"] for m in json.load(r).get("data", [])]
             want = local.litellm.split("/", 1)[1] if "/" in local.litellm else local.litellm
-            check("LM Studio", want in ids, f"{want} {'disponible' if want in ids else 'NO aparece en ' + str(ids)}")
+            check("Modelo local", want in ids, f"{want} {'disponible' if want in ids else 'NO aparece en ' + str(ids)}")
         except Exception as e:
-            check("LM Studio", False, f"no responde en {local.api_base}: {e}")
+            check("Modelo local", False, f"no responde en {local.api_base} (¿motor apagado? Ajustes): {e}")
     for name, m in s.models.items():
         if name == "local":
             continue
         avail, why = m.available()
         out.append({"nombre": f"modelo {name}", "estado": "ok" if avail else "off",
                     "detalle": f"{m.litellm} · {why or 'clave presente'} · presupuesto {s.budget_eur} €/mes"})
+    for name, e in s.engines.items():
+        # motores opcionales (p. ej. OmniRoute): apagado no es un fallo
+        if e.get("tipo") == "proceso" and e.get("salud"):
+            try:
+                with urllib.request.urlopen(e["salud"], timeout=5) as r:
+                    on = json.load(r).get("status") == "ok"
+            except Exception:
+                on = False
+            out.append({"nombre": f"motor {name}", "estado": "ok" if on else "off",
+                        "detalle": f"{e.get('url')} · {'encendido' if on else 'apagado (se enciende en Ajustes)'}"})
     for r in s.repos.values():
         exists = r.ruta.exists()
         check(f"Repo {r.nombre}", exists, f"{r.ruta}" + ("" if exists else " no existe (skynet demo lo crea)"))
@@ -194,6 +204,10 @@ def doctor_checks(rt: Runtime) -> list[dict[str, Any]]:
             except Exception as e:
                 check(f"MCP de {r.nombre}", False, f"{type(e).__name__}: {e}")
     asyncio.run(mcp_probe())
+    if "internet" in s.servers:
+        from importlib.util import find_spec
+
+        check("Búsqueda en internet", find_spec("ddgs") is not None, "MCP opcional, se activa con el globo del chat")
     return out
 
 

@@ -1,6 +1,7 @@
-"""Motores locales (LM Studio y Strata): saber si están encendidos, encenderlos y apagarlos.
+"""Motores locales (LM Studio, llama-server, Strata y procesos como OmniRoute): saber si están
+encendidos, encenderlos y apagarlos.
 
-Los dos usan la misma GPU (16 GB), así que encender uno apaga el otro. La configuración vive
+Los que usan la GPU (16 GB) se excluyen: encender uno apaga los demás con `gpu = true`. La configuración vive
 en config/skynet.toml ([motores.*]); cada motor sirve a un perfil de router.toml del mismo nombre.
 """
 from __future__ import annotations
@@ -19,12 +20,18 @@ from typing import Any
 @dataclass
 class EngineSpec:
     nombre: str              # = perfil de router.toml que sirve
-    tipo: str                # "lmstudio" | "strata"
+    tipo: str                # "lmstudio" | "llamacpp" | "strata" | "proceso"
     url: str                 # base OpenAI, p. ej. http://127.0.0.1:1234/v1
     modelo: str = ""         # LM Studio: clave del modelo a cargar
     contexto: int = 0
     carpeta: str = ""        # Strata: carpeta con serve/server.py
     config: str = ""         # Strata: strata-*.json
+    exe: str = ""            # llamacpp: llama-server.exe; proceso: ejecutable
+    args: list[str] = field(default_factory=list)  # llamacpp: flags extra; proceso: argumentos
+    env: dict[str, str] = field(default_factory=dict)  # proceso: variables de entorno extra
+    salud: str = ""          # URL que devuelve {"status": "ok"} cuando está listo (si no, url + /models)
+    firma: str = ""          # proceso: texto de su línea de comandos para apagarlo
+    gpu: bool = True         # False = no compite por la GPU (no apaga ni es apagado por otros)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -65,6 +72,8 @@ class Engines:
                                    errors="replace", timeout=15, creationflags=NO_WINDOW)
                 return s.modelo.lower() in r.stdout.lower()
             return _get_json(s.url.rstrip("/") + "/models") is not None
+        if s.salud:
+            return (_get_json(s.salud) or {}).get("status") == "ok"
         return _get_json(s.url.rstrip("/") + "/models") is not None
 
     def status(self, max_age: float = 10) -> list[dict[str, Any]]:
@@ -78,12 +87,18 @@ class Engines:
     def invalidate(self) -> None:
         self._cached_at = 0.0
 
+    # --- modelo del motor local -----------------------------------------
+    def set_local_model(self, name: str, local: Any) -> None:
+        """Cambia el GGUF del motor `name` (objeto modelos_locales.Local); no lo reinicia."""
+        s = self.specs[name]
+        s.modelo, s.args = str(local.ruta), local.args()
+
     # --- encender / apagar ----------------------------------------------
     def start(self, name: str, wait_s: float = 360) -> str:
-        for other in self.specs:
-            if other != name and self.is_on(other):
-                self.stop(other)
         s = self.specs[name]
+        for other, o in self.specs.items():
+            if other != name and s.gpu and o.gpu and self.is_on(other):
+                self.stop(other)
         if s.tipo == "lmstudio":
             lms = _lms()
             if not lms:
@@ -97,6 +112,13 @@ class Engines:
             if r.returncode != 0:
                 raise RuntimeError(f"LM Studio no cargó el modelo: {(r.stderr or r.stdout).strip()[-300:]}")
             return f"{s.modelo} cargado en LM Studio"
+        if s.tipo == "llamacpp":
+            return self._start_llamacpp(s, wait_s)
+        if s.tipo == "proceso":
+            if self.is_on(name):
+                return f"{name} ya estaba encendido"
+            return self._spawn(s, [os.path.expandvars(s.exe), *[os.path.expandvars(a) for a in s.args]],
+                               s.salud, wait_s, {k: os.path.expandvars(v) for k, v in s.env.items()})
         # Strata: se lanza su servidor como hace run-*.bat, desacoplado de Skynet
         folder = Path(s.carpeta)
         py = folder / ".venv" / "Scripts" / "python.exe"
@@ -116,15 +138,67 @@ class Engines:
             time.sleep(3)
         raise RuntimeError("Strata no respondió a tiempo (mira data/logs/strata.log)")
 
+    def _start_llamacpp(self, s: EngineSpec, wait_s: float) -> str:
+        # llama-server directo (el que trae LM Studio): permite FA, KV q8_0 y MTP, que `lms load` no expone
+        if self.is_on(s.nombre):
+            return f"{s.nombre} ya estaba encendido"
+        port = s.url.rsplit(":", 1)[1].split("/")[0]
+        args = [os.path.expandvars(s.exe), "-m", os.path.expandvars(s.modelo), "--port", port,
+                "--alias", s.nombre, *s.args]
+        if s.contexto:
+            args += ["-c", str(s.contexto)]
+        health = s.url.rstrip("/").removesuffix("/v1") + "/health"
+        try:
+            return self._spawn(s, args, health, wait_s)
+        except RuntimeError:
+            if "draft-mtp" not in args:
+                raise
+            i = args.index("--spec-type")   # el GGUF no trae capas MTP: reintento sin ellas
+            return self._spawn(s, args[:i] + args[i + 2:], health, wait_s)
+
+    def _spawn(self, s: EngineSpec, args: list[str], health: str, wait_s: float,
+               env: dict[str, str] | None = None) -> str:
+        """Lanza un servidor desacoplado de Skynet y espera a que `health` diga ok."""
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        logname = f"{s.nombre}.log"
+        log = open(self.logs_dir / logname, "a", encoding="utf-8")
+        flags = NO_WINDOW | (subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0)
+        proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                creationflags=flags, env={**os.environ, **(env or {})})
+        log.close()
+        end = time.monotonic() + wait_s
+        while time.monotonic() < end:
+            if proc.poll() is not None:
+                raise RuntimeError(f"{s.nombre} se cerró al arrancar (mira data/logs/{logname})")
+            if (_get_json(health, timeout=2) or {}).get("status") == "ok":
+                return f"{s.nombre} encendido"
+            time.sleep(2)
+        raise RuntimeError(f"{s.nombre} no respondió a tiempo (mira data/logs/{logname})")
+
     def stop(self, name: str) -> str:
         s = self.specs[name]
+        if s.tipo == "llamacpp":
+            # solo el llama-server de este puerto: puede haber otro de pruebas (bench/) en otro
+            port = s.url.rsplit(":", 1)[1].split("/")[0]
+            ps = ("Get-CimInstance Win32_Process -Filter \"Name='llama-server.exe'\" | Where-Object { "
+                  f"$_.CommandLine -like '*--port {port} *' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}")
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=60,
+                           creationflags=NO_WINDOW)
+            return f"{name} apagado"
+        if s.tipo == "proceso":
+            # todo proceso cuya línea de comandos lleve la firma (el servidor y sus hijos)
+            ps = ("Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like "
+                  f"'*{s.firma}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}")
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=60,
+                           creationflags=NO_WINDOW)
+            return f"{name} apagado"
         if s.tipo == "lmstudio":
             lms = _lms()
             if lms:
                 subprocess.run([lms, "unload", "--all"], capture_output=True, timeout=60, creationflags=NO_WINDOW)
             return "LM Studio descargado"
         # Strata: matar el proceso de su servidor (por línea de comandos)
-        ps = ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*serve*server.py*--engine*strata*' } "
+        ps = ("Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*serve*server.py*--engine*strata*' } "
               "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
         subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=60,
                        creationflags=NO_WINDOW)
@@ -134,6 +208,16 @@ class Engines:
 def load_engines(raw: dict[str, Any], logs_dir: Path) -> Engines:
     specs = {}
     for n, e in (raw or {}).items():
-        known = {k: e[k] for k in ("tipo", "url", "modelo", "contexto", "carpeta", "config") if k in e}
+        known = {k: e[k] for k in ("tipo", "url", "modelo", "contexto", "carpeta", "config", "exe", "args", "env", "salud",
+                                       "firma", "gpu") if k in e}
         specs[n] = EngineSpec(nombre=n, **known)
-    return Engines(specs, logs_dir)
+    eng = Engines(specs, logs_dir)
+    if "local" in specs and specs["local"].tipo == "llamacpp":  # modelo elegido en Ajustes
+        from . import modelos_locales as ml
+
+        sel = ml.elegido(logs_dir.parent)
+        if sel:
+            hit = next((m for m in ml.buscar() if m.nombre == sel), None)
+            if hit:
+                eng.set_local_model("local", hit)
+    return eng

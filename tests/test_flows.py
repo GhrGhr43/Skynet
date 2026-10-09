@@ -112,7 +112,7 @@ async def test_chat_without_repo_uses_local_model(make_rt, monkeypatch):
     coord = Coordinator(rt, ui)
     await coord.handle("/repo ninguno")
     await coord.handle("hola")
-    assert llm.calls[0]["model"].startswith("lm_studio/")
+    assert llm.calls[0]["model"] == "openai/local"
     assert "tools" not in llm.calls[0]
     assert ui.answers_given == ["¡Hola, Daniel!"]
 
@@ -122,7 +122,7 @@ async def test_forced_cloud_model_with_budget(make_rt, monkeypatch):
     llm = ScriptedLLM([("ok", None)])
     rt = make_rt(llm)
     rt.settings.budget_eur = 5
-    coord = Coordinator(rt, FakeUI())
+    coord = Coordinator(rt, FakeUI(["s"]))  # activar un modelo en la nube pide confirmación
     await coord.handle("/repo ninguno")
     await coord.handle("/modelo cloud")
     await coord.handle("piensa algo difícil")
@@ -163,7 +163,7 @@ async def test_long_task_rollback_then_success(make_rt, repo_path):
     assert "Iteración 1" in errores
     assert (repo_path / "mod.py").read_text() == GOOD
     assert not gitops.is_dirty(repo_path)
-    assert all(c["model"].startswith("lm_studio/") for c in llm.calls)
+    assert all(c["model"] == "openai/local" for c in llm.calls)
 
 
 async def test_long_task_stops_on_repeated_error(make_rt, repo_path):

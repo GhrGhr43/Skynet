@@ -6,6 +6,7 @@ original, para cambios personales sin tocar los archivos versionados.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tomllib
@@ -207,3 +208,15 @@ def load_settings(home: Path | str | None = None) -> Settings:
         long=LongLimits(**general.get("largo", {})),
         engines=dict(general.get("motores", {})),
     )
+
+
+def add_repo(home: Path, nombre: str, ruta: Path, verificador: str | None = None) -> RepoConfig:
+    """Añade un repo a config/repos.local.toml (ignorado por git, se mezcla sobre repos.toml)."""
+    local = home / "config" / "repos.local.toml"
+    lines = [f"\n[repos.{nombre}]", f"ruta = {json.dumps(str(ruta))}"]
+    if verificador:
+        lines.append(f"verificador = {json.dumps(verificador)}")
+    local.parent.mkdir(parents=True, exist_ok=True)
+    with local.open("a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return RepoConfig(nombre=nombre, ruta=ruta, verificador=verificador)

@@ -1,5 +1,5 @@
 // Arranque: escena 3D (si hay WebGL) + interfaz. Si la GPU falla, la interfaz funciona igual.
-import { App } from './app.js';
+import { App } from './app.js?v=internet-cursor-20261009';
 
 function pickQuality() {
   const q = new URLSearchParams(location.search).get('calidad');

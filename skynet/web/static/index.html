@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/app.css?v=internet-cursor-20261009">
 <script type="importmap">
 { "imports": {
     "three": "/static/vendor/three/three.module.min.js",
@@ -32,15 +32,6 @@
     <span class="status-detail" id="statusDetail"></span>
   </div>
   <div class="chips">
-    <button class="chip" id="chipRepo" data-panel="ajustes" title="Repo en el que trabaja Skynet">
-      <span class="chip-k">Repo</span><span class="chip-v" id="chipRepoV">—</span>
-    </button>
-    <button class="chip" id="chipModel" data-panel="ajustes" title="Modelo que usa Skynet">
-      <span class="chip-k">Modelo</span><span class="chip-v" id="chipModelV">—</span>
-    </button>
-    <button class="chip chip-toggle" id="chipPriv" title="Privacidad alta: solo el modelo local, nada sale de tu PC" aria-pressed="false">
-      <span class="chip-ico" data-icon="lock"></span><span class="chip-v">Privado</span>
-    </button>
     <button class="chip" id="chipProp" hidden title="Skills y memoria que Skynet propone: revísalas y apruébalas o recházalas">
       <span class="chip-k">Propuestas</span><span class="chip-v" id="chipPropV">0</span>
     </button>
@@ -52,11 +43,14 @@
   <button class="rail-btn" data-panel="tareas" data-icon="tasks" aria-label="Tareas"><span class="rail-tip">Tareas</span></button>
   <button class="rail-btn" data-panel="largo" data-icon="orbit" aria-label="Tarea larga"><span class="rail-tip">Tarea larga</span></button>
   <button class="rail-btn" data-panel="registro" data-icon="log" aria-label="Registro"><span class="rail-tip">Registro y consumo</span></button>
-  <button class="rail-btn" data-panel="ajustes" data-icon="sliders" aria-label="Modelos y repos"><span class="rail-tip">Modelos y repos</span></button>
   <button class="rail-btn" data-panel="diagnostico" data-icon="pulse" aria-label="Diagnóstico"><span class="rail-tip">Diagnóstico</span></button>
   <span class="rail-sep"></span>
   <button class="rail-btn" data-panel="ayuda" data-icon="spark" aria-label="Qué puede hacer"><span class="rail-tip">Qué puede hacer Skynet</span></button>
 </nav>
+
+<button class="config-btn" id="configBtn" data-panel="ajustes" aria-label="Configuración" title="Configuración">
+  <span class="config-ico" data-icon="sliders"></span><span>Configuración</span>
+</button>
 
 <aside class="panel" id="panel" aria-hidden="true">
   <div class="panel-head">
@@ -74,23 +68,27 @@
 
 <footer class="dock">
   <div class="suggest" id="suggest"></div>
-  <form class="prompt" id="prompt" autocomplete="off">
-    <span class="prompt-glow" aria-hidden="true"></span>
-    <textarea id="input" rows="1" placeholder="Pídele algo a Skynet…" aria-label="Mensaje para Skynet"></textarea>
-    <label class="prompt-effort" title="Cuánto piensa el modelo antes de responder">
-      <span class="sr-only">Razonamiento</span>
-      <select id="effort" aria-label="Razonamiento">
-        <option value="auto">Auto</option>
-        <option value="low">Rápido</option>
-        <option value="medium">Equilibrado</option>
-        <option value="high">Pensar más</option>
-      </select>
-    </label>
-    <button type="button" class="prompt-btn prompt-stop" id="stopBtn" data-icon="stop" aria-label="Detener" title="Detener (la tarea queda pausada)"></button>
-    <button type="submit" class="prompt-btn prompt-send" id="sendBtn" data-icon="arrow" aria-label="Enviar"></button>
-  </form>
-  <div class="hint"><kbd>Enter</kbd> enviar · <kbd>Mayús</kbd>+<kbd>Enter</kbd> nueva línea · <kbd>Ctrl</kbd>+<kbd>K</kbd> todas las acciones</div>
+  <div class="composer">
+    <div class="tabs">
+      <button type="button" class="tab" id="tabRepo" title="Repo en el que trabaja Skynet"></button>
+      <button type="button" class="tab" id="tabWhere" title="Dónde piensa: Automático, Local (tu PC) o Nube"></button>
+    </div>
+    <form class="prompt" id="prompt" autocomplete="off">
+      <span class="prompt-glow" aria-hidden="true"></span>
+      <textarea id="input" rows="1" placeholder="Pídele algo a Skynet…" aria-label="Mensaje para Skynet"></textarea>
+      <button type="button" class="prompt-btn prompt-stop" id="stopBtn" data-icon="stop" aria-label="Detener" title="Detener (la tarea queda pausada)"></button>
+      <button type="submit" class="prompt-btn prompt-send" id="sendBtn" data-icon="arrow" aria-label="Enviar"></button>
+    </form>
+    <div class="meta-row">
+      <button type="button" class="mini" id="btnPerm" title="Permisos del modelo: hasta dónde puede llegar en tu PC"></button>
+      <button type="button" class="mini internet-toggle" id="btnInternet" data-icon="globe" aria-label="Búsqueda en internet" aria-pressed="false" title="Activar búsqueda en internet"><span class="internet-label">Internet</span></button>
+      <span class="grow"></span>
+      <button type="button" class="mini" id="btnModel" title="Modelo"></button>
+      <button type="button" class="mini" id="btnEffort" title="Cuánto razona antes de responder"></button>
+    </div>
+  </div>
 </footer>
+<div class="menu" id="menu" role="menu" hidden></div>
 
 <div class="modal" id="ask" role="dialog" aria-modal="true" aria-labelledby="askTitle" hidden>
   <div class="modal-card" id="askCard"></div>
@@ -105,6 +103,6 @@
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
-<script type="module" src="/static/js/main.js"></script>
+<script type="module" src="/static/js/main.js?v=internet-cursor-20261009"></script>
 </body>
 </html>
