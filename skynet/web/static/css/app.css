@@ -361,9 +361,39 @@ body.busy .prompt-glow { opacity: 1; animation: orbit 2.4s linear infinite; }
 .prompt-bar { display: flex; align-items: center; gap: 2px; padding: 4px 8px 8px 10px; min-width: 0; }
 .prompt-btn { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; flex: none; margin-left: 4px; transition: background .25s, transform .2s, opacity .25s, box-shadow .3s; }
 .prompt-btn > svg { width: 16px; height: 16px; }
-.prompt-send { background: var(--fg); color: #000; }
-.prompt-send:hover { box-shadow: 0 0 18px rgba(255,255,255,0.3); }
-.prompt-send:disabled { opacity: 0.2; box-shadow: none; cursor: default; }
+.prompt-bar { padding: 4px 8px 8px 8px; }
+/* Enviar: punta facetada en negro y blanco; al tener texto, un leve desdoble cian/rojo (estilo futurista). */
+.prompt-send { background: rgba(255,255,255,0.07); color: var(--fg3); border: 1px solid var(--line2); }
+.prompt-send > svg { width: 17px; height: 17px; transition: filter .3s, transform .3s var(--ease); }
+.prompt-send:not(:disabled) { background: #000; color: #fff; border-color: rgba(255,255,255,0.28); }
+.prompt-send:not(:disabled) > svg { filter: drop-shadow(-1px 0 0 rgba(0,240,210,0.75)) drop-shadow(1px 0 0 rgba(255,45,70,0.75)); }
+.prompt-send:not(:disabled):hover > svg {
+  transform: translate(1px, -1px);
+  filter: drop-shadow(-1.6px 0.6px 0 rgba(0,240,210,0.85)) drop-shadow(1.6px -0.6px 0 rgba(255,45,70,0.85));
+}
+.prompt-send:disabled { opacity: 0.55; cursor: default; }
+/* «+»: interruptores que pesan (internet, modo coder…) */
+.prompt-plus {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--fg3);
+  border: 1px solid var(--line2); transition: color .2s, background .2s, border-color .2s, transform .3s var(--ease);
+}
+.prompt-plus > svg { width: 15px; height: 15px; }
+.prompt-plus:hover, .prompt-plus[aria-expanded="true"] { color: var(--fg); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.22); }
+.prompt-plus[aria-expanded="true"] { transform: rotate(45deg); }
+.modes { display: flex; gap: 4px; margin-left: 6px; min-width: 0; }
+.mode-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: 999px;
+  font-size: 12px; color: var(--fg); background: rgba(255,255,255,0.07); border: 1px solid var(--line2); transition: background .2s, color .2s;
+}
+.mode-chip > svg { width: 13px; height: 13px; }
+.mode-chip:hover { background: rgba(255,255,255,0.08); color: var(--fg); }
+.tps { font-size: 11px; color: var(--fg4); font-variant-numeric: tabular-nums; margin-right: 2px; white-space: nowrap; }
+.tps:empty { display: none; }
+/* Debajo de la caja: repo, permisos, modelo y razonamiento, sin marco */
+.under { display: flex; align-items: center; gap: 2px; padding: 0 6px; margin-top: -4px; min-width: 0; }
+.under .mini { color: var(--fg3); }
+.under .mini:hover, .under .mini[aria-expanded="true"] { color: var(--fg2); }
+body:not(.has-convo) .under { order: 1; }
 .prompt-stop { display: none; background: rgba(255,255,255,0.08); color: var(--fg); }
 .prompt-stop:hover { background: color-mix(in srgb, var(--bad) 22%, transparent); }
 body.busy .prompt-stop { display: grid; }

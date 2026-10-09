@@ -44,6 +44,7 @@ def test_sesiones_en_la_web(web):  # noqa: F811
     snap = wait_until(c, lambda x: not x["ocupado"] and x["sesion"]["contexto"])
     assert snap["sesion"]["titulo"] == "Primera pregunta"
     assert snap["sesion"]["consumo"]["llamadas"] == 1 and snap["sesion"]["contexto"] == 120
+    assert snap["sesion"]["tps"] and snap["sesion"]["tps"] > 0  # tokens/s de la última llamada
     # nueva sesión: vacía y sin el hilo anterior
     nueva = c.post("/api/sesiones/nueva", json={}).json()["sesion"]
     assert nueva["id"] != first["id"] and nueva["contexto"] == 0

@@ -251,6 +251,9 @@ class Session:
     def _usage(self, d: dict[str, Any]) -> None:
         self.ctx = {"contexto": int(d.get("tokens_in") or 0) + int(d.get("tokens_out") or 0), "modelo": d.get("model")}
         self.sesiones.tocar(self.sid, **self.ctx)
+        seg, out = float(d.get("segundos") or 0), int(d.get("tokens_out") or 0)
+        if seg > 0 and out > 0:  # velocidad de la última llamada (solo en memoria)
+            self.tps = round(out / seg, 1)
 
     def abrir(self, sid: int) -> None:
         """Cambia de sesión: la conversación de las pestañas se rehace con la de la sesión elegida."""
@@ -278,7 +281,8 @@ class Session:
     def sesion_info(self) -> dict[str, Any]:
         ses = self.sesiones.get(self.sid)
         return {"id": self.sid, "titulo": ses["titulo"], "consumo": self.sesiones.consumo(self.sid),
-                "contexto": self.ctx.get("contexto") or 0, "contexto_max": context_window(self, self.ctx.get("modelo"))}
+                "contexto": self.ctx.get("contexto") or 0, "contexto_max": context_window(self, self.ctx.get("modelo")),
+                "tps": getattr(self, "tps", None)}
 
     @property
     def busy(self) -> bool:

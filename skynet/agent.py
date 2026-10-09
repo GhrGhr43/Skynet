@@ -6,6 +6,7 @@ decide si su trabajo es bueno: eso lo hace el verificador fuera de este bucle.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -115,6 +116,7 @@ class Agent:
         for turn in range(1, max_turns + 1):
             out.turns = turn
             self.on_event("thinking", {"turn": turn})
+            t0 = time.monotonic()
             try:
                 res = await self.router.complete(decision, messages, tools, self.audit, effort=caps.effort)
             except RouterError as e:
@@ -123,8 +125,9 @@ class Agent:
                 return out
             out.tokens_in += res.tokens_in
             out.tokens_out += res.tokens_out
+            # segundos de la llamada entera (incluye leer el prompt): la web muestra tokens/s con esto
             self.on_event("usage", {"tokens_in": res.tokens_in, "tokens_out": res.tokens_out,
-                                    "model": decision.profile.litellm})
+                                    "model": decision.profile.litellm, "segundos": round(time.monotonic() - t0, 3)})
             out.cost_eur += res.cost_eur
             messages.append(res.message)
 
