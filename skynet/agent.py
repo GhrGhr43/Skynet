@@ -123,6 +123,8 @@ class Agent:
                 return out
             out.tokens_in += res.tokens_in
             out.tokens_out += res.tokens_out
+            self.on_event("usage", {"tokens_in": res.tokens_in, "tokens_out": res.tokens_out,
+                                    "model": decision.profile.litellm})
             out.cost_eur += res.cost_eur
             messages.append(res.message)
 
