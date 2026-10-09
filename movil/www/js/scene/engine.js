@@ -10,6 +10,9 @@ import { Stars } from './stars.js';
 import { Glyphs } from './glyphs.js';
 import { Satellites } from './satellites.js';
 
+// Contenedores de la maqueta que dejan ver la escena (el ratón sobre ellos mueve la nebulosa).
+const SCENE_THROUGH = '.main, .top, .hero, .hero *, .convo, .convo-scroll, .convo-inner, .dock, .suggest, .under';
+
 // Cada estado del agente es una "personalidad" de la nube: color, turbulencia, giro...
 export const STATES = {
   reposo:       { label: 'En espera',                tint: '#d4e0ff', accent: '#86a8ff', turb: 0.35, spin: 0.05, breath: 1.0, glyphRate: 0.35, glyphGain: 0.16, bloom: 0.8,  size: 11 },
@@ -114,7 +117,7 @@ export class Engine {
     this.hit = new THREE.Vector3();
     window.addEventListener('pointermove', (e) => this.onPointer(e), { passive: true });
     window.addEventListener('pointerdown', (e) => {
-      if (e.target === canvas) this.pulse(0.9);
+      if (this.isScene(e.target)) this.pulse(0.9);
     });
     document.addEventListener('pointerleave', () => { this.overScene = false; });
     window.addEventListener('blur', () => { this.overScene = false; });
@@ -131,9 +134,15 @@ export class Engine {
 
   onPointer(e) {
     this.mouse.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-    this.overScene = e.target === this.canvas;
+    this.overScene = this.isScene(e.target);
     this.lastMove = performance.now();
     this.speedBoost = Math.min(1.6, this.speedBoost + Math.hypot(e.movementX || 0, e.movementY || 0) * 0.012);
+  }
+
+  // La interfaz tapa el lienzo: los huecos vacíos de la maqueta (no botones ni mensajes)
+  // cuentan como escena, para que la nebulosa siga reaccionando al cursor.
+  isScene(el) {
+    return el === this.canvas || !!el?.matches?.(SCENE_THROUGH);
   }
 
   resize() {

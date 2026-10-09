@@ -10,6 +10,8 @@ const $ = (s, r = document) => r.querySelector(s);
 
 // Herramientas MCP en lenguaje humano.
 const TOOL_WORDS = {
+  'internet.buscar': ['Buscando en internet', 'globe'],
+  'internet.leer': ['Leyendo una página', 'globe'],
   'workspace.read_file': ['Leyendo', 'file'],
   'workspace.list_dir': ['Explorando', 'folder'],
   'workspace.search': ['Buscando', 'search'],
@@ -43,6 +45,10 @@ const LEVEL_TEXT = {
 const WHERE = { auto: 'Automático', local: 'Local', nube: 'Nube' };
 const EFFORT = { auto: 'Auto', low: 'Rápido', medium: 'Equilibrado', high: 'Pensar más' };
 
+const fmtN = (n) => Number(n || 0).toLocaleString('es-ES');
+const kfmt = (n) => (n >= 1e6 ? `${(n / 1e6).toLocaleString('es-ES', { maximumFractionDigits: 1 })} M` : n >= 1000 ? `${(n / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 })} k` : String(n || 0));
+const eurFmt = (n) => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+
 const FOOT_RE = /^(.+?) · (\d+)\+(\d+) tokens · ([\d.,]+) € · (\d+) herramientas · tarea (\d+): (\w+)(?: · verificador (OK|FALLA))?$/;
 
 export class App {
@@ -60,9 +66,13 @@ export class App {
     this.scroll = $('#convoScroll');
     this.input = $('#input');
     this.panels = new Panels(this);
+    this.sessions = [];
+    this.sessionQuery = '';
     paintIcons();
+    this.initSide();
     this.bind();
     this.setState();
+    this.updateFocus();
     this.disconnect = connect({
       onHello: (s) => this.onHello(s),
       onMessage: (m) => this.onMessage(m),
@@ -86,12 +96,26 @@ export class App {
     });
     $('#stopBtn').addEventListener('click', () => this.stop());
     $('#tabRepo').addEventListener('click', (e) => this.menuRepo(e.currentTarget));
-    $('#tabWhere').addEventListener('click', (e) => this.menuWhere(e.currentTarget));
     $('#btnModel').addEventListener('click', (e) => this.menuModel(e.currentTarget));
     $('#btnEffort').addEventListener('click', (e) => this.menuEffort(e.currentTarget));
     $('#btnPerm').addEventListener('click', (e) => this.menuPerm(e.currentTarget));
-    document.addEventListener('pointerdown', (e) => { if (!$('#menu').hidden && !e.target.closest('#menu, .tab, .mini')) this.closeMenu(); });
-    $('#chipProp').addEventListener('click', () => this.send('/propuestas'));
+    $('#plusBtn').addEventListener('click', (e) => this.menuPlus(e.currentTarget));
+    document.addEventListener('pointerdown', (e) => {
+      if (!$('#menu').hidden && !e.target.closest('#menu, .mini, .ses-more, .prompt-plus')) this.closeMenu();
+      if (!$('#meterPop').hidden && !e.target.closest('#meterPop, #meter')) this.closeMeter();
+    });
+    // Barra lateral: sesiones
+    $('#newSession').addEventListener('click', () => this.newSession());
+    $('#sessionSearch').addEventListener('input', (e) => {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = setTimeout(() => { this.sessionQuery = e.target.value.trim(); this.loadSessions(); }, 160);
+    });
+    $('#sideClose').addEventListener('click', () => this.toggleSide(false));
+    $('#sideOpen').addEventListener('click', () => this.toggleSide(true));
+    $('#sideScrim').addEventListener('click', () => this.toggleSide(false));
+    $('#sessionTitle').addEventListener('click', () => this.renameTitle());
+    $('#meter').addEventListener('click', () => this.toggleMeter());
+    $('#paletteBtn').addEventListener('click', () => this.openPalette());
     for (const b of document.querySelectorAll('[data-panel]')) {
       b.addEventListener('click', () => this.panels.toggle(b.dataset.panel));
     }
@@ -114,6 +138,9 @@ export class App {
   onKey(e) {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.openPalette(); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); this.toggleSide(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.newSession(); return; }
+    if (!$('#meterPop').hidden && e.key === 'Escape') { e.preventDefault(); this.closeMeter(); return; }
     if (!$('#menu').hidden && e.key === 'Escape') { e.preventDefault(); this.closeMenu(); return; }
     if (this.localConfirm) {
       const k = e.key.toLowerCase();
@@ -208,20 +235,67 @@ export class App {
     tr.innerHTML = `${icon('repo')}<span class="tab-v">${esc(s.repo || 'Sin repo')}</span>${chev}`;
     tr.classList.toggle('off', !s.repo);
     const w = this.where(s);
-    const tw = $('#tabWhere');
-    tw.innerHTML = `${icon(w === 'nube' ? 'cloud' : w === 'local' ? 'cpu' : 'route')}<span class="tab-v">${WHERE[w]}</span>${chev}`;
-    tw.dataset.where = w;
     const model = s.modelo === 'auto' ? `Auto · ${s.modelo_efectivo || 'local'}` : s.modelo;
-    $('#btnModel').innerHTML = `<span>${esc(model)}</span>${chev}`;
+    const bm = $('#btnModel');
+    bm.innerHTML = `${icon(w === 'nube' ? 'cloud' : w === 'local' ? 'cpu' : 'route')}<span>${esc(model)}</span>${chev}`;
+    bm.title = `Modelo: ${WHERE[w]}`;
     $('#btnEffort').innerHTML = `<span>${EFFORT[s.razonamiento] || 'Auto'}</span>${chev}`;
     const mode = (s.modos || []).find((o) => o.clave === s.modo_actual);
     const bp = $('#btnPerm');
     const libre = s.modo_actual === 'total' && s.sin_preguntar_actual;
     bp.innerHTML = `${icon('shield')}<span>${esc(mode ? mode.nombre : 'Solo repo')}${libre ? ' · sin preguntar' : ''}</span>${chev}`;
     bp.dataset.level = libre ? 'libre' : (s.modo_actual || 'repo');
+    // Interruptores activos (lo que se enciende desde «+»): visibles y se apagan con un clic.
+    const on = [];
+    if (s.internet) on.push(['internet', 'globe', 'Internet']);
+    if (s.coder) on.push(['coder', 'terminal', 'Coder']);
+    const key = on.map((x) => x[0]).join('|') + (s.ocupado ? '!' : '');
+    if (key !== this.modesKey) {
+      this.modesKey = key;
+      const box = $('#modes');
+      box.innerHTML = on.map(([k, ico, label]) => `<button type="button" class="mode-chip" data-k="${k}" title="${label} activo. Pulsa para apagarlo" ${s.ocupado ? 'disabled' : ''}>${icon(ico)}<span>${label}</span></button>`).join('');
+      for (const b of box.querySelectorAll('.mode-chip')) b.addEventListener('click', () => this.toggleMode(b.dataset.k));
+    }
   }
 
-  openMenu(anchor, sections, pick) {
+  menuPlus(anchor) {
+    const s = this.snap || {};
+    const coderOk = typeof s.coder === 'boolean';
+    this.openMenu(anchor, [{ title: 'Activar', items: [
+      { value: 'internet', label: 'Internet', ico: 'globe', on: !!s.internet,
+        sub: s.internet_bloqueado ? 'Bloqueado por privacidad alta' : 'Busca en la web cuando lo necesita' },
+      { value: 'coder', label: 'Modo coder', ico: 'terminal', on: !!s.coder,
+        sub: !coderOk ? 'Próximamente' : s.repo ? 'Programa en el repo. Más lento' : 'Elige antes un repo (abajo)' },
+    ] }], (v) => this.toggleMode(v));
+  }
+
+  async toggleMode(k) {
+    const s = this.snap || {};
+    if (this.modePending) return;
+    if (s.ocupado) { this.toast('Espera a que termine para cambiar esto.'); return; }
+    if (k === 'internet') {
+      if (s.internet_bloqueado) { this.toast('Internet está bloqueado por privacidad alta.'); return; }
+      const enabled = !s.internet;
+      this.modePending = true;
+      try {
+        if (await this.ajustes({ internet: enabled }) && this.snap?.internet === enabled) {
+          this.toast(enabled ? 'Internet activado.' : 'Internet desactivado.');
+        }
+      } finally { this.modePending = false; }
+    } else if (k === 'coder') {
+      if (typeof s.coder !== 'boolean') { this.toast('El modo coder llegará pronto: ahora Skynet programa cuando eliges un repo.'); return; }
+      if (!s.coder && !s.repo) { this.toast('Elige un repo antes de activar Coder.'); return; }
+      const enabled = !s.coder;
+      this.modePending = true;
+      try {
+        if (await this.ajustes({ coder: enabled }) && this.snap?.coder === enabled) {
+          this.toast(enabled ? 'Modo coder activado.' : 'Modo coder desactivado.');
+        }
+      } finally { this.modePending = false; }
+    }
+  }
+
+  openMenu(anchor, sections, pick, opts = {}) {
     const menu = $('#menu');
     if (!menu.hidden && this.menuAnchor === anchor) { this.closeMenu(); return; }
     this.closeMenu();
@@ -240,8 +314,13 @@ export class App {
     const r = anchor.getBoundingClientRect();
     const mw = menu.offsetWidth;
     menu.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - mw - 12))}px`;
-    menu.style.bottom = `${window.innerHeight - r.top + 6}px`;
-    menu.style.top = 'auto';
+    if (opts.below) {
+      menu.style.top = `${Math.min(r.bottom + 6, window.innerHeight - menu.offsetHeight - 12)}px`;
+      menu.style.bottom = 'auto';
+    } else {
+      menu.style.bottom = `${window.innerHeight - r.top + 6}px`;
+      menu.style.top = 'auto';
+    }
     this.menuAnchor = anchor;
     anchor.setAttribute('aria-expanded', 'true');
     for (const b of menu.querySelectorAll('.menu-i')) b.addEventListener('click', () => { this.closeMenu(); pick(b.dataset.v); });
@@ -332,9 +411,11 @@ export class App {
   onHello(snap) {
     // Cada conexión (o reconexión) reconstruye la conversación desde el servidor.
     this.convo.innerHTML = '';
+    document.body.classList.remove('has-convo');
     this.turn = null;
     this.lastAnswer = null;
     this.replaying = true;
+    this.loadSessions();
     clearTimeout(this.replayEnd);
     this.replayEnd = setTimeout(() => { this.replaying = false; this.scrollDown(true); this.renderSuggestions(); }, 400);
     this.applySnap(snap);
@@ -347,8 +428,15 @@ export class App {
     this.snap = s;
     this.setBusy(!!s.ocupado);
     this.renderComposer(s);
-    $('#chipProp').hidden = !s.propuestas;
-    $('#chipPropV').textContent = String(s.propuestas || 0);
+    const lb = $('#learnBtn');
+    lb.hidden = !s.propuestas;
+    $('#learnN').textContent = String(s.propuestas || 0);
+    lb.title = s.propuestas ? `Skynet ha aprendido ${s.propuestas === 1 ? 'algo' : `${s.propuestas} cosas`} y espera tu visto bueno` : '';
+    this.renderSession(s.sesion);
+    const b = s.build || {};
+    $('#build').textContent = [`v${s.version || '?'}`, b.commit, b.fecha].filter(Boolean).join(' · ');
+    $('#build').title = b.carpeta || '';
+    this.renderHero(s);
     this.engine?.setSatellites((s.largas_vivas || []).length);
     const badge = document.querySelector('.rail-btn[data-panel="tareas"]');
     badge.querySelector('.badge')?.remove();
@@ -372,6 +460,7 @@ export class App {
       case 'pregunta_cerrada': if (this.question && this.question.id === m.id) this.closeQuestion(); break;
       case 'ocupado': this.setBusy(m.ocupado, m.etiqueta); break;
       case 'estado': this.applySnap(m); break;
+      case 'sesion': this.onSession(m); break;
       case 'tareas': this.panels.refresh(); this.poll(); break;
       default: break;
     }
@@ -380,10 +469,12 @@ export class App {
   setBusy(on, label) {
     const was = this.busy;
     this.busy = !!on;
+    if (this.snap) { this.snap.ocupado = this.busy; this.renderComposer(this.snap); }
     document.body.classList.toggle('busy', this.busy);
     if (this.snap && label !== undefined) this.snap.etiqueta = label;
     if (this.busy && !was) this.phase = 'pensando';
     if (!this.busy && was) this.finishTurn();
+    if (this.busy !== was && this.sessions.length) this.loadSessions();
     this.renderSuggestions();
     this.setState();
   }
@@ -429,16 +520,20 @@ export class App {
     if ($('#suggest').children.length) this.renderSuggestions();
   }
 
-  // Centra la nebulosa en el hueco que dejan panel y conversación.
+  // Centra la nebulosa en el hueco que dejan la barra lateral y el panel.
   updateFocus() {
-    if (!this.engine) return;
     const w = window.innerWidth;
-    if (w < 860) return this.engine.setFocusShift(0);
+    const set = (px) => {
+      document.documentElement.style.setProperty('--focus-x', `${px}px`);  // el brillo sin WebGL también
+      this.engine?.setFocusShift(px);
+    };
+    if (w < 860) return set(0);
     const css = getComputedStyle(document.documentElement);
-    const convoW = document.body.classList.contains('has-convo') && !document.body.classList.contains('convo-hidden')
-      ? Math.min(parseFloat(css.getPropertyValue('--convo-w')) || 470, w * 0.34) + 26 : 0;
-    const panelW = this.panels.current ? (parseFloat(css.getPropertyValue('--panel-w')) || 410) + 84 : 70;
-    this.engine.setFocusShift((panelW - convoW) / 2);
+    const sideW = document.body.classList.contains('side-collapsed') ? 0 : parseFloat(css.getPropertyValue('--side-w')) || 264;
+    // Solo cuenta el panel cuando empuja la conversación (pantallas anchas, ver app.css).
+    const panelW = this.panels.current && w >= 1180 ? (parseFloat(css.getPropertyValue('--panel-w')) || 420) + 12 : 0;
+    // Desplazamiento positivo = nebulosa a la derecha: el centro de .main está en (sideW - panelW) / 2.
+    set((sideW - panelW) / 2);
   }
 
   append(el) {
@@ -496,6 +591,7 @@ export class App {
   }
 
   addEvent(kind, d, live) {
+    if (kind === 'usage') { if (live) this.liveUsage(d); return; }
     const t = this.ensureTurn();
     if (kind === 'route') {
       const model = String(d.model || '').split('/').pop();
@@ -683,13 +779,14 @@ export class App {
     const items = [];
     const fresh = this.convo.children.length === 0;  // solo al principio, antes de la primera conversación
     if (!this.busy) {
-      if (s.pendiente && !(s.pendiente.larga && s.pendiente.vivo)) {
-        items.push({ ico: 'resume', text: `Continuar «${s.pendiente.title}»`, cls: 'accent', run: () => this.resumeTask(s.pendiente.id) });
-      }
       if (!fresh) {
         // nada: las sugerencias solo salen al empezar
       } else if (s.repo) {
-        items.push({ ico: 'sparkle', text: 'Revisa el repo y dime qué falta', run: () => this.fill('Revisa el estado del repo y dime qué falta o qué está roto') });
+        // Revisar el repo necesita Coder (sin él, la conversación no lleva el contexto del repo): se enciende al pulsar.
+        items.push({ ico: 'sparkle', text: 'Revisa el repo y dime qué falta', run: async () => {
+          if (this.snap?.coder === false && !(await this.ajustes({ coder: true }))) return;
+          this.fill('Revisa el estado del repo y dime qué falta o qué está roto');
+        } });
         items.push({ ico: 'orbit', text: 'Tarea larga…', run: () => this.panels.open('largo') });
       } else {
         items.push({ ico: 'repo', text: 'Elegir un repo para programar', run: () => this.panels.open('ajustes') });
@@ -716,7 +813,7 @@ export class App {
     const s = this.snap || {};
     const A = [];
     const g = (group, ico, text, run, desc = '') => A.push({ group, ico, text, run, desc });
-    g('Hablar', 'chat', 'Escribir a Skynet', () => this.input.focus(), 'Enter');
+    g('Hablar', 'chat', 'Escribir a Skynet', () => this.input.focus(), '/');
     if (s.pendiente) g('Hablar', 'resume', `Continuar «${s.pendiente.title}»`, () => this.resumeTask(s.pendiente.id), `tarea ${s.pendiente.id}`);
     if (this.busy) g('Hablar', 'stop', 'Detener lo que está haciendo', () => this.stop(), 'Esc');
     g('Tareas', 'tasks', 'Ver tareas', () => this.panels.open('tareas'));
@@ -728,7 +825,12 @@ export class App {
     for (const m of s.modelos || []) g('Modelo', m.privado ? 'cpu' : 'cloud', `Usar ${m.nombre}`, () => this.panels.setModel(m.nombre), m.disponible ? (s.modelo === m.nombre ? 'actual' : '') : 'no disponible');
     g('Sistema', 'pulse', 'Diagnóstico de la instalación', () => this.panels.open('diagnostico'));
     g('Sistema', 'spark', 'Qué puede hacer Skynet', () => this.panels.open('ayuda'));
-    g('Sistema', 'eye', document.body.classList.contains('convo-hidden') ? 'Mostrar la conversación' : 'Ocultar la conversación (ver la nebulosa)', () => this.panels.toggle('conversacion'));
+    g('Sesiones', 'compose', 'Sesión nueva', () => this.newSession(), 'Ctrl ⇧ O');
+    g('Sesiones', 'search', 'Buscar sesiones', () => { this.toggleSide(true); $('#sessionSearch').focus(); });
+    g('Sesiones', 'edit', 'Renombrar esta sesión', () => this.renameTitle());
+    g('Sesiones', 'sidebar', 'Mostrar u ocultar la barra lateral', () => this.toggleSide(), 'Ctrl B');
+    for (const x of this.sessions.slice(0, 8)) if (x.id !== this.snap?.sesion?.id) g('Sesiones', 'chat', x.titulo || 'Sesión sin título', () => this.openSession(x.id));
+    if (s.propuestas) g('Sistema', 'sparkle', 'Revisar lo que ha aprendido', () => this.panels.open('aprendizaje'), String(s.propuestas));
     return A;
   }
 
@@ -780,6 +882,263 @@ export class App {
     const a = this.palItems[i];
     this.closePalette();
     a?.run();
+  }
+
+  // --- barra lateral y sesiones (como Claude/Codex) ------------------------
+  narrow() { return window.innerWidth < 860; }
+
+  initSide() {
+    let hidden = false;
+    try { hidden = localStorage.getItem('skynet.lateral') === 'oculta'; } catch { /* sin almacenamiento */ }
+    document.body.classList.toggle('side-collapsed', hidden);
+  }
+
+  toggleSide(open) {
+    const b = document.body;
+    if (this.narrow()) {
+      b.classList.toggle('side-open-m', open ?? !b.classList.contains('side-open-m'));
+      return;
+    }
+    const collapsed = open === undefined ? !b.classList.contains('side-collapsed') : !open;
+    b.classList.toggle('side-collapsed', collapsed);
+    try { localStorage.setItem('skynet.lateral', collapsed ? 'oculta' : 'visible'); } catch { /* nada */ }
+    setTimeout(() => this.updateFocus(), 30);
+  }
+
+  async loadSessions() {
+    try {
+      const r = await api.sesiones(this.sessionQuery);
+      this.sessions = r.sesiones || [];
+      this.renderSessions(r.actual);
+    } catch { /* servidor antiguo sin sesiones: la lista queda vacía */ }
+  }
+
+  renderSessions(actual = this.snap?.sesion?.id) {
+    const box = $('#sessionList');
+    if (this.editingSession) return;
+    const groups = [];
+    const day = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+    const today = day(Date.now());
+    const label = (ts) => {
+      const diff = Math.round((today - day(ts)) / 86400000);
+      return diff <= 0 ? 'Hoy' : diff === 1 ? 'Ayer' : diff < 7 ? 'Últimos 7 días' : diff < 30 ? 'Últimos 30 días' : 'Antes';
+    };
+    for (const x of this.sessions) {
+      const g = label(x.actualizada);
+      if (!groups.length || groups[groups.length - 1].g !== g) groups.push({ g, items: [] });
+      groups[groups.length - 1].items.push(x);
+    }
+    if (!groups.length) {
+      box.innerHTML = `<div class="side-empty">${this.sessionQuery ? 'Ninguna sesión coincide.' : 'Tus conversaciones aparecerán aquí.'}</div>`;
+      return;
+    }
+    box.innerHTML = groups.map(({ g, items }) => `<div class="ses-g">${g}</div>` + items.map((x) => {
+      const on = x.id === actual;
+      const live = on && this.busy;
+      return `<div class="ses ${on ? 'on' : ''}" role="button" tabindex="0" data-id="${x.id}" ${on ? 'aria-current="true"' : ''}>
+        <span class="ses-t">${esc(x.titulo || 'Sesión nueva')}</span>${live ? '<span class="ses-live" title="Trabajando"></span>' : ''}
+        <button type="button" class="ses-more" aria-label="Opciones de la sesión" title="Opciones">${icon('more')}</button></div>`;
+    }).join('')).join('');
+    for (const el of box.querySelectorAll('.ses')) {
+      const id = +el.dataset.id;
+      el.addEventListener('click', (e) => { if (!e.target.closest('.ses-more, .ses-edit')) this.openSession(id); });
+      el.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); this.openSession(id); } });
+      el.querySelector('.ses-more').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openMenu(e.currentTarget, [{ items: [
+          { value: 'renombrar', label: 'Renombrar', ico: 'edit' },
+          { value: 'archivar', label: 'Borrar', sub: 'Las tareas y el registro se conservan', ico: 'trash' },
+        ] }], (v) => (v === 'renombrar' ? this.renameSession(id, el) : this.archiveSession(id)), { below: true });
+      });
+    }
+  }
+
+  async openSession(id) {
+    if (this.narrow()) this.toggleSide(false);
+    if (id === this.snap?.sesion?.id) return;
+    if (this.busy) { this.toast('Skynet está trabajando. Espera o pulsa Detener antes de cambiar de sesión.'); return; }
+    try { this.applySnap(await api.sesionAbrir(id)); } catch (e) { this.toast(e.message, 'bad'); }
+    this.input.focus();
+  }
+
+  async newSession() {
+    if (this.narrow()) this.toggleSide(false);
+    if (this.busy) { this.toast('Skynet está trabajando. Espera o pulsa Detener antes de abrir otra sesión.'); return; }
+    try { this.applySnap(await api.sesionNueva()); } catch (e) { this.toast(e.message, 'bad'); }
+    this.input.focus();
+  }
+
+  // La sesión que se abre llega por el stream (a todas las pestañas): se rehace la conversación.
+  onSession(m) {
+    this.closeMeter();
+    this.convo.innerHTML = '';
+    document.body.classList.remove('has-convo');
+    this.turn = null;
+    this.lastAnswer = null;
+    this.replaying = true;
+    for (const msg of m.mensajes || []) this.onMessage({ ...msg, replay: true });
+    this.finishTurn();
+    this.turn = null;
+    this.replaying = false;
+    this.scrollDown(true);
+    this.renderSession(m.sesion);
+    this.loadSessions();
+    this.sgKey = '';
+    this.renderSuggestions();
+    this.updateFocus();
+  }
+
+  renderSession(ses) {
+    if (!ses) return;
+    const changed = ses.id !== this.shownSession;
+    this.shownSession = ses.id;
+    if (this.snap) this.snap.sesion = ses;
+    const t = $('#sessionTitle');
+    if (!this.editingTitle) t.textContent = ses.titulo || '';
+    document.title = ses.titulo ? `${ses.titulo} · Skynet` : 'Skynet';
+    this.renderMeter();
+    if (changed || (this.sessions.find((x) => x.id === ses.id)?.titulo ?? ses.titulo) !== ses.titulo) this.loadSessions();
+    else if (this.sessions.length) this.renderSessions(ses.id);
+  }
+
+  inlineEdit(host, value, cls, save) {
+    const inp = document.createElement('input');
+    inp.className = cls;
+    inp.value = value;
+    inp.maxLength = 120;
+    host.replaceWith(inp);
+    inp.focus();
+    inp.select();
+    let done = false;
+    const end = (ok) => {
+      if (done) return;
+      done = true;
+      inp.replaceWith(host);
+      const v = inp.value.trim();
+      if (ok && v && v !== value) save(v);
+    };
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); end(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); }
+    });
+    inp.addEventListener('blur', () => end(true));
+    inp.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  async rename(id, titulo) {
+    try {
+      const r = await api.sesionRenombrar(id, titulo);
+      this.sessions = r.sesiones || this.sessions;
+      if (this.snap?.sesion?.id === id) this.renderSession({ ...this.snap.sesion, titulo });
+      this.renderSessions(r.actual);
+    } catch (e) { this.toast(e.message, 'bad'); }
+  }
+
+  renameSession(id, el) {
+    const t = el.querySelector('.ses-t');
+    const x = this.sessions.find((s) => s.id === id);
+    this.editingSession = true;
+    this.inlineEdit(t, x?.titulo || '', 'ses-edit', (v) => this.rename(id, v));
+    el.querySelector('.ses-edit')?.addEventListener('blur', () => { this.editingSession = false; });
+  }
+
+  renameTitle() {
+    const ses = this.snap?.sesion;
+    if (!ses) return;
+    const t = $('#sessionTitle');
+    this.editingTitle = true;
+    this.inlineEdit(t, ses.titulo || '', 'title-edit', (v) => this.rename(ses.id, v));
+    document.querySelector('.title-edit')?.addEventListener('blur', () => { this.editingTitle = false; });
+  }
+
+  async archiveSession(id) {
+    if (id === this.snap?.sesion?.id && this.busy) { this.toast('Espera a que termine o pulsa Detener antes de borrar esta sesión.'); return; }
+    try {
+      const r = await api.sesionArchivar(id);
+      this.sessions = r.sesiones || [];
+      this.renderSessions(r.actual);
+      this.toast('Sesión borrada.');
+    } catch (e) { this.toast(e.message, 'bad'); }
+  }
+
+  renderHero(s) {
+    const sub = s.repo ? `En ${s.repo}` : 'Sin repo: solo conversación';
+    $('#heroSub').textContent = sub;
+  }
+
+  // --- medidor de tokens: un anillo discreto; el detalle al pulsarlo ------------
+  liveUsage(d) {
+    const ses = this.snap?.sesion;
+    if (!ses) return;
+    ses.contexto = (+d.tokens_in || 0) + (+d.tokens_out || 0);
+    ses.consumo = ses.consumo || { llamadas: 0, tokens_in: 0, tokens_out: 0, cost_eur: 0 };
+    ses.consumo.llamadas += 1;
+    ses.consumo.tokens_in += +d.tokens_in || 0;
+    ses.consumo.tokens_out += +d.tokens_out || 0;
+    if (+d.segundos > 0 && +d.tokens_out > 0) ses.tps = +d.tokens_out / +d.segundos;
+    this.renderMeter();
+  }
+
+  renderMeter() {
+    const ses = this.snap?.sesion;
+    const m = $('#meter');
+    const tps = $('#tps');
+    tps.textContent = ses?.tps ? `${Math.round(ses.tps)} tok/s` : '';
+    if (!ses) { m.hidden = true; return; }
+    m.hidden = false;
+    const used = ses.contexto || 0;
+    const max = ses.contexto_max || 0;
+    const pct = max ? Math.min(1, used / max) : 0;
+    const C = 2 * Math.PI * 6;
+    m.dataset.level = pct >= 0.9 ? 'alto' : pct >= 0.7 ? 'medio' : '';
+    const label = !used ? '' : max ? (pct >= 0.01 ? `${Math.round(pct * 100)}%` : '') : kfmt(used);
+    m.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="ring-bg" cx="8" cy="8" r="6" fill="none" stroke-width="2"/>
+      <circle class="ring" cx="8" cy="8" r="6" fill="none" stroke-width="2" stroke-linecap="round" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${(C * (1 - pct)).toFixed(2)}"/></svg><span class="meter-t">${label}</span>`;
+    m.title = max ? `Contexto: ${fmtN(used)} de ${fmtN(max)} tokens` : `Contexto: ${fmtN(used)} tokens`;
+    if (!$('#meterPop').hidden) this.paintMeterPop();
+  }
+
+  toggleMeter() {
+    if (!$('#meterPop').hidden) return this.closeMeter();
+    this.paintMeterPop();
+    const pop = $('#meterPop');
+    pop.hidden = false;
+    const r = $('#meter').getBoundingClientRect();
+    pop.style.left = `${Math.max(12, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 12))}px`;
+    pop.style.bottom = `${window.innerHeight - r.top + 8}px`;
+    $('#meter').setAttribute('aria-expanded', 'true');
+  }
+
+  closeMeter() {
+    $('#meterPop').hidden = true;
+    $('#meter').setAttribute('aria-expanded', 'false');
+  }
+
+  paintMeterPop() {
+    const s = this.snap || {};
+    const ses = s.sesion || {};
+    const c = ses.consumo || {};
+    const used = ses.contexto || 0;
+    const max = ses.contexto_max || 0;
+    const pct = max ? Math.min(1, used / max) : 0;
+    const mes = s.mes || {};
+    const row = (k, v) => `<div class="pop-row"><span>${k}</span><b>${v}</b></div>`;
+    let html = `<div class="pop-k">Contexto</div>`;
+    html += max ? `<div class="pop-row"><span>${fmtN(used)} de ${fmtN(max)}</span><b>${Math.round(pct * 100)}%</b></div>
+      <div class="pop-bar"><i style="width:${(pct * 100).toFixed(1)}%"></i></div>`
+      : row('Último turno', used ? `${fmtN(used)} tokens` : 'Aún nada');
+    html += '<div class="pop-sep"></div><div class="pop-k">Esta sesión</div>';
+    html += row('Tokens', `${fmtN(c.tokens_in)} + ${fmtN(c.tokens_out)}`);
+    html += row('Llamadas', fmtN(c.llamadas));
+    if (+c.cost_eur) html += row('Coste', eurFmt(c.cost_eur));
+    html += row('Este mes', `${kfmt((mes.tokens_in || 0) + (mes.tokens_out || 0))} · ${eurFmt(mes.cost_eur)}`);
+    if (pct >= 0.6) {
+      html += `<div class="pop-tip">La conversación ya es larga. En una sesión nueva el modelo responde más rápido y con más acierto.</div>
+        <button class="btn small" id="meterNew">${icon('compose')} Sesión nueva</button>`;
+    }
+    const pop = $('#meterPop');
+    pop.innerHTML = html;
+    pop.querySelector('#meterNew')?.addEventListener('click', () => { this.closeMeter(); this.newSession(); });
   }
 
   // --- utilidades -----------------------------------------------------

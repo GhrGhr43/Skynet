@@ -146,6 +146,9 @@ Ritmo observado: 10 s a 2,5 min por llamada al modelo, según cuánto razone.
 ## Acceso desde el móvil (2026-10-08)
 - App Android Skynet 0.2 + llaves por dispositivo + Tailscale Serve. Guía: `docs/ACCESO-MOVIL.md`.
   Configuración › Dispositivos enseña el QR; el Diagnóstico revisa Tailscale (y avisa si Funnel está activo).
+- 2026-10-09: app 0.3 con la interfaz actual de la web (sesiones, menú «+» con Internet y Modo coder,
+  tok/s, selector de modelo local, aprendizaje). `movil/www` es una copia: al cambiar la web hay que
+  pasar los cambios ahí y generar otro APK (misma firma).
 
 ## Siguientes pasos propuestos
 1. Daniel: elegir presupuesto cloud y poner la clave si quiere usarlo.

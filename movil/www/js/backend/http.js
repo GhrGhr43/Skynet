@@ -64,6 +64,8 @@ export const api = {
   cancelar: () => request('POST', '/api/cancelar', {}),
   ajustes: (cambios) => request('POST', '/api/ajustes', cambios),
   repo: (datos) => request('POST', '/api/repos', datos),
+  modelosLocales: () => request('GET', '/api/modelos-locales'),
+  elegirLocal: (nombre) => request('POST', '/api/modelo-local', { nombre }),
   motor: (nombre, encender) => request('POST', '/api/motor', { nombre, encender }),
   tareas: (n = 40) => request('GET', `/api/tareas?n=${n}`),
   tarea: (id) => request('GET', `/api/tareas/${id}`),
@@ -71,6 +73,15 @@ export const api = {
   largo: (datos) => request('POST', '/api/largo', datos),
   log: (tarea, n = 150) => request('GET', `/api/log?n=${n}${tarea ? `&tarea=${tarea}` : ''}`),
   doctor: () => request('GET', '/api/doctor'),
+  // Sesiones (historial de conversaciones, como en Claude/Codex).
+  sesiones: (q = '') => request('GET', `/api/sesiones${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  sesionNueva: () => request('POST', '/api/sesiones/nueva', {}),
+  sesionAbrir: (id) => request('POST', `/api/sesiones/${id}/abrir`, {}),
+  sesionRenombrar: (id, titulo) => request('POST', `/api/sesiones/${id}`, { titulo }),
+  sesionArchivar: (id) => request('POST', `/api/sesiones/${id}/archivar`, {}),
+  // Lo que Skynet ha aprendido y espera tu visto bueno.
+  aprendizaje: () => request('GET', '/api/aprendizaje'),
+  aprendizajeAccion: (id, accion) => request('POST', `/api/aprendizaje/${encodeURIComponent(id)}`, { accion }),
 };
 
 // Quién soy para el PC: {dispositivo: {id, nombre}, remoto: true}.

@@ -15,6 +15,7 @@ const TITLES = {
   ajustes: 'Configuración',
   diagnostico: 'Diagnóstico',
   ayuda: 'Qué puede hacer Skynet',
+  aprendizaje: 'Lo que ha aprendido',
 };
 
 const STATUS_TEXT = {
@@ -96,7 +97,7 @@ export class Panels {
   }
 
   markRail() {
-    for (const b of document.querySelectorAll('.rail-btn')) {
+    for (const b of document.querySelectorAll('.rail-btn, .config-btn, .learn')) {
       const p = b.dataset.panel;
       b.classList.toggle('active', p === this.current || (p === 'conversacion' && !this.current && document.body.classList.contains('has-convo')));
     }
@@ -106,8 +107,9 @@ export class Panels {
     if (this.current) this.render(true);
   }
 
-  onSnap() {
+  onSnap(s) {
     if (this.current === 'ajustes') this.render(true);
+    if (this.current === 'aprendizaje' && s && s.propuestas !== this.learnCount) this.render(true);
   }
 
   onDiag(checks) {
@@ -125,6 +127,7 @@ export class Panels {
       else if (name === 'ajustes') this.renderSettings();
       else if (name === 'diagnostico') this.renderDiag();
       else if (name === 'ayuda') this.renderHelp();
+      else if (name === 'aprendizaje') await this.renderLearn(silent);
     } catch (e) {
       if (!silent) body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
     }
@@ -387,7 +390,8 @@ export class Panels {
     html += modos.map((o) => `<div class="card-sub" style="margin-top:6px"><b style="color:var(--fg)">${esc(o.nombre)}:</b> ${esc(o.descripcion)}</div>`).join('');
     html += `<div class="card-sub" style="margin-top:8px">${esc(s.siempre || '')}</div>`;
     html += `<div class="card-sub" style="margin-top:8px">${esc(s.sin_preguntar_texto || '')}</div></div>`;
-    html += '<div class="section-k">Modelo local</div><div class="card"><div class="card-sub">Para usar otro modelo en tu PC, añade su motor en <span class="mono">config/skynet.toml</span> y su perfil en <span class="mono">config/router.toml</span>. Luego aparece aquí solo.</div></div>';
+    html += `<div class="section-k">Modelo local</div><div class="card"><select class="select" id="localSel" aria-label="Modelo local" disabled><option>Buscando modelos…</option></select>
+      <div class="card-sub" id="localInfo" style="margin-top:8px">Los GGUF de LM Studio y Strata. Si el motor está encendido, se reinicia con el elegido.</div></div>`;
     const notif = 'Notification' in window ? Notification.permission : 'unsupported';
     html += `<div class="section-k">Interfaz</div><div class="card solo-pc"><div class="card-row">${icon('warn')}<div class="grow"><div class="card-title">Avisos de Windows</div>
       <div class="card-sub">${notif === 'granted' ? 'Activados.'
@@ -422,6 +426,7 @@ export class Panels {
       const ok = await this.app.confirmDialog({ tipo: 'aviso', titulo: '¿Desconectar de tu PC?', texto: 'La app vuelve al modo demo. Para volver a conectar tendrás que escanear otro QR.', boton: 'Desconectar' });
       if (ok) { olvidarConexion(); location.reload(); }
     });
+    this.loadLocalModels();
     $('#repoRuta')?.addEventListener('input', (e) => {
       const nombre = $('#repoNombre');
       if (!nombre.value.trim()) nombre.value = e.target.value.trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop().replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 40);
@@ -439,6 +444,242 @@ export class Panels {
       try { localStorage.setItem('skynet.calidad', e.target.value); } catch { /* sin almacenamiento */ }
       location.reload();
     });
+  }
+
+  async loadLocalModels() {
+    const sel = this.body.querySelector('#localSel');
+    if (!sel) return;
+    try {
+      const { modelos, actual } = await api.modelosLocales();
+      if (!this.body.contains(sel)) return;
+      const busy = (this.app.snap?.motores || []).some((e) => e.nombre === 'local' && e.ocupado);
+      sel.innerHTML = modelos.length
+        ? modelos.map((m) => `<option value="${esc(m.nombre)}" ${m.nombre === actual ? 'selected' : ''}>${esc(m.nombre)} · ${esc(m.detalle)}</option>`).join('')
+        : '<option>No encuentro modelos GGUF</option>';
+      sel.disabled = !modelos.length || busy;
+      sel.addEventListener('change', async () => {
+        sel.disabled = true;
+        try { this.app.applySnap(await api.elegirLocal(sel.value)); } catch (e) { this.app.toast(e.message, 'bad'); }
+        this.render(true);
+      });
+    } catch (e) { this.app.toast(e.message, 'bad'); }
+  }
+
+  // --- dispositivos: móviles vinculados por Tailscale ---------------------------
+  // La lista se pide al abrir Configuración y tras cada acción; entre medias se pinta desde la caché
+  // (Configuración se repinta con cada foto del estado y no debe parpadear).
+  loadDevices() {
+    if (this.dev.loading) return this.dev.loading;
+    this.dev.loading = (async () => {
+      try { this.dev.data = await api.dispositivos(); this.dev.error = null; } catch (e) { this.dev.error = e.message; }
+      this.dev.loading = false;
+      this.paintDevices();
+    })();
+    return this.dev.loading;
+  }
+
+  paintDevices() {
+    const box = this.current === 'ajustes' ? $('#devBox') : null;
+    if (!box) return;
+    box.innerHTML = this.devicesHtml();
+    paintIcons(box);
+    this.bindDevices(box);
+  }
+
+  devicesHtml() {
+    const d = this.dev.data;
+    if (!d) {
+      if (this.dev.error && !this.dev.loading) {
+        return `<div class="card"><div class="card-sub warn-text">${esc(this.dev.error)}</div>
+          <div class="btn-row"><button class="btn small" data-dev-retry>Reintentar</button></div></div>`;
+      }
+      return '<div class="skeleton"></div>';
+    }
+    const acc = d.acceso || {};
+    const ts = acc.tailscale || {};
+    const all = d.dispositivos || [];
+    const vivos = all.filter((x) => !x.revocado);
+    const quitados = all.filter((x) => x.revocado).slice(-3);
+    let h = '';
+    if (!vivos.length) h += '<div class="card dev-empty"><div class="card-sub">Ningún móvil vinculado.</div></div>';
+    for (const x of [...vivos, ...quitados]) {
+      h += `<div class="card dev-row ${x.revocado ? 'off' : ''}"><div class="card-row">${icon('phone')}
+        <div class="grow"><div class="card-title ellipsis">${esc(x.nombre || 'Móvil')}</div>
+        <div class="card-sub" ${x.ultimo_origen ? `title="Desde ${esc(x.ultimo_origen)}"` : ''}>${x.revocado ? 'Ya no tiene acceso' : esc(lastUse(x.ultimo_uso))}</div></div>
+        ${x.revocado ? '<span class="pill plain">quitado</span>' : `<button class="btn small danger" data-dev-revoke="${esc(x.id)}" data-dev-name="${esc(x.nombre || 'Móvil')}">Quitar</button>`}
+      </div></div>`;
+    }
+    if (!acc.url) {
+      h += `<div class="card dev-access"><div class="card-row">${icon('shield')}<div class="grow">
+          <div class="card-title">Para usarlo desde el móvil</div><div class="card-sub">${esc(ts.detalle || 'No se detecta Tailscale en este PC.')}</div></div></div>
+        ${tsFlags(ts)}${ts.funnel ? FUNNEL_WARN : ''}${PAIR_STEPS}</div>`;
+    }
+    h += `<div class="btn-row"><button class="btn primary small" data-dev-add>${icon('plus')} Añadir móvil</button></div>`;
+    if (acc.url) {
+      h += `<div class="card dev-access"><div class="card-row">${icon('shield')}<div class="grow">
+          <div class="card-title">Dirección privada del PC</div>
+          <div class="card-sub mono ellipsis" title="${esc(ts.detalle || acc.url)}">${esc(acc.url)}</div></div></div>
+        ${tsFlags(ts)}${ts.funnel ? FUNNEL_WARN : ''}</div>`;
+    }
+    return h;
+  }
+
+  bindDevices(root) {
+    root.querySelector('[data-dev-add]')?.addEventListener('click', () => this.addDevice());
+    root.querySelector('[data-dev-retry]')?.addEventListener('click', () => { this.loadDevices(); this.paintDevices(); });
+    for (const b of root.querySelectorAll('[data-dev-revoke]')) b.addEventListener('click', () => this.revokeDevice(b.dataset.devRevoke, b.dataset.devName));
+    for (const b of root.querySelectorAll('[data-copy]')) b.addEventListener('click', () => this.copy(b.dataset.copy, 'Comando copiado'));
+  }
+
+  async revokeDevice(id, nombre) {
+    const ok = await this.app.confirmDialog({
+      tipo: 'aviso', titulo: `¿Quitar «${nombre}»?`,
+      texto: 'Ese móvil dejará de poder usar Skynet al momento. Para volver a usarlo tendrás que vincularlo otra vez.', boton: 'Quitar',
+    });
+    if (!ok) return;
+    try {
+      this.dev.data = await api.revocarDispositivo(id);
+      this.paintDevices();
+      this.app.toast(`«${nombre}» ya no tiene acceso.`);
+    } catch (e) { this.app.toast(e.message, 'bad'); this.loadDevices(); }
+  }
+
+  async copy(text, msg) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement('textarea');
+      t.value = text;
+      t.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(t);
+      t.select();
+      try { document.execCommand('copy'); } catch { /* nada */ }
+      t.remove();
+    }
+    this.app.toast(msg);
+  }
+
+  // Diálogo «Añadir móvil»: pide un código, enseña el QR del enlace y espera a que el móvil
+  // se vincule (mira la lista cada 3 s); al aparecer un dispositivo nuevo, pasa a «Conectado».
+  async addDevice() {
+    if (this.pair) this.stopPair();
+    const p = { estado: 'cargando', timers: [] };
+    this.pair = p;
+    $('#pair').hidden = false;
+    this.renderPair();
+    try {
+      const antes = await api.dispositivos();
+      this.dev.data = antes; this.dev.error = null;
+      this.paintDevices();
+      p.known = new Set((antes.dispositivos || []).map((x) => x.id));
+      const r = await api.emparejarDispositivo();
+      if (this.pair !== p) return;
+      p.r = r;
+      p.acceso = antes.acceso || {};
+      if (!r.enlace) { p.estado = 'sin-red'; this.renderPair(); return; }
+      if (typeof window.qrcode !== 'function') throw new Error('No se pudo cargar el generador de QR. Usa «Copiar enlace».');
+      p.qr = qrSvg(r.enlace);
+      p.fin = Date.parse(r.expira);
+      p.estado = 'qr';
+      this.renderPair();
+      p.timers.push(setInterval(() => this.tickPair(p), 1000));
+      p.timers.push(setInterval(() => this.pollPair(p), 3000));
+    } catch (e) {
+      if (this.pair !== p) return;
+      p.estado = 'error'; p.error = e.message;
+      this.renderPair();
+    }
+  }
+
+  tickPair(p) {
+    if (this.pair !== p || p.estado !== 'qr') return;
+    const left = Math.max(0, Math.ceil((p.fin - Date.now()) / 1000));
+    const el = $('#pairLeft');
+    if (el) el.textContent = `Caduca en ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    if (left <= 0) { this.stopPair(); p.estado = 'caducado'; this.renderPair(); }
+  }
+
+  async pollPair(p) {
+    if (p.polling) return;
+    p.polling = true;
+    try {
+      const d = await api.dispositivos();
+      if (this.pair !== p || p.estado !== 'qr') return;
+      this.dev.data = d;
+      this.paintDevices();
+      const nuevo = (d.dispositivos || []).find((x) => !x.revocado && !p.known.has(x.id));
+      if (nuevo) {
+        this.stopPair();
+        p.estado = 'conectado'; p.nombre = nuevo.nombre || 'Móvil';
+        this.renderPair();
+        this.app.engine?.pulse?.(0.35);
+      }
+    } catch { /* sin conexión: se reintenta en 3 s */ } finally { p.polling = false; }
+  }
+
+  stopPair() {
+    for (const t of this.pair?.timers || []) clearInterval(t);
+    if (this.pair) this.pair.timers = [];
+  }
+
+  closePair() {
+    if (!this.pair) return;
+    this.stopPair();
+    this.pair = null;
+    $('#pair').hidden = true;
+    $('#pairCard').innerHTML = '';
+    this.loadDevices();
+  }
+
+  renderPair() {
+    const p = this.pair;
+    const card = $('#pairCard');
+    if (!p) return;
+    const close = (label = 'Cerrar', cls = '') => `<button class="btn ${cls}" data-p="close">${label}</button>`;
+    let h = '<div class="ask-level">Añadir móvil</div>';
+    if (p.estado === 'cargando') {
+      h += `<h3 class="ask-title" id="pairTitle">Preparando el código…</h3><div class="qr-box"><div class="skeleton qr-skel"></div></div>
+        <div class="ask-actions">${close()}</div>`;
+    } else if (p.estado === 'qr' || p.estado === 'caducado') {
+      const off = p.estado === 'caducado';
+      h += `<h3 class="ask-title" id="pairTitle">Escanéalo con la app Skynet del móvil</h3>
+        <div class="qr-box ${off ? 'off' : ''}">${p.qr}${off ? '<div class="qr-over">Caducado</div>' : ''}</div>
+        <div class="pair-left" id="pairLeft">${off ? 'El código ya no vale' : ''}</div>
+        <div class="ask-actions">
+          ${off ? '' : `<button class="btn small" data-p="copy">${icon('copy')} Copiar enlace</button>`}
+          <span class="grow"></span>
+          ${close()}
+          ${off ? `<button class="btn primary" data-p="again">${icon('resume')} Generar otro</button>` : ''}
+        </div>`;
+    } else if (p.estado === 'conectado') {
+      h += `<div class="pair-ok">${icon('check')}</div>
+        <h3 class="ask-title pair-center" id="pairTitle">Conectado: ${esc(p.nombre)}</h3>
+        <div class="card-sub pair-center">Ya puedes usar Skynet desde el móvil.</div>
+        <div class="ask-actions">${close('Listo', 'primary')}</div>`;
+    } else if (p.estado === 'sin-red') {
+      const ts = p.acceso.tailscale || {};
+      h += `<h3 class="ask-title" id="pairTitle">Antes, prepara Tailscale</h3>
+        <div class="card-sub">${esc(ts.detalle || 'No se detecta la dirección privada del PC.')}</div>
+        ${tsFlags(ts)}${ts.funnel ? FUNNEL_WARN : ''}${PAIR_STEPS}
+        <div class="ask-actions">${close()}<button class="btn primary" data-p="again">${icon('resume')} Comprobar de nuevo</button></div>`;
+    } else {
+      h += `<h3 class="ask-title" id="pairTitle">No se pudo preparar el código</h3>
+        <div class="ask-warn">${esc(p.error || 'Error')}</div>
+        <div class="ask-actions">${p.r?.enlace ? `<button class="btn small" data-p="copy">${icon('copy')} Copiar enlace</button><span class="grow"></span>` : ''}
+          ${close()}<button class="btn primary" data-p="again">Reintentar</button></div>`;
+    }
+    card.innerHTML = h;
+    this.tickPair(p);
+    for (const b of card.querySelectorAll('[data-p]')) {
+      b.addEventListener('click', () => {
+        const a = b.dataset.p;
+        if (a === 'close') this.closePair();
+        else if (a === 'again') this.addDevice();
+        else if (a === 'copy') this.copy(p.r.enlace, 'Enlace copiado');
+      });
+    }
+    for (const b of card.querySelectorAll('[data-copy]')) b.addEventListener('click', () => this.copy(b.dataset.copy, 'Comando copiado'));
+    setTimeout(() => card.querySelector('.btn.primary, [data-p="close"]')?.focus(), 50);
   }
 
   // Un solo interruptor por modelo. En los online, encender activa el modelo (con confirmación) y
@@ -496,6 +737,54 @@ export class Panels {
   }
 
   // --- ayuda -----------------------------------------------------------------
+  // Lo que Skynet propone recordar (skills y memoria): tarjetas con Aprobar / Descartar / Ver.
+  async renderLearn(silent) {
+    const { items } = await api.aprendizaje();
+    this.learnCount = this.app.snap?.propuestas;
+    if (!items.length) {
+      this.paint(`<p class="lead">Nada pendiente.</p><div class="note">Cuando una tarea sale bien, Skynet puede proponer una skill
+        (cómo hacer tareas parecidas) o algo que recordar. Lo verás aquí y nada se activa sin tu visto bueno.</div>`);
+      return;
+    }
+    const open = new Set([...this.body.querySelectorAll('.learn-body:not([hidden])')].map((el) => el.dataset.id));
+    const kind = { skill: 'Skill', memoria: 'Memoria' };
+    this.paint(`<p class="lead">Skynet propone recordar esto. Nada se activa sin tu visto bueno.</p>` + items.map((it) => `
+      <div class="card learn-card" data-id="${esc(it.id)}">
+        <div class="card-title"><span class="learn-kind">${kind[it.tipo] || esc(it.tipo)}</span><span class="grow ellipsis">${esc(it.titulo)}</span></div>
+        <div class="card-sub">${esc(it.descripcion)}</div>
+        ${it.origen ? `<div class="card-sub" style="opacity:.7">${esc(it.origen)}</div>` : ''}
+        <div class="learn-body md" data-id="${esc(it.id)}" ${open.has(it.id) ? '' : 'hidden'}>${md(it.texto || '')}</div>
+        <div class="btn-row">
+          <button class="btn small primary" data-a="aprobar">${icon('check')} Aprobar</button>
+          <button class="btn small" data-a="descartar">${icon('x')} Descartar</button>
+          <span class="grow"></span>
+          <button class="btn small" data-a="ver">${icon('eye')} ${open.has(it.id) ? 'Ocultar' : 'Ver'}</button>
+        </div>
+      </div>`).join(''));
+    for (const card of this.body.querySelectorAll('.learn-card')) {
+      const id = card.dataset.id;
+      for (const b of card.querySelectorAll('[data-a]')) {
+        b.addEventListener('click', async () => {
+          const a = b.dataset.a;
+          if (a === 'ver') {
+            const body = card.querySelector('.learn-body');
+            body.hidden = !body.hidden;
+            b.innerHTML = `${icon('eye')} ${body.hidden ? 'Ver' : 'Ocultar'}`;
+            return;
+          }
+          for (const x of card.querySelectorAll('button')) x.disabled = true;
+          try {
+            await api.aprendizajeAccion(id, a);
+            if (a === 'descartar') { card.style.opacity = '0.4'; }
+          } catch (e) {
+            this.app.toast(e.message, 'bad');
+            for (const x of card.querySelectorAll('button')) x.disabled = false;
+          }
+        });
+      }
+    }
+  }
+
   renderHelp() {
     const s = this.app.snap || {};
     const caps = [
