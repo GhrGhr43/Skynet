@@ -1,0 +1,70 @@
+/* Capa móvil: se carga después de app.css. La interfaz es la misma del PC; aquí solo se ajusta al
+   teléfono (táctil, barras del sistema, hojas a pantalla completa). */
+:root { --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px); }
+html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+body { -webkit-user-select: none; user-select: none; }
+textarea, input, .md, .card-text, .ask-tool, .bubble { -webkit-user-select: text; user-select: text; }
+#input { font-size: 16px; }
+
+.top { padding-top: var(--safe-t); height: calc(var(--top-h) + var(--safe-t)); }
+.status-detail { display: none; }
+.status { max-width: calc(100vw - 255px); margin-right: 50px !important; overflow: hidden; }
+.status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.demo-chip { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg3);
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; margin-left: 10px; white-space: nowrap; vertical-align: middle; }
+.brand { display: flex; align-items: center; }
+.config-btn { top: calc(12px + var(--safe-t)) !important; }
+.rail { top: calc(var(--top-h) - 4px + var(--safe-t)) !important; }
+.rail-btn { width: 42px !important; height: 40px !important; }
+.convo { top: calc(var(--top-h) + 52px + var(--safe-t)) !important; }
+.dock, body.has-convo .dock, body.has-panel .dock, body.has-panel.has-convo .dock { bottom: calc(10px + var(--safe-b)) !important; }
+
+/* Paneles: hoja a pantalla completa que sube desde abajo. */
+.panel { left: 0 !important; right: 0 !important; top: calc(var(--safe-t) + 8px) !important; bottom: 0 !important;
+  border-radius: 22px 22px 0 0 !important; border-bottom: 0 !important; transform: translateY(24px); }
+.panel.open { transform: none; }
+.panel-head { padding: 16px 14px 6px 22px; }
+.panel-head .icon-btn { width: 40px; height: 40px; }
+.panel-body { padding: 6px 18px calc(28px + var(--safe-b)); }
+
+/* Diálogos de permiso: botones grandes, uno por fila, sin atajos de teclado. */
+.modal { align-items: flex-end !important; padding: 0 0 var(--safe-b) !important; }
+.modal-card { width: 100% !important; max-width: none !important; border-radius: 22px 22px 0 0 !important; padding: 22px 20px 20px !important; }
+.ask-actions { flex-direction: column-reverse; align-items: stretch; }
+.ask-actions .btn { height: 48px; justify-content: center; font-size: 15px; }
+kbd, .ask-actions .btn kbd { display: none !important; }
+.palette { display: none !important; }
+
+/* Menús (repo, modelo, permisos): hoja inferior a todo el ancho. */
+.menu { left: 8px !important; right: 8px !important; width: auto !important; max-width: none !important;
+  top: auto !important; bottom: calc(8px + var(--safe-b)) !important; max-height: 70vh; overflow-y: auto; }
+.menu-i { min-height: 48px; }
+.mini, .tab { min-height: 34px; }
+.solo-pc { display: none !important; }
+
+/* «Conectar con mi PC» */
+.demo-chip { cursor: pointer; }
+.panel.cx { z-index: 60; }
+.cx-body { display: flex; flex-direction: column; gap: 4px; }
+.cx-aviso { color: #ffd29b; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 8%, transparent); border-radius: 12px; padding: 10px 12px; font-size: 13.5px; margin-bottom: 8px; }
+.cx-cam { position: relative; aspect-ratio: 1 / 1; width: 100%; max-width: 420px; margin: 4px auto 0; border-radius: 20px;
+  overflow: hidden; background: rgba(255,255,255,0.03); border: 1px solid var(--line); }
+.cx-cam video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
+.cx-cam[data-estado="viva"] video { opacity: 1; }
+.cx-frame { position: absolute; inset: 16%; border-radius: 18px; box-shadow: 0 0 0 999px rgba(0,0,0,0.35);
+  border: 2px solid rgba(255,255,255,0.75); opacity: 0; transition: opacity .3s; }
+.cx-cam[data-estado="viva"] .cx-frame { opacity: 1; }
+.cx-scan { position: absolute; left: 8%; right: 8%; height: 2px; top: 50%; background: var(--accent, #86a8ff);
+  box-shadow: 0 0 12px var(--accent, #86a8ff); animation: cxscan 2.2s ease-in-out infinite; }
+@keyframes cxscan { 0%, 100% { top: 12%; } 50% { top: 88%; } }
+.cx-cam-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; color: var(--fg2); padding: 24px; font-size: 14px; }
+.cx-cam-msg svg { width: 30px; height: 30px; opacity: .8; }
+.cx-cam-msg .sub { color: var(--fg3); font-size: 12.5px; }
+.cx-cam[data-estado="viva"] .cx-cam-msg { display: none; }
+.cx-cap { text-align: center; color: var(--fg3); font-size: 12.5px; min-height: 20px; margin: 6px 0 4px; }
+.cx-host { color: var(--fg3); font-size: 12.5px; min-height: 18px; }
+.cx-go { height: 48px; margin-top: 8px; justify-content: center; font-size: 15px; }
+.cx-msg { color: var(--bad, #ff6b7a); font-size: 13.5px; min-height: 20px; margin-top: 6px; }
+.cx-body .steps-list { margin-top: 0; }

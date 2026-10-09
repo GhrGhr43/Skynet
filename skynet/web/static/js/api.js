@@ -41,6 +41,15 @@ export const api = {
   largo: (datos) => request('POST', '/api/largo', datos),
   log: (tarea, n = 150) => request('GET', `/api/log?n=${n}${tarea ? `&tarea=${tarea}` : ''}`),
   doctor: () => request('GET', '/api/doctor'),
+  // Sesiones (historial de conversaciones, como en Claude/Codex).
+  sesiones: (q = '') => request('GET', `/api/sesiones${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  sesionNueva: () => request('POST', '/api/sesiones/nueva', {}),
+  sesionAbrir: (id) => request('POST', `/api/sesiones/${id}/abrir`, {}),
+  sesionRenombrar: (id, titulo) => request('POST', `/api/sesiones/${id}`, { titulo }),
+  sesionArchivar: (id) => request('POST', `/api/sesiones/${id}/archivar`, {}),
+  // Lo que Skynet ha aprendido y espera tu visto bueno.
+  aprendizaje: () => request('GET', '/api/aprendizaje'),
+  aprendizajeAccion: (id, accion) => request('POST', `/api/aprendizaje/${encodeURIComponent(id)}`, { accion }),
   // Móviles vinculados (solo desde el PC).
   dispositivos: () => request('GET', '/api/dispositivos'),
   emparejarDispositivo: (nombre) => request('POST', '/api/dispositivos/emparejar', nombre ? { nombre } : {}),

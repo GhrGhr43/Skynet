@@ -14,6 +14,7 @@ const TITLES = {
   ajustes: 'Configuración',
   diagnostico: 'Diagnóstico',
   ayuda: 'Qué puede hacer Skynet',
+  aprendizaje: 'Lo que ha aprendido',
 };
 
 const STATUS_TEXT = {
@@ -138,7 +139,7 @@ export class Panels {
   }
 
   markRail() {
-    for (const b of document.querySelectorAll('.rail-btn')) {
+    for (const b of document.querySelectorAll('.rail-btn, .config-btn, .learn')) {
       const p = b.dataset.panel;
       b.classList.toggle('active', p === this.current || (p === 'conversacion' && !this.current && document.body.classList.contains('has-convo')));
     }
@@ -148,8 +149,9 @@ export class Panels {
     if (this.current) this.render(true);
   }
 
-  onSnap() {
+  onSnap(s) {
     if (this.current === 'ajustes') this.render(true);
+    if (this.current === 'aprendizaje' && s && s.propuestas !== this.learnCount) this.render(true);
   }
 
   onDiag(checks) {
@@ -167,6 +169,7 @@ export class Panels {
       else if (name === 'ajustes') this.renderSettings();
       else if (name === 'diagnostico') this.renderDiag();
       else if (name === 'ayuda') this.renderHelp();
+      else if (name === 'aprendizaje') await this.renderLearn(silent);
     } catch (e) {
       if (!silent) body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
     }
@@ -760,6 +763,54 @@ export class Panels {
   }
 
   // --- ayuda -----------------------------------------------------------------
+  // Lo que Skynet propone recordar (skills y memoria): tarjetas con Aprobar / Descartar / Ver.
+  async renderLearn(silent) {
+    const { items } = await api.aprendizaje();
+    this.learnCount = this.app.snap?.propuestas;
+    if (!items.length) {
+      this.paint(`<p class="lead">Nada pendiente.</p><div class="note">Cuando una tarea sale bien, Skynet puede proponer una skill
+        (cómo hacer tareas parecidas) o algo que recordar. Lo verás aquí y nada se activa sin tu visto bueno.</div>`);
+      return;
+    }
+    const open = new Set([...this.body.querySelectorAll('.learn-body:not([hidden])')].map((el) => el.dataset.id));
+    const kind = { skill: 'Skill', memoria: 'Memoria' };
+    this.paint(`<p class="lead">Skynet propone recordar esto. Nada se activa sin tu visto bueno.</p>` + items.map((it) => `
+      <div class="card learn-card" data-id="${esc(it.id)}">
+        <div class="card-title"><span class="learn-kind">${kind[it.tipo] || esc(it.tipo)}</span><span class="grow ellipsis">${esc(it.titulo)}</span></div>
+        <div class="card-sub">${esc(it.descripcion)}</div>
+        ${it.origen ? `<div class="card-sub" style="opacity:.7">${esc(it.origen)}</div>` : ''}
+        <div class="learn-body md" data-id="${esc(it.id)}" ${open.has(it.id) ? '' : 'hidden'}>${md(it.texto || '')}</div>
+        <div class="btn-row">
+          <button class="btn small primary" data-a="aprobar">${icon('check')} Aprobar</button>
+          <button class="btn small" data-a="descartar">${icon('x')} Descartar</button>
+          <span class="grow"></span>
+          <button class="btn small" data-a="ver">${icon('eye')} ${open.has(it.id) ? 'Ocultar' : 'Ver'}</button>
+        </div>
+      </div>`).join(''));
+    for (const card of this.body.querySelectorAll('.learn-card')) {
+      const id = card.dataset.id;
+      for (const b of card.querySelectorAll('[data-a]')) {
+        b.addEventListener('click', async () => {
+          const a = b.dataset.a;
+          if (a === 'ver') {
+            const body = card.querySelector('.learn-body');
+            body.hidden = !body.hidden;
+            b.innerHTML = `${icon('eye')} ${body.hidden ? 'Ver' : 'Ocultar'}`;
+            return;
+          }
+          for (const x of card.querySelectorAll('button')) x.disabled = true;
+          try {
+            await api.aprendizajeAccion(id, a);
+            if (a === 'descartar') { card.style.opacity = '0.4'; }
+          } catch (e) {
+            this.app.toast(e.message, 'bad');
+            for (const x of card.querySelectorAll('button')) x.disabled = false;
+          }
+        });
+      }
+    }
+  }
+
   renderHelp() {
     const s = this.app.snap || {};
     const caps = [

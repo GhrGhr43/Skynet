@@ -37,7 +37,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import __version__, modos, modelos_locales, propuestas
+from .. import __version__, modos, modelos_locales, propuestas, skills
 from ..agent import summarize_args
 from ..audit import describe_event
 from ..config import ConfigError, add_repo
@@ -45,6 +45,7 @@ from ..coordinator import HELP, Coordinator
 from ..gate import SIEMPRE_TAG, Level
 from ..router import Capabilities
 from ..runtime import Runtime
+from ..sesiones import Sesiones
 from ..store import EN_CURSO, ESPERANDO_PERMISO, FALLIDA, HECHA, PAUSADA, Task
 from .acceso import (AccesoError, Cliente, ConfigAcceso, Dispositivos, EstadoAcceso, enlace_emparejar,
                      ip_cliente, ip_de_tailscale)
@@ -60,15 +61,21 @@ class Bus:
 
     REPLAYABLE = {"usuario", "info", "respuesta", "evento", "tabla", "error", "diagnostico"}
 
-    def __init__(self) -> None:
+    def __init__(self, start: int = 1, sink: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self.history: deque[dict[str, Any]] = deque(maxlen=REPLAY)
-        self._seq = itertools.count(1)
+        self._seq = itertools.count(start)
+        self.sink = sink  # guarda la conversación en la sesión actual (SQLite)
 
     def publish(self, kind: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         msg = {"seq": next(self._seq), "tipo": kind, **(data or {})}
-        if kind in self.REPLAYABLE and not (kind == "evento" and msg.get("kind") == "thinking"):
+        if kind in self.REPLAYABLE and not (kind == "evento" and msg.get("kind") in ("thinking", "usage")):
             self.history.append(msg)
+            if self.sink:
+                try:
+                    self.sink(msg)
+                except Exception:  # la conversación en pantalla no debe caerse por la base
+                    pass
         for q in list(self.subscribers):
             try:
                 q.put_nowait(msg)
@@ -104,6 +111,7 @@ class WebUI:
         self.bus = bus
         self.pending: dict[str, tuple[dict[str, Any], asyncio.Future[str]]] = {}
         self._ids = itertools.count(1)
+        self.on_usage: Callable[[dict[str, Any]], None] | None = None
 
     def info(self, text: str) -> None:
         self.bus.publish("info", {"texto": text})
@@ -112,6 +120,8 @@ class WebUI:
         self.bus.publish("respuesta", {"texto": text or "(sin respuesta)"})
 
     def event(self, kind: str, data: dict[str, Any]) -> None:
+        if kind == "usage" and self.on_usage:
+            self.on_usage(data)
         self.bus.publish("evento", {"kind": kind, "datos": data})
 
     def show(self, renderable: Any) -> None:
@@ -156,9 +166,26 @@ class WebUI:
 
 
 class WebCoordinator(Coordinator):
-    """El Coordinator de siempre; solo cambia cómo pregunta (datos estructurados para el diálogo)."""
+    """El Coordinator de siempre; cambia cómo pregunta (datos estructurados para el diálogo) y que cada
+    tarea pertenece a la sesión abierta, cuya conversación reciente se guarda en SQLite."""
 
     ui: WebUI
+    sesiones: Sesiones | None = None
+    sesion_id: int | None = None
+
+    def _recent(self) -> str | None:
+        if not (self.sesiones and self.sesion_id):
+            return super()._recent()
+        pares = self.sesiones.recientes(self.sesion_id)
+        if not pares:
+            return None
+        lines = [f"- Pedido: {q[:300]}\n  Respuesta: {a[:500]}" for q, a in pares]
+        return "Conversación reciente (por si la petición se refiere a ella):\n" + "\n".join(lines)
+
+    async def _run(self, task: Task, kind: str, extra: str | None) -> Task:
+        if self.sesiones and self.sesion_id and not task.is_long:
+            self.sesiones.enlazar(self.sesion_id, task.id)
+        return await super()._run(task, kind, extra)
 
     def _make_asker(self, task: Task):
         async def ask(key: str, level: Level, args: dict[str, Any], reason: str) -> str:
@@ -196,9 +223,14 @@ class Busy(Exception):
 class Session:
     def __init__(self, rt: Runtime):
         self.rt = rt
-        self.bus = Bus()
+        self.sesiones = Sesiones(rt.store)
+        last = self.sesiones.ultima()
+        self.sid: int = last["id"] if last else self.sesiones.crear()["id"]
+        self.bus = Bus(start=self.sesiones.max_seq() + 1, sink=self._guardar)
         self.ui = WebUI(self.bus)
         self.coord = WebCoordinator(rt, self.ui)
+        self.coord.sesiones, self.coord.sesion_id = self.sesiones, self.sid
+        self.ctx: dict[str, Any] = {"contexto": last["contexto"] if last else 0, "modelo": last["modelo"] if last else None}
         self.current: asyncio.Task[Any] | None = None
         self.running = False  # no se mira current.done(): en su propio finally aún no ha terminado
         self.label = ""
@@ -209,6 +241,44 @@ class Session:
         self.engines = load_engines(rt.settings.engines, rt.settings.logs_dir)
         # litellm tarda unos segundos en importarse; hecho en el primer mensaje congelaba la web (y Detener).
         threading.Thread(target=_warm_litellm, daemon=True).start()
+
+        self.ui.on_usage = self._usage
+
+    # --- sesiones -----------------------------------------------------------
+    def _guardar(self, msg: dict[str, Any]) -> None:
+        self.sesiones.guardar(self.sid, msg)
+
+    def _usage(self, d: dict[str, Any]) -> None:
+        self.ctx = {"contexto": int(d.get("tokens_in") or 0) + int(d.get("tokens_out") or 0), "modelo": d.get("model")}
+        self.sesiones.tocar(self.sid, **self.ctx)
+
+    def abrir(self, sid: int) -> None:
+        """Cambia de sesión: la conversación de las pestañas se rehace con la de la sesión elegida."""
+        if self.busy:
+            raise Busy(f"Skynet está trabajando en «{self.label}». Espera o pulsa Detener antes de cambiar de sesión.")
+        if not self.sesiones.existe(sid):
+            raise KeyError(f"No existe la sesión {sid}")
+        if sid != self.sid:
+            self.sid = self.coord.sesion_id = sid
+            ses = self.sesiones.get(sid)
+            self.ctx = {"contexto": ses["contexto"], "modelo": ses["modelo"]}
+            self.coord.history.clear()
+            self.bus.history.clear()
+        self.bus.publish("sesion", {"sesion": self.sesion_info(), "mensajes": self.sesiones.mensajes(sid, REPLAY)})
+        self.bus.publish("estado", snapshot(self))
+
+    def nueva(self) -> int:
+        """Sesión nueva; si la actual sigue vacía, se reutiliza (como «Nuevo chat» en Claude)."""
+        if self.busy:
+            raise Busy(f"Skynet está trabajando en «{self.label}». Espera o pulsa Detener antes de abrir otra sesión.")
+        sid = self.sid if self.sesiones.vacia(self.sid) else self.sesiones.crear()["id"]
+        self.abrir(sid)
+        return sid
+
+    def sesion_info(self) -> dict[str, Any]:
+        ses = self.sesiones.get(self.sid)
+        return {"id": self.sid, "titulo": ses["titulo"], "consumo": self.sesiones.consumo(self.sid),
+                "contexto": self.ctx.get("contexto") or 0, "contexto_max": context_window(self, self.ctx.get("modelo"))}
 
     @property
     def busy(self) -> bool:
@@ -362,7 +432,28 @@ def snapshot(s: Session) -> dict[str, Any]:
         "sin_preguntar_texto": modos.SIN_PREGUNTAR,
         "modelo_efectivo": _current_model(s),
         "siempre": modos.SIEMPRE,
+        "sesion": s.sesion_info(),
     }
+
+
+# Ventana de contexto conocida por proveedor (lo de llama-server sale de su motor en skynet.toml).
+CONTEXTO_NUBE = {"gemini/": 1_048_576, "anthropic/": 200_000}
+
+
+def context_window(s: Session, litellm: str | None = None) -> int | None:
+    """Tamaño de la ventana de contexto del modelo que se usó (o del que se usaría ahora)."""
+    rt = s.rt
+    name = None
+    if litellm:
+        name = next((n for n, m in rt.settings.models.items() if m.litellm == litellm), None)
+    name = name or _current_model(s)
+    spec = s.engines.specs.get(name) if s.engines else None
+    ctx = getattr(spec, "contexto", None) if spec else None
+    if ctx:
+        return int(ctx)
+    m = rt.settings.models.get(name)
+    lit = m.litellm if m else (litellm or "")
+    return next((v for k, v in CONTEXTO_NUBE.items() if lit.startswith(k)), None)
 
 
 def internet_blocked(s: Session) -> bool:
@@ -553,7 +644,7 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
 
     async def stream(request: Request) -> Response:
         q = session.bus.subscribe()
-        replay = list(session.bus.history)
+        replay = session.sesiones.mensajes(session.sid, REPLAY)
 
         async def gen():
             try:
@@ -940,7 +1031,93 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         d = cli.dispositivo
         return jresp({"remoto": cli.remoto, "dispositivo": {"id": d.id, "nombre": d.nombre} if d else None})
 
+    # --- sesiones (historial de conversaciones) ---------------------------------
+    async def sesiones_lista(request: Request) -> Response:
+        q = request.query_params.get("q", "")[:200]
+        return jresp({"sesiones": session.sesiones.lista(q), "actual": session.sid})
+
+    async def sesiones_nueva(request: Request) -> Response:
+        try:
+            session.nueva()
+        except Busy as e:
+            return bad(str(e), 409)
+        return jresp(snapshot(session))
+
+    async def sesion_abrir(request: Request) -> Response:
+        try:
+            session.abrir(int(request.path_params["id"]))
+        except Busy as e:
+            return bad(str(e), 409)
+        except KeyError as e:
+            return bad(str(e.args[0]), 404)
+        return jresp(snapshot(session))
+
+    async def sesion_editar(request: Request) -> Response:
+        sid = int(request.path_params["id"])
+        if not session.sesiones.existe(sid):
+            return bad(f"No existe la sesión {sid}", 404)
+        if request.url.path.endswith("/archivar"):
+            if sid == session.sid and session.busy:
+                return bad("Espera a que termine o pulsa Detener antes de borrar esta sesión.", 409)
+            session.sesiones.archivar(sid)
+            if sid == session.sid:
+                last = session.sesiones.ultima()
+                session.abrir(last["id"] if last else session.sesiones.crear()["id"])
+            return jresp({"sesiones": session.sesiones.lista(), "actual": session.sid})
+        titulo = str((await body(request)).get("titulo") or "").strip()
+        if not titulo:
+            return bad("El título no puede estar vacío")
+        session.sesiones.renombrar(sid, titulo)
+        if sid == session.sid:
+            session.bus.publish("estado", snapshot(session))
+        return jresp({"sesiones": session.sesiones.lista(), "actual": session.sid})
+
+    # --- aprendizaje: propuestas de skills y memoria pendientes de tu visto bueno -----------
+    async def aprendizaje_lista(request: Request) -> Response:
+        home = rt.settings.home
+        skl, mem = propuestas.list_proposals(home)
+        items = []
+        for p in skl:
+            f = propuestas.propuestas_dir(home) / p["nombre"] / "SKILL.md"
+            try:
+                texto = skills.parse_skill(f).body()
+            except (OSError, ValueError):
+                texto = ""
+            items.append({"id": p["nombre"], "tipo": "skill", "titulo": p["nombre"], "descripcion": p["descripcion"],
+                          "origen": p["origen"], "texto": texto})
+        if mem:
+            items.append({"id": propuestas.MEMORIA, "tipo": "memoria", "titulo": "Recordar",
+                          "descripcion": f"{len(mem)} dato{'s' if len(mem) != 1 else ''} para la memoria",
+                          "origen": "", "texto": "\n".join(f"- {t}" for _, t in mem),
+                          "lineas": [{"destino": d, "texto": t} for d, t in mem]})
+        return jresp({"items": items})
+
+    async def aprendizaje_accion(request: Request) -> Response:
+        nombre = str(request.path_params["nombre"])
+        accion = str((await body(request)).get("accion") or "")
+        if accion not in ("aprobar", "descartar"):
+            return bad("Acción: aprobar o descartar")
+        try:
+            if not propuestas.exists(rt.settings.home, nombre):
+                return bad("Esa propuesta ya no está pendiente", 404)
+        except ValueError as e:
+            return bad(str(e))
+        cmd = "/aprobar" if accion == "aprobar" else "/rechazar"
+        try:  # el mismo camino que el comando: aprobar pasa por el permission gate y queda auditado
+            session.start(f"{'Aprobar' if accion == 'aprobar' else 'Descartar'} {nombre}",
+                          lambda: session.coord._review(cmd, [nombre]))
+        except Busy as e:
+            return bad(str(e), 409)
+        return ok()
+
     routes = [
+        Route("/api/sesiones", sesiones_lista),
+        Route("/api/aprendizaje", aprendizaje_lista),
+        Route("/api/aprendizaje/{nombre}", aprendizaje_accion, methods=["POST"]),
+        Route("/api/sesiones/nueva", sesiones_nueva, methods=["POST"]),
+        Route("/api/sesiones/{id:int}/abrir", sesion_abrir, methods=["POST"]),
+        Route("/api/sesiones/{id:int}", sesion_editar, methods=["POST"]),
+        Route("/api/sesiones/{id:int}/archivar", sesion_editar, methods=["POST"]),
         Route("/api/modelos-locales", modelos_locales_lista),
         Route("/api/modelo-local", modelo_local, methods=["POST"]),
         Route("/api/emparejar", emparejar, methods=["POST"]),

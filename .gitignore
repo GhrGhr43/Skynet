@@ -7,3 +7,7 @@ config/*.local.toml
 .env
 skynet.egg-info/
 skills/_propuestas/
+# App móvil: la firma (keystore y contraseña) y los APK no van al repo
+firma/
+*.jks
+*.apk

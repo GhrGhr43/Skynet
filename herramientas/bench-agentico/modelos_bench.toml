@@ -1,0 +1,94 @@
+# Perfiles extra solo para bench/agentico.py (no tocan el router de Skynet).
+# Mismos campos que config/router.toml + una tabla `extra` que se pasa tal cual a LiteLLM
+# (los "trucos" por modelo: muestreo recomendado por el fabricante, nivel de razonamiento...).
+# Un perfil sin su clave en el entorno se salta. Precios en USD por millón (octubre 2026).
+# Los nombres de modelo de OpenRouter/Groq cambian a menudo: si uno da 404, mira /v1/models del proveedor.
+
+# --- Tu modelo local (necesita el motor local encendido en el PC) ---------------------------
+[modelos.local]
+litellm = "openai/local"
+api_base = "http://127.0.0.1:8090/v1"
+api_key = "local"
+privado = true
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 8192
+timeout_seg = 900
+reasoning_effort = "medium"
+
+[modelos.local_qwen]          # el mismo, con el muestreo oficial de Qwen3.8 para modo thinking
+litellm = "openai/local"
+api_base = "http://127.0.0.1:8090/v1"
+api_key = "local"
+privado = true
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 8192
+timeout_seg = 900
+reasoning_effort = "medium"
+extra = { temperature = 1.0, top_p = 0.95, extra_body = { top_k = 20, min_p = 0.0 } }
+
+[modelos.local_rapido]        # menos razonamiento: ¿pierde aciertos o solo tarda menos?
+litellm = "openai/local"
+api_base = "http://127.0.0.1:8090/v1"
+api_key = "local"
+privado = true
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 8192
+timeout_seg = 900
+reasoning_effort = "low"
+
+# --- El mismo cerebro que el local, servido en la nube (gratis en Groq) ---------------------
+# Sin cuantizar: es el techo de calidad de tu Qwen3.8-27B. Groq gratis: 30 RPM, 1000 RPD.
+[modelos.qwen27b_groq]
+litellm = "groq/qwen/qwen3.8-27b"
+api_key_env = "GROQ_API_KEY"
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 8192
+reasoning_effort = "medium"
+extra = { temperature = 1.0, top_p = 0.95 }
+
+# --- Nube --------------------------------------------------------------------------------
+[modelos.gemini]              # gratis en AI Studio (Google usa los datos del plan gratis)
+litellm = "gemini/gemini-flash-latest"
+api_key_env = "GEMINI_API_KEY"
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 16000
+reasoning_effort = "medium"
+
+[modelos.deepseek]            # DeepSeek V4.1 Flash (API oficial)
+litellm = "deepseek/deepseek-flash"
+api_key_env = "DEEPSEEK_API_KEY"
+coste_entrada_usd_mtok = 0.14
+coste_salida_usd_mtok = 0.28
+max_tokens = 16000
+reasoning_effort = "high"
+
+[modelos.deepseek_or]         # lo mismo vía OpenRouter
+litellm = "openrouter/deepseek/deepseek-v4-flash"
+api_key_env = "OPENROUTER_API_KEY"
+coste_entrada_usd_mtok = 0.14
+coste_salida_usd_mtok = 0.28
+max_tokens = 16000
+
+[modelos.kimi]                # Kimi K3 vía OpenRouter (caro: 3 $ / 15 $)
+litellm = "openrouter/moonshotai/kimi-k3"
+api_key_env = "OPENROUTER_API_KEY"
+coste_entrada_usd_mtok = 3.0
+coste_salida_usd_mtok = 15.0
+max_tokens = 16000
+
+[modelos.glm]                 # GLM-5.2 vía OpenRouter
+litellm = "openrouter/z-ai/glm-5.2"
+api_key_env = "OPENROUTER_API_KEY"
+coste_entrada_usd_mtok = 1.4
+coste_salida_usd_mtok = 4.4
+max_tokens = 16000
+
+[modelos.claude_haiku]        # Claude Haiku 5.5 (API de pago de Anthropic)
+litellm = "anthropic/claude-haiku-5-5"
+api_key_env = "ANTHROPIC_API_KEY"
+max_tokens = 16000
