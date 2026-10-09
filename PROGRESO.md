@@ -1,6 +1,20 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-09 (búsqueda en internet opcional, Codex).
+Última actualización: 2026-10-09 (rediseño web con sesiones; antes, búsqueda en internet).
+
+## Rediseño web y sesiones (2026-10-09, PR #2)
+- Barra lateral con sesiones al estilo Claude/Codex: nueva (Ctrl+Mayús+O), buscar, renombrar,
+  borrar (archiva; tareas y registro se conservan). Ctrl+B la oculta. Tablas propias en
+  `skynet/sesiones.py` (`CREATE TABLE IF NOT EXISTS`, sin migración del Store).
+- El modelo recibe el hilo de la sesión abierta (`WebCoordinator._recent`), también tras reiniciar.
+- Chat centrado, inicio con el compositor en medio, nebulosa atenuada al leer, panel a la derecha.
+- Medidor de tokens: anillo en el compositor (contexto usado / ventana del modelo) con detalle
+  de sesión y mes; sugiere sesión nueva cuando el contexto pesa. `agent.py` emite `usage`.
+- Lo aprendido: punto con número junto a Configuración; tarjetas Aprobar/Descartar/Ver sobre
+  `/api/aprendizaje`. Aprobar pasa por el gate como `/aprobar`.
+- Verificado en la nube: 140 tests (el de `C:/Windows/system.ini` solo pasa en Windows) y capturas
+  con Playwright. Falta probar en el PC de Daniel. El APK lleva su copia de la UI: no verá sesiones
+  hasta recompilarlo.
 
 ## Búsqueda en internet (2026-10-09)
 - Pedida por Daniel. Globo junto al chat, con estado resaltado y solo icono en móvil;
