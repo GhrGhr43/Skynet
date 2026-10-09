@@ -809,3 +809,10 @@ input[type="range"] { flex: 1; accent-color: var(--fg); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Temporal: versión en ejecución, abajo a la derecha */
+.build {
+  position: fixed; right: 12px; bottom: 8px; z-index: 5; pointer-events: none;
+  font: 10.5px var(--mono); color: var(--fg4); letter-spacing: 0.02em;
+}
+@media (max-width: 860px) { .build { display: none; } }

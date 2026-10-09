@@ -20,6 +20,7 @@ import itertools
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 import webbrowser
@@ -51,6 +52,23 @@ from .acceso import (AccesoError, Cliente, ConfigAcceso, Dispositivos, EstadoAcc
                      ip_cliente, ip_de_tailscale)
 
 STATIC = Path(__file__).resolve().parent / "static"
+
+
+def _build() -> dict[str, Any]:
+    """Commit y carpeta de la copia que se está ejecutando (para saber si la versión probada es la última)."""
+    root = STATIC.parents[2]
+    info: dict[str, Any] = {"carpeta": str(root), "commit": None, "fecha": None}
+    try:
+        out = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%h %cs"], capture_output=True,
+                             text=True, timeout=3).stdout.split()
+        if len(out) == 2:
+            info["commit"], info["fecha"] = out
+    except (OSError, subprocess.SubprocessError):
+        pass  # sin git: se muestra solo la versión
+    return info
+
+
+BUILD = _build()
 KEEPALIVE_SEG = 15
 REPLAY = 300  # mensajes de la conversación que recupera una pestaña nueva o recargada
 
@@ -414,6 +432,7 @@ def snapshot(s: Session) -> dict[str, Any]:
     engines = s.engines.status() if s.engines else []
     return {
         "version": __version__,
+        "build": BUILD,
         "repo": c.repo_name,
         "modelo": c.force_model or "auto",
         "privado": c.private,
