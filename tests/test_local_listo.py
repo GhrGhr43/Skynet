@@ -150,12 +150,20 @@ async def test_agent_trims_context_with_small_window(make_rt, repo_path):
     reads = [("", [tool_call("workspace__read_file", {"path": "grande.txt", "offset": i * 10 + 1})])
              for i in range(12)]
     llm = ScriptedLLM(reads + [("Listo.", None)])
-    rt = make_rt(llm)
+    seen: list[tuple[int, int]] = []
+    orig = llm.__call__
+
+    async def snapshot(**kwargs):  # el agente sigue añadiendo a la misma lista tras la llamada
+        seen.append((estimate(kwargs["messages"]) + estimate(kwargs.get("tools")), kwargs["max_tokens"]))
+        return await orig(**kwargs)
+
+    rt = make_rt(snapshot)
     rt.settings.models["local"] = dataclasses.replace(rt.settings.models["local"], contexto_tokens=8192,
                                                       max_tokens=2048)
     await Coordinator(rt, FakeUI()).handle("lee grande.txt por partes")
-    for call in llm.calls:  # nunca se pide más de lo que cabe
-        assert estimate(call["messages"]) + call["max_tokens"] <= 8192
+    assert seen
+    for prompt, out in seen:  # nunca se pide más de lo que cabe
+        assert prompt + out <= 8192
     task = rt.store.list_tasks(1)[0]  # el verificador falla (no implementa doble): da igual aquí
     assert any(e["type"] == "contexto" for e in rt.store.events(task_id=task.id))
 
