@@ -1,3 +1,4 @@
+from pathlib import Path
 from skynet.engines import load_engines
 
 RAW = {
@@ -52,3 +53,11 @@ def test_modelo_local_elegible(tmp_path, monkeypatch):
     ml.guardar(tmp_path / "data", "Qwen3.8-27B-UD-IQ3_XXS")
     sp = load_engines(raw, logs).specs["local"]
     assert sp.modelo.endswith("Qwen3.8-27B-UD-IQ3_XXS.gguf") and "draft-mtp" in sp.args
+
+
+def test_home_en_rutas_de_proceso(tmp_path):
+    raw = {"omni": {"tipo": "proceso", "url": "http://x/v1", "exe": "node",
+                    "args": ["{home}/vendor/omni.mjs", "serve"], "env": {"DATA_DIR": "{home}/data"}}}
+    s = load_engines(raw, tmp_path, Path("C:/Git/Skynet")).specs["omni"]
+    assert s.args[0] == str(Path("C:/Git/Skynet")) + "/vendor/omni.mjs"
+    assert s.env["DATA_DIR"].endswith("/data") and "{home}" not in s.env["DATA_DIR"]

@@ -262,7 +262,7 @@ class Session:
         self.gen = 0  # cada trabajo tiene su número: uno abandonado al detener no pisa el estado del siguiente
         from ..engines import load_engines
 
-        self.engines = load_engines(rt.settings.engines, rt.settings.logs_dir)
+        self.engines = load_engines(rt.settings.engines, rt.settings.logs_dir, rt.settings.home)
         # litellm tarda unos segundos en importarse; hecho en el primer mensaje congelaba la web (y Detener).
         threading.Thread(target=_warm_litellm, daemon=True).start()
 
