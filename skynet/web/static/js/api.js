@@ -41,6 +41,10 @@ export const api = {
   largo: (datos) => request('POST', '/api/largo', datos),
   log: (tarea, n = 150) => request('GET', `/api/log?n=${n}${tarea ? `&tarea=${tarea}` : ''}`),
   doctor: () => request('GET', '/api/doctor'),
+  // Móviles vinculados (solo desde el PC).
+  dispositivos: () => request('GET', '/api/dispositivos'),
+  emparejarDispositivo: (nombre) => request('POST', '/api/dispositivos/emparejar', nombre ? { nombre } : {}),
+  revocarDispositivo: (id) => request('POST', `/api/dispositivos/${encodeURIComponent(id)}/revocar`, {}),
 };
 
 // Conexión en vivo. EventSource reconecta solo; cada reconexión empieza con "hola" (foto del

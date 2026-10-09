@@ -100,6 +100,7 @@ class Settings:
     agent: AgentLimits
     long: LongLimits
     engines: dict[str, Any] = field(default_factory=dict)  # [motores.*] de skynet.toml
+    acceso: dict[str, Any] = field(default_factory=dict)   # [acceso] de skynet.toml (móvil por Tailscale)
 
     def repo(self, nombre: str) -> RepoConfig:
         try:
@@ -207,6 +208,7 @@ def load_settings(home: Path | str | None = None) -> Settings:
         agent=AgentLimits(**general.get("agente", {})),
         long=LongLimits(**general.get("largo", {})),
         engines=dict(general.get("motores", {})),
+        acceso=dict(general.get("acceso", {})),
     )
 
 

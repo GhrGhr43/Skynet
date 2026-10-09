@@ -10,6 +10,8 @@ Sin humano presente (tareas largas), "preguntar" se convierte en "denegar".
 Modos por modelo (modos.py): las herramientas `sistema.*` (todo el PC) solo se permiten según el modo
 (lectura / editar / total) y, en cualquier modo, administrador, carpetas del sistema, borrar y secretos
 se preguntan siempre (sin «sí a toda la tarea»). En «total» también se relaja la lista blanca del repo.
+«Sin preguntar» (Control total + casilla): lo que se preguntaría se permite directamente y se audita;
+lo denegado (skills/memoria de Skynet, archivos que gestiona Skynet) sigue denegado.
 Las skills y la memoria curada de Skynet (skills/, memoria/) solo cambian con /aprobar:
 cualquier herramienta que no sea de lectura y apunte ahí se deniega.
 Cada decisión queda en el audit log.
@@ -157,6 +159,7 @@ class PermissionGate:
         mode: str = "repo",
         user_home: Path | str | None = None,
         internet: bool = False,
+        sin_preguntar: bool = False,
     ):
         self.settings = settings
         self.repo = repo
@@ -168,6 +171,7 @@ class PermissionGate:
         self.reserved = [d.resolve() for d in propuestas.reserved_dirs(settings.home)]
         self.mode = mode
         self.internet = internet
+        self.sin_preguntar = sin_preguntar and mode == "total"
         self.user_home = norm_path(str(user_home or Path.home()), "/")
         self.sysdirs = system_dirs()
         self.skynet_home = norm_path(str(settings.home), "/")
@@ -331,6 +335,10 @@ class PermissionGate:
     async def check(self, key: str, args: dict[str, Any], args_summary: str = "") -> GateResult:
         result = self.evaluate(key, args)
         asked = False
+        auto = False
+        if result.decision is Decision.ASK and self.sin_preguntar:
+            auto = True
+            result = GateResult(Decision.ALLOW, result.level, f"{result.reason}; permitido por «Sin preguntar»")
         if result.decision is Decision.ASK:
             if self.asker is None:
                 result = GateResult(Decision.DENY, result.level, f"{result.reason}; no hay nadie para confirmar")
@@ -346,7 +354,7 @@ class PermissionGate:
                 else:
                     result = GateResult(Decision.DENY, result.level, "rechazado por el usuario")
         # Lo permitido sin preguntar ya queda en el evento "tool"; aquí solo lo que decide un humano o se deniega.
-        if asked or result.decision is not Decision.ALLOW:
+        if asked or auto or result.decision is not Decision.ALLOW:
             self.audit.log(
                 "permission",
                 tool=key,

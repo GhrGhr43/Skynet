@@ -203,3 +203,14 @@ funciona igual.
   fuerte (Ver y editar, Control total) en un modelo en la nube muestra un aviso antes.
 - **Cara de cambiar:** poco. Lo caro es la política: qué cuenta como «siempre se pregunta»
   (patrones en `gate.py`). Son listas negras: útiles para avisar, no una barrera infalible.
+
+## D15. Acceso desde el móvil por Tailscale y llave por dispositivo (2026-10-08)
+- **Camino privado con Tailscale Serve**, no puertos abiertos ni túnel público: la web sigue escuchando solo
+  en 127.0.0.1 y `tailscale serve --bg 8765` la publica solo dentro de la red de Tailscale (HTTPS válido).
+- **Llave por dispositivo** encima de Tailscale: se empareja con un QR del PC (código de 10 min y un uso) que el
+  móvil cambia por una llave propia; se guarda solo su hash (`data/dispositivos.json`); se quita una a una.
+- Remoto exige IP de Tailscale (100.64.0.0/10, fd7a:115c:a1e0::/48), Host `*.ts.net`, origen de la app y llave.
+  Funnel (internet público) se rechaza siempre. Desde el móvil no se añaden repos, no se activa «Sin preguntar»
+  ni se gestionan dispositivos. Emparejados, mensajes, permisos respondidos y rechazos van al registro.
+- **Cara de cambiar:** poco. Si un día se quiere sin Tailscale (p. ej. Cloudflare Access), basta con otra
+  comprobación de origen en `Acceso` (web/server.py); las llaves por dispositivo siguen valiendo.

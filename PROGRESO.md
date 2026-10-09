@@ -111,6 +111,10 @@ Ritmo observado: 10 s a 2,5 min por llamada al modelo, según cuánto razone.
   iteración se acepta si no empeora (ver D8 en docs/DECISIONES.md).
 - Un runner muerto parecía vivo hasta 3 minutos: ahora se comprueba también su pid.
 
+## Acceso desde el móvil (2026-10-08)
+- App Android Skynet 0.2 + llaves por dispositivo + Tailscale Serve. Guía: `docs/ACCESO-MOVIL.md`.
+  Configuración › Dispositivos enseña el QR; el Diagnóstico revisa Tailscale (y avisa si Funnel está activo).
+
 ## Siguientes pasos propuestos
 1. Daniel: elegir presupuesto cloud y poner la clave si quiere usarlo.
 2. Añadir sus repos reales a `config/repos.toml` (y un juego de agente-godot con `agente = "agente-godot"`)

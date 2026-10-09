@@ -8,7 +8,8 @@
 - ...                    tareas, registro, diagnóstico y ajustes (ver `routes`)
 
 Solo escucha en 127.0.0.1. Además comprueba Host y Origin: sin eso, cualquier web abierta en el
-navegador podría mandar órdenes a Skynet (DNS rebinding / CSRF). Sin dependencias nuevas:
+navegador podría mandar órdenes a Skynet (DNS rebinding / CSRF). Desde otro dispositivo (el móvil) solo se
+llega por Tailscale Serve y con la llave de un dispositivo emparejado: ver acceso.py. Sin dependencias nuevas:
 Starlette y uvicorn ya vienen con el SDK de MCP; SSE en vez de WebSocket por lo mismo.
 """
 from __future__ import annotations
@@ -19,9 +20,12 @@ import itertools
 import json
 import os
 import re
+import threading
+import time
 import webbrowser
 from collections import deque
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -42,6 +46,8 @@ from ..gate import SIEMPRE_TAG, Level
 from ..router import Capabilities
 from ..runtime import Runtime
 from ..store import EN_CURSO, ESPERANDO_PERMISO, FALLIDA, HECHA, PAUSADA, Task
+from .acceso import (AccesoError, Cliente, ConfigAcceso, Dispositivos, EstadoAcceso, enlace_emparejar,
+                     ip_cliente, ip_de_tailscale)
 
 STATIC = Path(__file__).resolve().parent / "static"
 KEEPALIVE_SEG = 15
@@ -175,6 +181,13 @@ class WebCoordinator(Coordinator):
         return await super()._command(text)
 
 
+def _warm_litellm() -> None:
+    try:
+        import litellm  # noqa: F401
+    except Exception:
+        pass
+
+
 # --- sesión: un único trabajo a la vez, como en la terminal ---------------------
 class Busy(Exception):
     pass
@@ -189,9 +202,13 @@ class Session:
         self.current: asyncio.Task[Any] | None = None
         self.running = False  # no se mira current.done(): en su propio finally aún no ha terminado
         self.label = ""
+        self._abandoned: set[asyncio.Task[Any]] = set()
+        self.gen = 0  # cada trabajo tiene su número: uno abandonado al detener no pisa el estado del siguiente
         from ..engines import load_engines
 
         self.engines = load_engines(rt.settings.engines, rt.settings.logs_dir)
+        # litellm tarda unos segundos en importarse; hecho en el primer mensaje congelaba la web (y Detener).
+        threading.Thread(target=_warm_litellm, daemon=True).start()
 
     @property
     def busy(self) -> bool:
@@ -202,23 +219,29 @@ class Session:
             raise Busy(f"Skynet está trabajando en «{self.label}». Espera o pulsa Detener.")
         self.label = label
         self.running = True
-        self.current = asyncio.create_task(self._wrap(work))
+        self.gen += 1
+        self.current = asyncio.create_task(self._wrap(work, self.gen))
         self.bus.publish("ocupado", {"ocupado": True, "etiqueta": label})
 
-    async def _wrap(self, work: Callable[[], Awaitable[Any]]) -> None:
+    async def _wrap(self, work: Callable[[], Awaitable[Any]], gen: int) -> None:
         try:
             await work()
         except asyncio.CancelledError:
-            self.bus.publish("info", {"texto": "Detenido. La tarea queda pausada: «Continuar» la retoma."})
+            if gen == self.gen:
+                self.bus.publish("info", {"texto": "Detenido. La tarea queda pausada: «Continuar» la retoma."})
         except ConfigError as e:
             self.bus.publish("error", {"texto": f"Configuración: {e}"})
         except Exception as e:  # la web no debe morir por un fallo de una tarea
             self.bus.publish("error", {"texto": f"{type(e).__name__}: {e}"})
         finally:
-            self.running = False
-            self.label = ""
-            self.bus.publish("ocupado", {"ocupado": False})
-            self.bus.publish("estado", snapshot(self))
+            if gen == self.gen:
+                self._release()
+
+    def _release(self) -> None:
+        self.running = False
+        self.label = ""
+        self.bus.publish("ocupado", {"ocupado": False})
+        self.bus.publish("estado", snapshot(self))
 
     def message(self, text: str) -> None:
         text = text.strip()
@@ -234,20 +257,41 @@ class Session:
 
         self.start(text.splitlines()[0][:70], run)
 
-    async def cancel(self) -> bool:
+    async def cancel(self, wait: float = 4.0) -> bool:
+        """Detiene el trabajo actual. Si en `wait` segundos no ha terminado (una llamada al modelo o una
+        herramienta que no responde a la cancelación), se abandona: la web queda libre al momento y el
+        trabajo viejo se sigue cancelando en segundo plano sin tocar el estado del siguiente."""
         if not self.busy:
             return False
         assert self.current is not None
-        self.current.cancel()
+        task = self.current
+        task.cancel()
         try:
-            await asyncio.wait_for(asyncio.shield(self.current), timeout=10)
+            await asyncio.wait_for(asyncio.shield(task), timeout=wait)
         except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
             pass
-        if self.running and self.current.done():  # cancelada antes de empezar: su finally no llegó a correr
-            self.running = False
-            self.bus.publish("ocupado", {"ocupado": False})
+        if self.running and (task.done() or task is self.current):
+            if not task.done():
+                self.bus.publish("info", {"texto": "Detenido. Algo seguía colgado y se cierra en segundo plano; "
+                                                   "ya puedes escribir."})
+                self._fail_open_questions()
+                reaper = asyncio.create_task(self._keep_cancelling(task))
+                self._abandoned.add(reaper)
+                reaper.add_done_callback(self._abandoned.discard)
+            self.gen += 1  # el finally del trabajo abandonado ya no toca nada
+            self._release()
         return True
 
+    @staticmethod
+    async def _keep_cancelling(task: asyncio.Task[Any]) -> None:
+        # Algunas librerías se tragan una cancelación (p. ej. al cerrar un servidor MCP): se repite.
+        while not task.done():
+            task.cancel()
+            await asyncio.wait([task], timeout=2)
+
+    def _fail_open_questions(self) -> None:
+        for qid in list(self.ui.pending):
+            self.ui.resolve(qid, "n")
 
 # --- serialización -------------------------------------------------------
 def task_dict(t: Task) -> dict[str, Any]:
@@ -277,6 +321,7 @@ def models_info(rt: Runtime, engines: list[dict[str, Any]]) -> list[dict[str, An
             ok, why = False, "desactivado (modelo en la nube)"
         out.append({"nombre": name, "litellm": m.litellm, "privado": m.privado, "gratis": free,
                     "disponible": ok, "motivo": why, "activado": nube_on, "modo": rt.access.modo(name),
+                    "sin_preguntar": rt.access.sin_preguntar(name),
                     "coste": [m.coste_entrada_usd_mtok, m.coste_salida_usd_mtok]})
     return out
 
@@ -313,6 +358,8 @@ def snapshot(s: Session) -> dict[str, Any]:
         "modos": [{"clave": m.clave, "nombre": m.nombre, "descripcion": m.descripcion, "fuerte": m.fuerte}
                   for m in modos.MODOS.values()],
         "modo_actual": rt.access.modo(_current_model(s)),
+        "sin_preguntar_actual": rt.access.sin_preguntar(_current_model(s)),
+        "sin_preguntar_texto": modos.SIN_PREGUNTAR,
         "modelo_efectivo": _current_model(s),
         "siempre": modos.SIEMPRE,
     }
@@ -337,11 +384,25 @@ def _month_start() -> str:
     return ms()
 
 
-# --- seguridad: solo esta página, solo desde este PC ------------------------
-class LocalOnly:
-    def __init__(self, app: ASGIApp, port_ref: dict[str, int]):
+# --- seguridad: esta página desde este PC, o un dispositivo emparejado por Tailscale ---------
+PROXY = ("x-forwarded-for", "forwarded", "x-real-ip", "tailscale-user-login", "tailscale-funnel-request")
+SOLO_PC = ("/api/repos", "/api/dispositivos")  # en remoto no: añadir repos y gestionar dispositivos
+SIN_LLAVE = ("/api/emparejar",)
+
+
+class Acceso:
+    """Dos tipos de cliente:
+    - local: el navegador de este PC (Host 127.0.0.1/localhost y sin cabeceras de proxy). Como siempre.
+    - remoto: llega por Tailscale Serve (proxy en este mismo PC). Necesita IP de Tailscale, Host *.ts.net,
+      un origen permitido (la app) y la llave de un dispositivo emparejado. Sin Funnel (internet público)."""
+
+    def __init__(self, app: ASGIApp, port_ref: dict[str, int], dispositivos: Dispositivos, cfg: ConfigAcceso,
+                 on_rechazo: Callable[[str, str | None], None] | None = None):
         self.app = app
         self.port_ref = port_ref
+        self.dispositivos = dispositivos
+        self.cfg = cfg
+        self.on_rechazo = on_rechazo or (lambda motivo, ip: None)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -350,15 +411,84 @@ class LocalOnly:
         port = self.port_ref.get("port")
         allowed = {f"{h}:{port}" for h in ("127.0.0.1", "localhost", "[::1]")} if port else None
         host = headers.get("host", "")
-        if allowed is not None and host not in allowed:
-            return await _deny(scope, receive, send, "Host no permitido")
+        if not any(h in headers for h in PROXY) and (allowed is None or host in allowed):
+            return await self._local(scope, receive, send, headers, host)
+        if allowed is not None and host in allowed:
+            # el Host de este PC con cabeceras de proxy: no es Tailscale Serve (que trae su propio Host)
+            return await _deny(scope, receive, send, "Petición local con cabeceras de proxy")
+        return await self._remoto(scope, receive, send, headers, host)
+
+    async def _local(self, scope: Scope, receive: Receive, send: Send, headers: dict[str, str], host: str) -> None:
         if scope["method"] not in ("GET", "HEAD"):
             origin = headers.get("origin")
             if origin is not None and origin != f"http://{host}":
                 return await _deny(scope, receive, send, "Origen no permitido")
             if "application/json" not in headers.get("content-type", ""):
                 return await _deny(scope, receive, send, "Se espera JSON")
+        scope.setdefault("state", {})["cliente"] = Cliente(remoto=False)
         await self.app(scope, receive, send)
+
+    async def _remoto(self, scope: Scope, receive: Receive, send: Send, headers: dict[str, str], host: str) -> None:
+        origin = headers.get("origin")
+        cors = origin if origin in self.cfg.origenes else None
+        extra = [(b"vary", b"Origin")] + ([(b"access-control-allow-origin", cors.encode("latin-1"))] if cors else [])
+
+        async def no(msg: str, status: int = 403, **kw: Any) -> None:
+            self.on_rechazo(msg, ip)
+            r = JSONResponse({"ok": False, "error": msg, **kw}, status_code=status)
+            r.raw_headers.extend(extra)
+            await r(scope, receive, send)
+
+        ip = ip_cliente(headers.get("x-forwarded-for"))
+        if "tailscale-funnel-request" in headers:
+            return await no("Skynet no se publica en internet (Tailscale Funnel): solo dentro de tu red de Tailscale.")
+        if not ip_de_tailscale(ip):
+            return await no("Solo se puede entrar por Tailscale.")
+        if not self.cfg.host_valido(host):
+            return await no("Host no permitido")
+        usuario = (headers.get("tailscale-user-login") or "").lower() or None
+        if self.cfg.usuarios and usuario not in self.cfg.usuarios:
+            return await no("Esta cuenta de Tailscale no está autorizada en este PC.")
+        if origin is not None and cors is None:
+            return await no("Origen no permitido")
+        path = scope["path"]
+        if scope["method"] == "OPTIONS":
+            if cors is None:
+                return await no("Origen no permitido")
+            r = Response(status_code=204, headers={
+                "Access-Control-Allow-Headers": "Authorization, Content-Type",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Max-Age": "600"})
+            r.raw_headers.extend(extra)
+            return await r(scope, receive, send)
+        if not path.startswith("/api/"):
+            return await no("No encontrado", 404)
+        if scope["method"] not in ("GET", "HEAD") and "application/json" not in headers.get("content-type", ""):
+            return await no("Se espera JSON")
+        cliente = Cliente(remoto=True, ip=ip, usuario=usuario)
+        if path not in SIN_LLAVE:
+            auth = headers.get("authorization", "")
+            llave = auth[7:].strip() if auth[:7].lower() == "bearer " else None
+            disp = self.dispositivos.verificar(llave)
+            if disp is None:
+                return await no("Este móvil no está autorizado (o se quitó desde el PC). Vuelve a emparejarlo.",
+                                401, reautorizar=True)
+            if any(path == p or path.startswith(p + "/") for p in SOLO_PC):
+                return await no("Solo desde el PC: por seguridad, esto no se puede hacer desde el móvil.")
+            self.dispositivos.tocar(disp, ip)
+            cliente.dispositivo = disp
+        scope.setdefault("state", {})["cliente"] = cliente
+
+        async def send_cors(msg: Any) -> None:
+            if msg["type"] == "http.response.start":
+                msg = {**msg, "headers": [*msg.get("headers", []), *extra]}
+            await send(msg)
+
+        await self.app(scope, receive, send_cors)
+
+
+def cliente_de(request: Request) -> Cliente:
+    return getattr(request.state, "cliente", None) or Cliente(remoto=False)
 
 
 def jresp(data: Any, status: int = 200) -> Response:
@@ -383,6 +513,18 @@ class FreshStaticFiles(StaticFiles):
 def create_app(rt: Runtime, port: int | None = None) -> Starlette:
     session = Session(rt)
     port_ref: dict[str, int] = {"port": port} if port else {}
+    cfg = ConfigAcceso.desde(getattr(rt.settings, "acceso", None))
+    dispositivos = Dispositivos(rt.settings.home / "data" / "dispositivos.json")
+    acceso = EstadoAcceso(port or 8765, cfg.url)
+    rechazos: dict[str, float] = {}
+
+    def on_rechazo(motivo: str, ip: str | None) -> None:
+        # Al registro, pero como mucho una vez por minuto y motivo (un móvil viejo reintentando no lo llena).
+        t = time.monotonic()
+        if t - rechazos.get(motivo, -1e9) >= 60:
+            rechazos[motivo] = t
+            rt.audit.log("permission", tool="skynet.acceso", decision="denegado",
+                         detail={"motivo": f"{motivo} ({ip or 'sin IP'})"})
 
     async def body(request: Request) -> dict[str, Any]:
         try:
@@ -447,10 +589,14 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             return bad("Mensaje vacío")
         if len(text) > 20000:
             return bad("Mensaje demasiado largo")
+        cli = cliente_de(request)
         try:
             session.message(text)
         except Busy as e:
             return bad(str(e), 409)
+        if cli.remoto and cli.dispositivo:
+            rt.audit.log("permission", tool="skynet.remoto", decision="mensaje",
+                         detail={"mensaje": f"Desde {cli.dispositivo.nombre}: {text[:120]}"})
         return ok()
 
     async def responder(request: Request) -> Response:
@@ -460,6 +606,11 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             return bad("Respuesta: s, n o t")
         if not session.ui.resolve(str(b.get("id")), value):
             return bad("Esa pregunta ya no está abierta", 404)
+        cli = cliente_de(request)
+        if cli.remoto and cli.dispositivo:
+            rt.audit.log("permission", tool="skynet.remoto", decision={"s": "permitido", "t": "permitido",
+                                                                       "n": "denegado"}[value],
+                         detail={"mensaje": f"Respondido desde {cli.dispositivo.nombre}"})
         return ok()
 
     async def repos_nuevo(request: Request) -> Response:
@@ -486,6 +637,18 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
     async def ajustes(request: Request) -> Response:
         b = await body(request)
         c = session.coord
+        # «Sin preguntar» se confirma antes de cambiar nada (también el modo que llega en la misma petición).
+        sp = b.get("sin_preguntar") if isinstance(b.get("sin_preguntar"), dict) else None
+        if sp and sp.get("activar") and cliente_de(request).remoto:
+            return bad("Solo desde el PC: «Sin preguntar» no se puede activar desde el móvil.", 403)
+        if sp and sp.get("activar") and sp.get("modelo") in rt.settings.models and not b.get("confirmar"):
+            name = sp["modelo"]
+            target = (b.get("permiso") or {}).get("modo") if isinstance(b.get("permiso"), dict) else None
+            if (target or rt.access.modo(name)) == "total" and not rt.access.sin_preguntar(name):
+                text = rt.access.aviso_sin_preguntar(name)
+                if target and rt.access.necesita_aviso(name, target):
+                    text = modos.aviso_nube(name, target) + " " + text
+                return confirm("aviso", f"¿{name} sin preguntar nada?", text, "Sí, sin preguntar")
         if "internet" in b:
             if not isinstance(b["internet"], bool):
                 return bad("Internet debe ser true o false")
@@ -535,9 +698,22 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             if acc.necesita_aviso(name, mode) and not confirmed:
                 return confirm("aviso", f"Modo «{modos.MODOS[mode].nombre}» en un modelo en la nube",
                                modos.aviso_nube(name, mode), "Entiendo, darle este modo")
+            changed = acc.modo(name) != mode
             acc.set_modo(name, mode)
             rt.audit.log("permission", tool="skynet.permisos", decision=mode, detail={"modelo": name})
-            session.ui.info(f"{name}: modo «{modos.MODOS[mode].nombre}». {modos.MODOS[mode].descripcion}")
+            if changed and "sin_preguntar" not in b:
+                session.ui.info(f"{name}: modo «{modos.MODOS[mode].nombre}». {modos.MODOS[mode].descripcion}")
+        if "sin_preguntar" in b:
+            p = b["sin_preguntar"] if isinstance(b["sin_preguntar"], dict) else {}
+            name, on = p.get("modelo"), bool(p.get("activar"))
+            if name not in rt.settings.models:
+                return bad(f"Modelo desconocido: {name}")
+            if on and acc.modo(name) != "total":
+                return bad("«Sin preguntar» solo existe en el modo Control total")
+            acc.set_sin_preguntar(name, on)
+            rt.audit.log("permission", tool="skynet.sin_preguntar", decision="activado" if on else "desactivado",
+                         detail={"modelo": name})
+            session.ui.info(f"{name}: {'sin preguntar (Control total de verdad)' if on else 'vuelve a preguntar lo delicado'}.")
         if "modelo" in b:
             m = b["modelo"]
             if m in (None, "", "auto"):
@@ -717,9 +893,61 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         asyncio.create_task(work())
         return jresp(snapshot(session))
 
+    # --- dispositivos (el móvil) ---------------------------------------------------
+    def lista_dispositivos(fresco: bool = False) -> dict[str, Any]:
+        return {"dispositivos": dispositivos.lista(), "acceso": acceso.resumen(fresco)}
+
+    async def dispositivos_get(request: Request) -> Response:
+        fresco = request.query_params.get("fresco") == "1"
+        return jresp(await asyncio.to_thread(lista_dispositivos, fresco))
+
+    async def dispositivos_emparejar(request: Request) -> Response:
+        b = await body(request)
+        res = await asyncio.to_thread(acceso.resumen, True)
+        codigo, expira = dispositivos.nuevo_codigo(b.get("nombre"))
+        url = res["url"]
+        return jresp({"codigo": codigo, "url": url, "enlace": enlace_emparejar(url, codigo),
+                      "expira": datetime.fromtimestamp(expira, timezone.utc).isoformat(timespec="seconds"),
+                      "acceso": res})
+
+    async def dispositivos_revocar(request: Request) -> Response:
+        try:
+            d = dispositivos.revocar(str(request.path_params["id"]))
+        except AccesoError as e:
+            return bad(str(e), e.status)
+        rt.audit.log("permission", tool="skynet.dispositivos", decision="quitado",
+                     detail={"mensaje": f"Dispositivo quitado: {d.nombre}"})
+        session.ui.info(f"Dispositivo quitado: {d.nombre}. Ya no puede entrar.")
+        return jresp(await asyncio.to_thread(lista_dispositivos))
+
+    async def emparejar(request: Request) -> Response:
+        b = await body(request)
+        cli = cliente_de(request)
+        try:
+            llave, d = dispositivos.emparejar(str(b.get("codigo") or ""), b.get("nombre"), cli.ip)
+        except AccesoError as e:
+            rt.audit.log("permission", tool="skynet.dispositivos", decision="denegado",
+                         detail={"mensaje": f"Emparejado rechazado ({cli.ip or 'local'}): {e}"})
+            return bad(str(e), e.status)
+        quien = f" · {cli.usuario}" if cli.usuario else ""
+        rt.audit.log("permission", tool="skynet.dispositivos", decision="emparejado",
+                     detail={"mensaje": f"Nuevo dispositivo: {d.nombre} ({cli.ip or 'local'}{quien})"})
+        session.ui.info(f"Nuevo dispositivo conectado: {d.nombre}. Puedes quitarlo en Configuración › Dispositivos.")
+        return jresp({"ok": True, "llave": llave, "dispositivo": {"id": d.id, "nombre": d.nombre}})
+
+    async def yo(request: Request) -> Response:
+        cli = cliente_de(request)
+        d = cli.dispositivo
+        return jresp({"remoto": cli.remoto, "dispositivo": {"id": d.id, "nombre": d.nombre} if d else None})
+
     routes = [
         Route("/api/modelos-locales", modelos_locales_lista),
         Route("/api/modelo-local", modelo_local, methods=["POST"]),
+        Route("/api/emparejar", emparejar, methods=["POST"]),
+        Route("/api/yo", yo),
+        Route("/api/dispositivos", dispositivos_get),
+        Route("/api/dispositivos/emparejar", dispositivos_emparejar, methods=["POST"]),
+        Route("/api/dispositivos/{id}/revocar", dispositivos_revocar, methods=["POST"]),
         Route("/api/motor", motor, methods=["POST"]),
         Route("/", index),
         Route("/api/stream", stream),
@@ -737,9 +965,12 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         Route("/api/doctor", doctor),
         Mount("/static", FreshStaticFiles(directory=STATIC), name="static"),
     ]
-    app = Starlette(routes=routes, middleware=[Middleware(LocalOnly, port_ref=port_ref)])
+    app = Starlette(routes=routes, middleware=[Middleware(Acceso, port_ref=port_ref, dispositivos=dispositivos,
+                                                           cfg=cfg, on_rechazo=on_rechazo)])
     app.state.session = session
     app.state.port_ref = port_ref
+    app.state.dispositivos = dispositivos
+    app.state.acceso = acceso
     return app
 
 

@@ -109,8 +109,9 @@ class Runtime:
         caps = self.capabilities_for(task, repo)
         mode = self.mode_for(task, caps)
         internet = caps.internet is True and caps.privacy != "alta" and not task.is_long
+        free = mode == "total" and self.access.sin_preguntar(self.router.choose(caps).profile.nombre)
         gate = (PermissionGate(self.settings, repo, audit, asker=asker, grants=grants, protected=protected, mode=mode,
-                               internet=internet)
+                               internet=internet, sin_preguntar=free)
                 if repo or mode != "repo" or internet else None)
         specs = [s for s in self.server_specs(repo) if s.nombre != "internet"]
         system = system_prompt_for(repo)
@@ -119,7 +120,7 @@ class Runtime:
             system += "\n\n" + INTERNET_PROMPT
         if mode != "repo":
             specs.append(self.sistema_spec())
-            system += "\n\n" + mode_prompt(mode, repo is not None)
+            system += "\n\n" + mode_prompt(mode, repo is not None, free)
         if specs:
             async with ToolHub(specs, self.settings.logs_dir) as hub:
                 agent = Agent(self.router, gate, hub, audit, **agent_kwargs)
@@ -130,16 +131,18 @@ class Runtime:
         return StepRun(step, outcome)
 
 
-def mode_prompt(mode: str, has_repo: bool) -> str:
+def mode_prompt(mode: str, has_repo: bool, sin_preguntar: bool = False) -> str:
     m = MODOS[mode]
     can = {"lectura": "leer archivos de todo el PC (sistema__read_file, sistema__list_dir)",
            "editar": "leer archivos de todo el PC y crear o editar archivos de la carpeta de usuario",
            "total": ("leer y editar archivos, ejecutar comandos de PowerShell (sistema__run_command) y abrir "
-                     "programas o enlaces (sistema__abrir; para instalar un juego de Steam: "
-                     "sistema__abrir con \"steam://install/<AppID>\")")}[mode]
+                     "programas o enlaces (sistema__abrir). Para instalar un juego de Steam usa "
+                     "sistema__instalar_steam con su AppID: abre la instalación y pulsa «Instalar» por el usuario")}[mode]
     where = ("Las herramientas workspace__* siguen siendo para el repo; las sistema__* usan rutas absolutas de Windows."
              if has_repo else "Las herramientas sistema__* usan rutas absolutas de Windows.")
-    return (f"## Permisos: modo «{m.nombre}»\nPuedes {can}. {where}\n{SIEMPRE} Si algo se deniega, "
+    rule = ("El usuario ha activado «Sin preguntar»: nada pide confirmación, así que actúa con cuidado y no hagas "
+            "nada que no te haya pedido." if sin_preguntar else SIEMPRE)
+    return (f"## Permisos: modo «{m.nombre}»\nPuedes {can}. {where}\n{rule} Si algo se deniega, "
             "no insistas: explica qué necesitas.")
 
 

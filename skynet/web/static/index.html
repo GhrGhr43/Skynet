@@ -90,6 +90,10 @@
 </footer>
 <div class="menu" id="menu" role="menu" hidden></div>
 
+<div class="modal" id="pair" role="dialog" aria-modal="true" aria-labelledby="pairTitle" hidden>
+  <div class="modal-card pair-card" id="pairCard"></div>
+</div>
+
 <div class="modal" id="ask" role="dialog" aria-modal="true" aria-labelledby="askTitle" hidden>
   <div class="modal-card" id="askCard"></div>
 </div>
@@ -103,6 +107,7 @@
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
 
+<script src="/static/vendor/qrcode/qrcode.js" defer></script>
 <script type="module" src="/static/js/main.js?v=internet-cursor-20261009"></script>
 </body>
 </html>

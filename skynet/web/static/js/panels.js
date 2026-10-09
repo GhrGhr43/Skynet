@@ -40,6 +40,41 @@ function pill(status, live) {
   return `<span class="pill s-${esc(status)} ${live ? 'live' : ''}">${esc(STATUS_TEXT[status] || status)}${live ? ' · trabajando' : ''}</span>`;
 }
 
+// QR en SVG: módulos blancos sobre negro, con 4 módulos de margen (zona de silencio).
+function qrSvg(text) {
+  const q = window.qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  const n = q.getModuleCount(), m = 4, size = n + m * 2;
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+  return `<svg class="qr" width="${size * 6}" height="${size * 6}" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" role="img" aria-label="Código QR para vincular el móvil">
+    <rect width="${size}" height="${size}" fill="#000"/><path d="${d}" fill="#fff"/></svg>`;
+}
+
+function lastUse(ts) {
+  if (!ts) return 'Sin usar todavía';
+  const a = ago(ts);
+  return a.startsWith('hace') ? `Último uso ${a}` : `Último uso el ${a}`;
+}
+
+const PAIR_STEPS = `<ol class="steps-list dev-steps">
+  <li>Instala Tailscale en el PC y en el móvil y entra con la misma cuenta.</li>
+  <li>En el PC, en una terminal: <button class="dev-cmd mono" data-copy="tailscale serve --bg 8765" title="Copiar">tailscale serve --bg 8765</button></li>
+  <li>Vuelve aquí y pulsa «Añadir móvil».</li></ol>`;
+
+const FUNNEL_WARN = '<div class="dev-alert">Funnel está activado: Skynet sería visible desde internet. Desactívalo con <span class="mono">tailscale funnel off</span>.</div>';
+
+function tsFlags(ts = {}) {
+  const f = [];
+  f.push(ts.instalado ? ['ok', 'Instalado'] : ['bad', 'No instalado']);
+  if (ts.instalado) f.push(ts.conectado ? ['ok', 'Conectado'] : ['bad', 'Sin conectar']);
+  if (ts.serve === true) f.push(['ok', 'Serve activo']);
+  else if (ts.serve === false) f.push(['bad', 'Serve apagado']);
+  if (ts.funnel) f.push(['bad', 'Funnel activado']);
+  return `<div class="dev-flags"><span class="dev-flags-k">Tailscale</span>${f.map(([c, t]) => `<span class="pill dev-${c}">${esc(t)}</span>`).join('')}</div>`;
+}
+
 const fmt = (n) => Number(n || 0).toLocaleString('es-ES');
 const eur = (n) => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} €`;
 
@@ -50,6 +85,13 @@ export class Panels {
     this.detail = null;
     this.timer = null;
     this.body = $('#panelBody');
+    this.dev = { data: null, loading: false, error: null };  // móviles vinculados (caché)
+    this.pair = null;  // diálogo «Añadir móvil» abierto
+    // Esc cierra el diálogo del QR (antes que el panel), salvo si hay una confirmación encima.
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.pair && $('#ask').hidden) { e.preventDefault(); e.stopImmediatePropagation(); this.closePair(); }
+    }, true);
+    $('#pair').addEventListener('click', (e) => { if (e.target.id === 'pair') this.closePair(); });
   }
 
   toggle(name) {
@@ -78,6 +120,7 @@ export class Panels {
     this.markRail();
     this.app.updateFocus();
     clearInterval(this.timer);
+    if (name === 'ajustes') this.loadDevices();
     this.render();
     if (name === 'tareas' || name === 'registro') this.timer = setInterval(() => this.render(true), 4000);
   }
@@ -338,6 +381,8 @@ export class Panels {
       <button class="btn primary" type="submit">Añadir</button>
     </form>`;
 
+    html += `<div class="section-k">Dispositivos</div><div id="devBox">${this.devicesHtml()}</div>`;
+
     html += '<div class="section-k">Modelos</div>';
     for (const m of s.modelos || []) {
       const e = motores[m.nombre];
@@ -361,7 +406,8 @@ export class Panels {
         <div class="perm-row"><span class="perm-k">Permisos</span>
           <select class="select" data-perm="${esc(m.nombre)}" aria-label="Permisos de ${esc(m.nombre)}">
             ${modos.map((o) => `<option value="${esc(o.clave)}" ${o.clave === m.modo ? 'selected' : ''}>${esc(o.nombre)}</option>`).join('')}
-          </select></div></div>`;
+          </select>${m.modo === 'total' ? `<span class="menu-tg" role="checkbox" tabindex="0" data-libre="${esc(m.nombre)}" aria-checked="${!!m.sin_preguntar}"
+            title="${esc(s.sin_preguntar_texto || '')}"><span class="box">${icon('check')}</span>Sin preguntar</span>` : ''}</div></div>`;
     }
 
     html += '<details class="adv"><summary>Avanzado</summary>';
@@ -373,7 +419,8 @@ export class Panels {
     html += '<div class="card-sub" style="margin-top:8px">Un modelo online solo se usa si lo has activado.</div></div>';
     html += '<div class="section-k">Permisos</div><div class="card">';
     html += modos.map((o) => `<div class="card-sub" style="margin-top:6px"><b style="color:var(--fg)">${esc(o.nombre)}:</b> ${esc(o.descripcion)}</div>`).join('');
-    html += `<div class="card-sub" style="margin-top:8px">${esc(s.siempre || '')}</div></div>`;
+    html += `<div class="card-sub" style="margin-top:8px">${esc(s.siempre || '')}</div>`;
+    html += `<div class="card-sub" style="margin-top:8px">${esc(s.sin_preguntar_texto || '')}</div></div>`;
     html += `<div class="section-k">Modelo local</div><div class="card"><select class="select" id="localSel" aria-label="Modelo local" disabled><option>Buscando modelos…</option></select>
       <div class="card-sub" id="localInfo" style="margin-top:8px">Los GGUF de LM Studio y Strata. Si el motor está encendido, se reinicia con el elegido.</div></div>`;
     const notif = 'Notification' in window ? Notification.permission : 'unsupported';
@@ -395,6 +442,11 @@ export class Panels {
       const prev = (s.modelos || []).find((m) => m.nombre === sel.dataset.perm)?.modo || 'repo';
       if (!(await this.app.ajustes({ permiso: { modelo: sel.dataset.perm, modo: sel.value } }))) sel.value = prev;
     });
+    for (const t of this.body.querySelectorAll('[data-libre]')) {
+      const go = (e) => { e.preventDefault(); this.app.ajustes({ sin_preguntar: { modelo: t.dataset.libre, activar: t.getAttribute('aria-checked') !== 'true' } }); };
+      t.addEventListener('click', go);
+      t.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') go(e); });
+    }
     for (const b of this.body.querySelectorAll('[data-model-toggle]')) b.addEventListener('click', () => this.toggleModel(b.dataset.modelToggle, b.getAttribute('aria-checked') !== 'true'));
     this.loadLocalModels();
     $('#repoRuta').addEventListener('input', (e) => {
@@ -409,6 +461,7 @@ export class Panels {
         this.render(true);
       } catch (e) { this.app.toast(e.message, 'bad'); }
     });
+    this.bindDevices(this.body);
     $('#notifBtn')?.addEventListener('click', async () => { await Notification.requestPermission(); this.render(true); });
     $('#quality')?.addEventListener('change', (e) => {
       try { localStorage.setItem('skynet.calidad', e.target.value); } catch { /* sin almacenamiento */ }
@@ -433,6 +486,223 @@ export class Panels {
         this.render(true);
       });
     } catch (e) { this.app.toast(e.message, 'bad'); }
+  }
+
+  // --- dispositivos: móviles vinculados por Tailscale ---------------------------
+  // La lista se pide al abrir Configuración y tras cada acción; entre medias se pinta desde la caché
+  // (Configuración se repinta con cada foto del estado y no debe parpadear).
+  loadDevices() {
+    if (this.dev.loading) return this.dev.loading;
+    this.dev.loading = (async () => {
+      try { this.dev.data = await api.dispositivos(); this.dev.error = null; } catch (e) { this.dev.error = e.message; }
+      this.dev.loading = false;
+      this.paintDevices();
+    })();
+    return this.dev.loading;
+  }
+
+  paintDevices() {
+    const box = this.current === 'ajustes' ? $('#devBox') : null;
+    if (!box) return;
+    box.innerHTML = this.devicesHtml();
+    paintIcons(box);
+    this.bindDevices(box);
+  }
+
+  devicesHtml() {
+    const d = this.dev.data;
+    if (!d) {
+      if (this.dev.error && !this.dev.loading) {
+        return `<div class="card"><div class="card-sub warn-text">${esc(this.dev.error)}</div>
+          <div class="btn-row"><button class="btn small" data-dev-retry>Reintentar</button></div></div>`;
+      }
+      return '<div class="skeleton"></div>';
+    }
+    const acc = d.acceso || {};
+    const ts = acc.tailscale || {};
+    const all = d.dispositivos || [];
+    const vivos = all.filter((x) => !x.revocado);
+    const quitados = all.filter((x) => x.revocado).slice(-3);
+    let h = '';
+    if (!vivos.length) h += '<div class="card dev-empty"><div class="card-sub">Ningún móvil vinculado.</div></div>';
+    for (const x of [...vivos, ...quitados]) {
+      h += `<div class="card dev-row ${x.revocado ? 'off' : ''}"><div class="card-row">${icon('phone')}
+        <div class="grow"><div class="card-title ellipsis">${esc(x.nombre || 'Móvil')}</div>
+        <div class="card-sub" ${x.ultimo_origen ? `title="Desde ${esc(x.ultimo_origen)}"` : ''}>${x.revocado ? 'Ya no tiene acceso' : esc(lastUse(x.ultimo_uso))}</div></div>
+        ${x.revocado ? '<span class="pill plain">quitado</span>' : `<button class="btn small danger" data-dev-revoke="${esc(x.id)}" data-dev-name="${esc(x.nombre || 'Móvil')}">Quitar</button>`}
+      </div></div>`;
+    }
+    if (!acc.url) {
+      h += `<div class="card dev-access"><div class="card-row">${icon('shield')}<div class="grow">
+          <div class="card-title">Para usarlo desde el móvil</div><div class="card-sub">${esc(ts.detalle || 'No se detecta Tailscale en este PC.')}</div></div></div>
+        ${tsFlags(ts)}${ts.funnel ? FUNNEL_WARN : ''}${PAIR_STEPS}</div>`;
+    }
+    h += `<div class="btn-row"><button class="btn primary small" data-dev-add>${icon('plus')} Añadir móvil</button></div>`;
+    if (acc.url) {
+      h += `<div class="card dev-access"><div class="card-row">${icon('shield')}<div class="grow">
+          <div class="card-title">Dirección privada del PC</div>
+          <div class="card-sub mono ellipsis" title="${esc(ts.detalle || acc.url)}">${esc(acc.url)}</div></div></div>
+        ${tsFlags(ts)}${ts.funnel ? FUNNEL_WARN : ''}</div>`;
+    }
+    return h;
+  }
+
+  bindDevices(root) {
+    root.querySelector('[data-dev-add]')?.addEventListener('click', () => this.addDevice());
+    root.querySelector('[data-dev-retry]')?.addEventListener('click', () => { this.loadDevices(); this.paintDevices(); });
+    for (const b of root.querySelectorAll('[data-dev-revoke]')) b.addEventListener('click', () => this.revokeDevice(b.dataset.devRevoke, b.dataset.devName));
+    for (const b of root.querySelectorAll('[data-copy]')) b.addEventListener('click', () => this.copy(b.dataset.copy, 'Comando copiado'));
+  }
+
+  async revokeDevice(id, nombre) {
+    const ok = await this.app.confirmDialog({
+      tipo: 'aviso', titulo: `¿Quitar «${nombre}»?`,
+      texto: 'Ese móvil dejará de poder usar Skynet al momento. Para volver a usarlo tendrás que vincularlo otra vez.', boton: 'Quitar',
+    });
+    if (!ok) return;
+    try {
+      this.dev.data = await api.revocarDispositivo(id);
+      this.paintDevices();
+      this.app.toast(`«${nombre}» ya no tiene acceso.`);
+    } catch (e) { this.app.toast(e.message, 'bad'); this.loadDevices(); }
+  }
+
+  async copy(text, msg) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const t = document.createElement('textarea');
+      t.value = text;
+      t.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(t);
+      t.select();
+      try { document.execCommand('copy'); } catch { /* nada */ }
+      t.remove();
+    }
+    this.app.toast(msg);
+  }
+
+  // Diálogo «Añadir móvil»: pide un código, enseña el QR del enlace y espera a que el móvil
+  // se vincule (mira la lista cada 3 s); al aparecer un dispositivo nuevo, pasa a «Conectado».
+  async addDevice() {
+    if (this.pair) this.stopPair();
+    const p = { estado: 'cargando', timers: [] };
+    this.pair = p;
+    $('#pair').hidden = false;
+    this.renderPair();
+    try {
+      const antes = await api.dispositivos();
+      this.dev.data = antes; this.dev.error = null;
+      this.paintDevices();
+      p.known = new Set((antes.dispositivos || []).map((x) => x.id));
+      const r = await api.emparejarDispositivo();
+      if (this.pair !== p) return;
+      p.r = r;
+      p.acceso = antes.acceso || {};
+      if (!r.enlace) { p.estado = 'sin-red'; this.renderPair(); return; }
+      if (typeof window.qrcode !== 'function') throw new Error('No se pudo cargar el generador de QR. Usa «Copiar enlace».');
+      p.qr = qrSvg(r.enlace);
+      p.fin = Date.parse(r.expira);
+      p.estado = 'qr';
+      this.renderPair();
+      p.timers.push(setInterval(() => this.tickPair(p), 1000));
+      p.timers.push(setInterval(() => this.pollPair(p), 3000));
+    } catch (e) {
+      if (this.pair !== p) return;
+      p.estado = 'error'; p.error = e.message;
+      this.renderPair();
+    }
+  }
+
+  tickPair(p) {
+    if (this.pair !== p || p.estado !== 'qr') return;
+    const left = Math.max(0, Math.ceil((p.fin - Date.now()) / 1000));
+    const el = $('#pairLeft');
+    if (el) el.textContent = `Caduca en ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    if (left <= 0) { this.stopPair(); p.estado = 'caducado'; this.renderPair(); }
+  }
+
+  async pollPair(p) {
+    if (p.polling) return;
+    p.polling = true;
+    try {
+      const d = await api.dispositivos();
+      if (this.pair !== p || p.estado !== 'qr') return;
+      this.dev.data = d;
+      this.paintDevices();
+      const nuevo = (d.dispositivos || []).find((x) => !x.revocado && !p.known.has(x.id));
+      if (nuevo) {
+        this.stopPair();
+        p.estado = 'conectado'; p.nombre = nuevo.nombre || 'Móvil';
+        this.renderPair();
+        this.app.engine?.pulse?.(0.35);
+      }
+    } catch { /* sin conexión: se reintenta en 3 s */ } finally { p.polling = false; }
+  }
+
+  stopPair() {
+    for (const t of this.pair?.timers || []) clearInterval(t);
+    if (this.pair) this.pair.timers = [];
+  }
+
+  closePair() {
+    if (!this.pair) return;
+    this.stopPair();
+    this.pair = null;
+    $('#pair').hidden = true;
+    $('#pairCard').innerHTML = '';
+    this.loadDevices();
+  }
+
+  renderPair() {
+    const p = this.pair;
+    const card = $('#pairCard');
+    if (!p) return;
+    const close = (label = 'Cerrar', cls = '') => `<button class="btn ${cls}" data-p="close">${label}</button>`;
+    let h = '<div class="ask-level">Añadir móvil</div>';
+    if (p.estado === 'cargando') {
+      h += `<h3 class="ask-title" id="pairTitle">Preparando el código…</h3><div class="qr-box"><div class="skeleton qr-skel"></div></div>
+        <div class="ask-actions">${close()}</div>`;
+    } else if (p.estado === 'qr' || p.estado === 'caducado') {
+      const off = p.estado === 'caducado';
+      h += `<h3 class="ask-title" id="pairTitle">Escanéalo con la app Skynet del móvil</h3>
+        <div class="qr-box ${off ? 'off' : ''}">${p.qr}${off ? '<div class="qr-over">Caducado</div>' : ''}</div>
+        <div class="pair-left" id="pairLeft">${off ? 'El código ya no vale' : ''}</div>
+        <div class="ask-actions">
+          ${off ? '' : `<button class="btn small" data-p="copy">${icon('copy')} Copiar enlace</button>`}
+          <span class="grow"></span>
+          ${close()}
+          ${off ? `<button class="btn primary" data-p="again">${icon('resume')} Generar otro</button>` : ''}
+        </div>`;
+    } else if (p.estado === 'conectado') {
+      h += `<div class="pair-ok">${icon('check')}</div>
+        <h3 class="ask-title pair-center" id="pairTitle">Conectado: ${esc(p.nombre)}</h3>
+        <div class="card-sub pair-center">Ya puedes usar Skynet desde el móvil.</div>
+        <div class="ask-actions">${close('Listo', 'primary')}</div>`;
+    } else if (p.estado === 'sin-red') {
+      const ts = p.acceso.tailscale || {};
+      h += `<h3 class="ask-title" id="pairTitle">Antes, prepara Tailscale</h3>
+        <div class="card-sub">${esc(ts.detalle || 'No se detecta la dirección privada del PC.')}</div>
+        ${tsFlags(ts)}${ts.funnel ? FUNNEL_WARN : ''}${PAIR_STEPS}
+        <div class="ask-actions">${close()}<button class="btn primary" data-p="again">${icon('resume')} Comprobar de nuevo</button></div>`;
+    } else {
+      h += `<h3 class="ask-title" id="pairTitle">No se pudo preparar el código</h3>
+        <div class="ask-warn">${esc(p.error || 'Error')}</div>
+        <div class="ask-actions">${p.r?.enlace ? `<button class="btn small" data-p="copy">${icon('copy')} Copiar enlace</button><span class="grow"></span>` : ''}
+          ${close()}<button class="btn primary" data-p="again">Reintentar</button></div>`;
+    }
+    card.innerHTML = h;
+    this.tickPair(p);
+    for (const b of card.querySelectorAll('[data-p]')) {
+      b.addEventListener('click', () => {
+        const a = b.dataset.p;
+        if (a === 'close') this.closePair();
+        else if (a === 'again') this.addDevice();
+        else if (a === 'copy') this.copy(p.r.enlace, 'Enlace copiado');
+      });
+    }
+    for (const b of card.querySelectorAll('[data-copy]')) b.addEventListener('click', () => this.copy(b.dataset.copy, 'Comando copiado'));
+    setTimeout(() => card.querySelector('.btn.primary, [data-p="close"]')?.focus(), 50);
   }
 
   // Un solo interruptor por modelo. En los online, encender activa el modelo (con confirmación) y

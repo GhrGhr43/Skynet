@@ -188,6 +188,15 @@ def doctor_checks(rt: Runtime) -> list[dict[str, Any]]:
                 on = False
             out.append({"nombre": f"motor {name}", "estado": "ok" if on else "off",
                         "detalle": f"{e.get('url')} · {'encendido' if on else 'apagado (se enciende en Ajustes)'}"})
+    from .web.acceso import estado_tailscale
+
+    ts = estado_tailscale(8765)
+    if not ts["instalado"]:
+        out.append({"nombre": "Acceso desde el móvil", "estado": "off", "detalle": ts["detalle"] + " (opcional)"})
+    else:
+        bien = ts["conectado"] and ts["serve"] and not ts["funnel"]
+        out.append({"nombre": "Acceso desde el móvil", "estado": "ok" if bien else ("mal" if ts["funnel"] else "off"),
+                    "detalle": (f"https://{ts['nombre_dns']} · " if bien and ts["nombre_dns"] else "") + ts["detalle"]})
     for r in s.repos.values():
         exists = r.ruta.exists()
         check(f"Repo {r.nombre}", exists, f"{r.ruta}" + ("" if exists else " no existe (skynet demo lo crea)"))

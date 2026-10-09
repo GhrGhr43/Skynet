@@ -84,12 +84,13 @@ class ModelRouter:
         self.settings = settings
         self.store = store
         self._completion = completion_fn
+        self._litellm: CompletionFn | None = None  # la de verdad (no una de los tests): se usa en streaming
         self.access = access  # modos.Accesos: los modelos en la nube solo se usan si están activados
 
     @property
     def completion(self) -> CompletionFn:
         if self._completion is None:
-            self._completion = _litellm_completion()
+            self._completion = self._litellm = _litellm_completion()
         return self._completion
 
     # --- elección --------------------------------------------------------
@@ -135,6 +136,29 @@ class ModelRouter:
         return RouteDecision(profile, why)
 
     # --- llamada ---------------------------------------------------------
+    async def _streamed(self, kwargs: dict[str, Any]) -> Any:
+        """Los modelos locales se piden en streaming: al pulsar Detener se corta la conexión y el servidor
+        local (llama-server) deja de generar en el siguiente token. Sin streaming seguía generando hasta el
+        final y el siguiente mensaje se quedaba esperando a que terminara."""
+        import litellm
+
+        stream = await self.completion(**kwargs, stream=True, stream_options={"include_usage": True})
+        chunks = []
+        try:
+            async for chunk in stream:
+                chunks.append(chunk)
+        finally:
+            close = getattr(stream, "aclose", None)
+            if close is not None:
+                try:
+                    await close()
+                except Exception:
+                    pass
+        response = litellm.stream_chunk_builder(chunks, messages=kwargs["messages"])
+        if response is None:
+            raise RouterError("el modelo no devolvió nada")
+        return response
+
     def _cost_eur(self, profile: ModelProfile, response: Any, tin: int, tout: int) -> float:
         if profile.coste_entrada_usd_mtok is not None and profile.coste_salida_usd_mtok is not None:
             usd = tin / 1e6 * profile.coste_entrada_usd_mtok + tout / 1e6 * profile.coste_salida_usd_mtok
@@ -178,7 +202,10 @@ class ModelRouter:
         if key:
             kwargs["api_key"] = key
         try:
-            response = await self.completion(**kwargs)
+            if p.privado and self.completion is self._litellm:
+                response = await self._streamed(kwargs)
+            else:
+                response = await self.completion(**kwargs)
         except Exception as e:
             audit.log("error", model=p.litellm, detail={"mensaje": f"{type(e).__name__}: {e}"[:2000],
                                                          "motivo_ruta": decision.reason})

@@ -214,3 +214,80 @@ def test_web_anadir_repo(make_rt, tmp_path):
     from skynet.config import load_settings
     again = load_settings(rt.settings.home)
     assert again.repos["juego"].verificador == "npm test"
+
+
+# --- «Sin preguntar» y Detener ---------------------------------------------------
+async def test_sin_preguntar_permite_lo_que_se_preguntaria(ctx):
+    async def asker(*_a):
+        raise AssertionError("no debe preguntar")
+
+    g = PermissionGate(ctx.settings, None, Audit(ctx.store), asker=asker, mode="total", user_home=USER,
+                       sin_preguntar=True)
+    for key, args in (("sistema.delete_file", {"path": f"{USER}/a.txt"}),
+                      ("sistema.run_command", {"command": "Start-Process x -Verb RunAs"}),
+                      ("sistema.write_file", {"path": "C:/Windows/x.ini"}),
+                      ("sistema.read_file", {"path": f"{USER}/.ssh/id_rsa"})):
+        assert (await g.check(key, args)).allowed, key
+    # Solo vale en Control total
+    g2 = PermissionGate(ctx.settings, None, Audit(ctx.store), mode="editar", user_home=USER, sin_preguntar=True)
+    assert g2.evaluate("sistema.run_command", {"command": "echo"}).decision is Decision.DENY
+
+
+def test_sin_preguntar_persiste_y_se_quita_al_bajar_de_modo(make_rt):
+    rt = make_rt(None)
+    with pytest.raises(ValueError):
+        rt.access.set_sin_preguntar("local", True)
+    rt.access.set_modo("local", "total")
+    rt.access.set_sin_preguntar("local", True)
+    assert Accesos(rt.settings).sin_preguntar("local")
+    rt.access.set_modo("local", "editar")
+    assert not Accesos(rt.settings).sin_preguntar("local")
+
+
+def test_web_sin_preguntar(make_rt):
+    from starlette.testclient import TestClient
+
+    rt = make_rt(None)
+    with TestClient(create_app(rt)) as c:
+        assert c.post("/api/ajustes", json={"sin_preguntar": {"modelo": "local", "activar": True}}).status_code == 400
+        both = {"permiso": {"modelo": "local", "modo": "total"}, "sin_preguntar": {"modelo": "local", "activar": True}}
+        r = c.post("/api/ajustes", json=both)
+        assert r.status_code == 409 and r.json()["confirmar"]["tipo"] == "aviso"
+        assert c.get("/api/estado").json()["modo_actual"] == "repo"  # nada cambia hasta confirmar
+        s = c.post("/api/ajustes", json={**both, "confirmar": True}).json()
+        assert s["modo_actual"] == "total" and s["sin_preguntar_actual"] is True
+        s = c.post("/api/ajustes", json={"sin_preguntar": {"modelo": "local", "activar": False}}).json()
+        assert s["sin_preguntar_actual"] is False and s["modo_actual"] == "total"
+
+
+async def test_detener_libera_aunque_el_trabajo_no_responda(make_rt):
+    import asyncio
+
+    from skynet.web.server import Session
+
+    s = Session(make_rt(None))
+    gone = asyncio.Event()
+
+    async def terco():
+        while True:  # se traga la cancelación, como una librería que no la respeta
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                if gone.is_set():
+                    raise
+                gone.set()
+
+    s.start("terco", terco)
+    await asyncio.sleep(0.05)
+    assert await s.cancel(wait=0.3) and not s.busy
+    done = asyncio.Event()
+
+    async def otro():
+        done.set()
+
+    s.start("otro", otro)
+    await asyncio.wait_for(done.wait(), 2)
+    await asyncio.sleep(0.05)
+    assert not s.busy
+    await asyncio.sleep(2.2)  # el abandonado acaba muriendo con la segunda cancelación
+    assert not s._abandoned

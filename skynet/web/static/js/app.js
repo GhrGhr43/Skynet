@@ -173,6 +173,7 @@ export class App {
 
   async stop() {
     if (!this.busy) return;
+    this.toast('Deteniendo…');
     try { await api.cancelar(); } catch (e) { this.toast(e.message, 'bad'); }
   }
 
@@ -232,8 +233,9 @@ export class App {
     $('#btnEffort').innerHTML = `<span>${EFFORT[s.razonamiento] || 'Auto'}</span>${chev}`;
     const mode = (s.modos || []).find((o) => o.clave === s.modo_actual);
     const bp = $('#btnPerm');
-    bp.innerHTML = `${icon('shield')}<span>${esc(mode ? mode.nombre : 'Solo repo')}</span>${chev}`;
-    bp.dataset.level = s.modo_actual || 'repo';
+    const libre = s.modo_actual === 'total' && s.sin_preguntar_actual;
+    bp.innerHTML = `${icon('shield')}<span>${esc(mode ? mode.nombre : 'Solo repo')}${libre ? ' · sin preguntar' : ''}</span>${chev}`;
+    bp.dataset.level = libre ? 'libre' : (s.modo_actual || 'repo');
     const bi = $('#btnInternet');
     bi.setAttribute('aria-pressed', String(!!s.internet));
     bi.disabled = !!s.ocupado || !!s.internet_bloqueado || !!this.internetPending;
@@ -253,7 +255,8 @@ export class App {
       if (sec.title) html += `<div class="menu-k">${esc(sec.title)}</div>`;
       for (const it of sec.items) {
         html += `<button type="button" class="menu-i ${it.on ? 'on' : ''}" data-v="${esc(it.value)}">${it.ico ? icon(it.ico) : ''}
-          <span class="menu-t">${esc(it.label)}${it.sub ? `<span class="menu-s">${esc(it.sub)}</span>` : ''}</span>${icon('check').replace('<svg', '<svg class="menu-ok"')}</button>`;
+          <span class="menu-t">${esc(it.label)}${it.sub ? `<span class="menu-s">${esc(it.sub)}</span>` : ''}${it.toggle ? `<span class="menu-tg" role="checkbox" tabindex="0"
+            aria-checked="${it.toggle.on}" data-v="${esc(it.toggle.value)}" title="${esc(it.toggle.title || '')}"><span class="box">${icon('check')}</span>${esc(it.toggle.label)}</span>` : ''}</span>${icon('check').replace('<svg', '<svg class="menu-ok"')}</button>`;
       }
     });
     menu.innerHTML = html;
@@ -266,6 +269,11 @@ export class App {
     this.menuAnchor = anchor;
     anchor.setAttribute('aria-expanded', 'true');
     for (const b of menu.querySelectorAll('.menu-i')) b.addEventListener('click', () => { this.closeMenu(); pick(b.dataset.v); });
+    for (const t of menu.querySelectorAll('.menu-tg')) {
+      const go = (e) => { e.preventDefault(); e.stopPropagation(); this.closeMenu(); pick(t.dataset.v); };
+      t.addEventListener('click', go);
+      t.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') go(e); });
+    }
     menu.querySelector('.menu-i.on, .menu-i')?.focus();
   }
 
@@ -321,9 +329,16 @@ export class App {
 
   menuPerm(anchor) {
     const s = this.snap || {};
+    const modelo = s.modelo_efectivo;
+    const libre = s.modo_actual === 'total' && !!s.sin_preguntar_actual;
     this.openMenu(anchor, [
-      { title: `Permisos de ${s.modelo_efectivo || 'local'}`, items: (s.modos || []).map((o) => ({ value: o.clave, label: o.nombre, sub: o.descripcion, on: o.clave === s.modo_actual })) },
-    ], (v) => this.ajustes({ permiso: { modelo: s.modelo_efectivo, modo: v } }));
+      { title: `Permisos de ${modelo || 'local'}`, items: (s.modos || []).map((o) => ({ value: o.clave, label: o.nombre, sub: o.descripcion, on: o.clave === s.modo_actual,
+        toggle: o.clave === 'total' ? { value: libre ? '__preguntar__' : '__libre__', on: libre, label: 'Sin preguntar', title: s.sin_preguntar_texto } : null })) },
+    ], (v) => {
+      if (v === '__libre__') return this.ajustes({ permiso: { modelo, modo: 'total' }, sin_preguntar: { modelo, activar: true } });
+      if (v === '__preguntar__') return this.ajustes({ sin_preguntar: { modelo, activar: false } });
+      return this.ajustes({ permiso: { modelo, modo: v } });
+    });
   }
 
   async resumeTask(id) {
@@ -599,7 +614,7 @@ export class App {
     }
     const warn = /falla|no está|desconocido|no encuentro|no hay|cancelado|detenido/i.test(text);
     this.append(this.node(esc(text), 'msg msg-info' + (warn ? ' warn' : '')));
-    if (live && /Detenido/.test(text)) this.flash('error', 1.2);
+    if (live && /Detenido/.test(text)) this.flash('reposo', 1.2);
   }
 
   addPre(text) {

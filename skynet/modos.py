@@ -6,6 +6,7 @@ Cada modelo tiene un modo que decide hasta dónde llega en el PC:
   editar   Ver y editar    además puede crear y editar archivos de tu usuario (sin ejecutar)
   total    Control total   además ejecuta comandos y abre programas (p. ej. instalar un juego de Steam)
 En cualquier modo se pregunta siempre: administrador, carpetas del sistema, borrar y secretos.
+Salvo con «Sin preguntar» (solo en Control total): entonces no se pregunta nada, todo queda en el audit log.
 
 Los modos se guardan en data/permisos_modelos.json. Los modelos en la nube empiezan desactivados en
 cada arranque de Skynet: activarlos pide una confirmación explícita (no se recuerda entre sesiones).
@@ -44,6 +45,13 @@ AVISO_NUBE = ("{modelo} es un modelo en la nube: todo lo que lea de tu PC (archi
               "preguntarte. Recomendado solo para modelos locales.")
 ACCIONES = {"editar": "crear y editar archivos de tu usuario", "total": "ejecutar comandos e instalar programas"}
 
+SIN_PREGUNTAR = ("Sin preguntar: no pide confirmación para nada (administrador, carpetas del sistema, borrar, "
+                 "secretos). Todo queda en el registro. Solo en Control total y nunca en tareas largas.")
+AVISO_SIN_PREGUNTAR = ("{modelo} podrá hacer cualquier cosa en tu PC sin preguntarte: instalar o desinstalar "
+                       "programas, borrar archivos, tocar carpetas del sistema y leer contraseñas o claves.")
+AVISO_SIN_PREGUNTAR_NUBE = (" Además es un modelo en la nube: lo que lea de tu PC se envía a su proveedor. "
+                            "No recomendado.")
+
 CONFIRMAR_NUBE = ("{modelo} funciona en la nube: tus mensajes y lo que Skynet lea para la tarea salen de tu PC "
                   "hacia su proveedor. Por defecto Skynet usa solo el modelo local. ¿Activar {modelo} para esta sesión?")
 
@@ -64,6 +72,7 @@ class Accesos:
     path: Path | None = None
     modos: dict[str, str] = field(default_factory=dict)
     nube_activada: set[str] = field(default_factory=set)
+    libres: set[str] = field(default_factory=set)  # «Sin preguntar» (solo cuenta en Control total)
 
     def __post_init__(self) -> None:
         if self.path is None:
@@ -71,8 +80,9 @@ class Accesos:
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             self.modos = {k: v for k, v in raw.get("modos", {}).items() if modo_valido(v)}
-        except (OSError, ValueError, AttributeError):
-            self.modos = {}
+            self.libres = {k for k in raw.get("sin_preguntar", []) if self.modos.get(k) == "total"}
+        except (OSError, ValueError, AttributeError, TypeError):
+            self.modos, self.libres = {}, set()
 
     # --- modos -------------------------------------------------------------
     def modo(self, modelo: str) -> str:
@@ -84,9 +94,27 @@ class Accesos:
         if not modo_valido(modo):
             raise ValueError(f"Modo desconocido: {modo}. Modos: {', '.join(ORDEN)}")
         self.modos[modelo] = modo
+        if modo != "total":
+            self.libres.discard(modelo)
+        self._save()
+
+    def sin_preguntar(self, modelo: str) -> bool:
+        return modelo in self.libres and self.modo(modelo) == "total"
+
+    def set_sin_preguntar(self, modelo: str, on: bool) -> None:
+        if on and self.modo(modelo) != "total":
+            raise ValueError("«Sin preguntar» solo existe en el modo Control total")
+        (self.libres.add if on else self.libres.discard)(modelo)
+        self._save()
+
+    def aviso_sin_preguntar(self, modelo: str) -> str:
+        return AVISO_SIN_PREGUNTAR.format(modelo=modelo) + (AVISO_SIN_PREGUNTAR_NUBE if self.es_nube(modelo) else "")
+
+    def _save(self) -> None:
         assert self.path is not None
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"modos": self.modos}, indent=2, ensure_ascii=False), encoding="utf-8")
+        data = {"modos": self.modos, "sin_preguntar": sorted(self.libres)}
+        self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def necesita_aviso(self, modelo: str, modo: str) -> bool:
         """Un modo fuerte en un modelo en la nube pide confirmar el aviso."""

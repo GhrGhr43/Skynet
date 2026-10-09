@@ -153,6 +153,64 @@ def abrir(destino: str) -> str:
     return f"Abierto: {target}"
 
 
+# Steam no deja instalar sin pulsar «Instalar» en su diálogo. Este script lo busca (título «Install - …»
+# o «Instalar - …», en cualquier idioma que empiece así) entre las ventanas de Steam y pulsa Intro.
+_PULSAR_INSTALAR = r"""
+Add-Type @'
+using System; using System.Text; using System.Runtime.InteropServices;
+public static class W {
+  public delegate bool P(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(P f, IntPtr l);
+  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+  public static IntPtr Find(string pat) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h)) return true;
+      var sb = new StringBuilder(256); GetWindowText(h, sb, 256);
+      if (System.Text.RegularExpressions.Regex.IsMatch(sb.ToString(), pat)) { found = h; return false; }
+      return true; }, IntPtr.Zero);
+    return found; }
+}
+'@
+Add-Type -AssemblyName System.Windows.Forms
+$deadline = (Get-Date).AddSeconds(__SEG__)
+while ((Get-Date) -lt $deadline) {
+  $h = [W]::Find('^(Install|Instalar|Installer|Installieren|Installa)\b')
+  if ($h -ne [IntPtr]::Zero) {
+    [W]::ShowWindow($h, 9) | Out-Null; [W]::SetForegroundWindow($h) | Out-Null; Start-Sleep -Milliseconds 700
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}'); Start-Sleep -Seconds 2
+    if ([W]::Find('^(Install|Instalar|Installer|Installieren|Installa)\b') -eq [IntPtr]::Zero) { 'pulsado'; exit 0 }
+  }
+  Start-Sleep -Milliseconds 800
+}
+'no_encontrado'
+"""
+
+
+@mcp.tool()
+def instalar_steam(appid: int, esperar_seg: int = 60) -> str:
+    """Instala un juego de Steam por su AppID (p. ej. 730 = Counter-Strike 2): abre steam://install/<AppID>
+    y pulsa «Instalar» en el diálogo de Steam. La descarga sigue en Steam; no espera a que termine."""
+    if int(appid) <= 0:
+        raise ToolError("AppID no válido")
+    url = f"steam://install/{int(appid)}"
+    if os.name != "nt":
+        webbrowser.open(url)
+        return f"Abierto {url} (pulsar «Instalar» solo funciona en Windows)"
+    os.startfile(url)  # type: ignore[attr-defined]
+    seg = max(10, min(int(esperar_seg), 180))
+    script = _PULSAR_INSTALAR.replace("__SEG__", str(seg))
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
+                       text=True, encoding="utf-8", errors="replace", timeout=seg + 30, stdin=subprocess.DEVNULL)
+    if "pulsado" in (r.stdout or ""):
+        return f"Instalación de {appid} iniciada en Steam (pulsado «Instalar»). La descarga sigue en Steam."
+    return (f"Abierto {url}, pero no encontré el diálogo «Instalar» de Steam en {seg} s. Puede que Steam esté "
+            f"cerrado, pida iniciar sesión o el juego ya esté instalado. {(r.stderr or '').strip()[:300]}")
+
+
 def main() -> None:
     global HOME
     ap = argparse.ArgumentParser()
