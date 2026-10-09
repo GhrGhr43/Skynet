@@ -265,7 +265,7 @@ export class App {
       { value: 'internet', label: 'Internet', ico: 'globe', on: !!s.internet,
         sub: s.internet_bloqueado ? 'Bloqueado por privacidad alta' : 'Busca en la web cuando lo necesita' },
       { value: 'coder', label: 'Modo coder', ico: 'terminal', on: !!s.coder,
-        sub: coderOk ? 'Herramientas de programación. Más lento' : 'Próximamente' },
+        sub: !coderOk ? 'Próximamente' : s.repo ? 'Programa en el repo. Más lento' : 'Elige antes un repo (abajo)' },
     ] }], (v) => this.toggleMode(v));
   }
 
@@ -284,6 +284,7 @@ export class App {
       } finally { this.modePending = false; }
     } else if (k === 'coder') {
       if (typeof s.coder !== 'boolean') { this.toast('El modo coder llegará pronto: ahora Skynet programa cuando eliges un repo.'); return; }
+      if (!s.coder && !s.repo) { this.toast('Elige un repo antes de activar Coder.'); return; }
       const enabled = !s.coder;
       this.modePending = true;
       try {
@@ -778,7 +779,11 @@ export class App {
       if (!fresh) {
         // nada: las sugerencias solo salen al empezar
       } else if (s.repo) {
-        items.push({ ico: 'sparkle', text: 'Revisa el repo y dime qué falta', run: () => this.fill('Revisa el estado del repo y dime qué falta o qué está roto') });
+        // Revisar el repo necesita Coder (sin él, la conversación no lleva el contexto del repo): se enciende al pulsar.
+        items.push({ ico: 'sparkle', text: 'Revisa el repo y dime qué falta', run: async () => {
+          if (this.snap?.coder === false && !(await this.ajustes({ coder: true }))) return;
+          this.fill('Revisa el estado del repo y dime qué falta o qué está roto');
+        } });
         items.push({ ico: 'orbit', text: 'Tarea larga…', run: () => this.panels.open('largo') });
       } else {
         items.push({ ico: 'repo', text: 'Elegir un repo para programar', run: () => this.panels.open('ajustes') });
