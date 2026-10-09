@@ -238,14 +238,12 @@ body.side-collapsed .icon-btn.side-open { display: grid; }
 .status.busy .status-label { color: var(--fg); }
 .status-detail { color: var(--fg3); overflow: hidden; text-overflow: ellipsis; }
 
-/* Pantalla de inicio (sin conversación): saludo y compositor en el centro, la nebulosa detrás. */
+/* Pantalla de inicio (sin conversación): saludo sobre la nebulosa y el compositor abajo, como en la conversación. */
 .hero {
   flex: none; text-align: center; pointer-events: none; padding: 0 24px; transition: opacity .5s var(--ease);
   display: none;
 }
-body:not(.has-convo) .main { justify-content: center; }
-body:not(.has-convo) .top { position: absolute; top: 0; left: 0; right: 0; }
-body:not(.has-convo) .hero { display: block; margin-top: 22vh; }
+body:not(.has-convo) .hero { display: flex; flex: 1; flex-direction: column; justify-content: center; padding-bottom: var(--top-h); }
 .hero-title {
   margin: 0; font-weight: 300; font-size: clamp(24px, 3vw, 32px); letter-spacing: -0.01em; color: var(--fg);
   text-shadow: 0 2px 30px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9);
@@ -321,10 +319,8 @@ body.has-convo .convo { display: block; }
   flex: none; width: 100%; max-width: calc(var(--col) + 48px); margin: 0 auto; padding: 0 24px 18px; z-index: 5;
   display: flex; flex-direction: column; gap: 10px;
 }
-body:not(.has-convo) .dock { margin-top: 26px; margin-bottom: 22vh; }
 .suggest { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .suggest:empty { display: none; }
-body:not(.has-convo) .suggest { order: 2; }
 .sg {
   display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 13px; border-radius: 999px;
   border: 1px solid var(--line); background: rgba(10,11,14,0.6); color: var(--fg2); font-size: 12.5px;
@@ -393,7 +389,6 @@ body.busy .prompt-glow { opacity: 1; animation: orbit 2.4s linear infinite; }
 .under { display: flex; align-items: center; gap: 2px; padding: 0 6px; margin-top: -4px; min-width: 0; }
 .under .mini { color: var(--fg3); }
 .under .mini:hover, .under .mini[aria-expanded="true"] { color: var(--fg2); }
-body:not(.has-convo) .under { order: 1; }
 .prompt-stop { display: none; background: rgba(255,255,255,0.08); color: var(--fg); }
 .prompt-stop:hover { background: color-mix(in srgb, var(--bad) 22%, transparent); }
 body.busy .prompt-stop { display: grid; }
@@ -466,8 +461,6 @@ body.busy .prompt-send { display: none; }
   .panel { left: 8px; right: 8px; top: 8px; bottom: 8px; width: auto; }
   .convo-inner { padding: 12px 14px 20px; }
   .dock { padding: 0 10px 10px; }
-  body:not(.has-convo) .hero { margin-top: 18vh; }
-  body:not(.has-convo) .dock { margin-bottom: 14vh; }
   .suggest .sg:nth-child(n+3) { display: none; }
   .mini { padding: 0 6px; font-size: 12px; }
   .mini .chev { display: none; }
@@ -809,3 +802,10 @@ input[type="range"] { flex: 1; accent-color: var(--fg); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Temporal: versión en ejecución, abajo a la derecha */
+.build {
+  position: fixed; right: 12px; bottom: 8px; z-index: 5; pointer-events: none;
+  font: 10.5px var(--mono); color: var(--fg4); letter-spacing: 0.02em;
+}
+@media (max-width: 860px) { .build { display: none; } }
