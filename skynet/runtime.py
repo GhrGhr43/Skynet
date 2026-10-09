@@ -152,7 +152,8 @@ def mode_prompt(mode: str, has_repo: bool, sin_preguntar: bool = False) -> str:
            "editar": "leer archivos de todo el PC y crear o editar archivos de la carpeta de usuario",
            "total": ("leer y editar archivos, ejecutar comandos de PowerShell (sistema__run_command) y abrir "
                      "programas o enlaces (sistema__abrir). Para instalar un juego de Steam usa "
-                     "sistema__instalar_steam con su AppID: abre la instalación y pulsa «Instalar» por el usuario")}[mode]
+                     "sistema__instalar_steam con su AppID (nunca sistema__abrir con steam://install, que deja un diálogo "
+                     "pendiente): lo instala sin que el usuario pulse nada. Si no sabes el AppID, búscalo")}[mode]
     where = ("Las herramientas workspace__* siguen siendo para el repo; las sistema__* usan rutas absolutas de Windows."
              if has_repo else "Las herramientas sistema__* usan rutas absolutas de Windows.")
     rule = ("El usuario ha activado «Sin preguntar»: nada pide confirmación, así que actúa con cuidado y no hagas "
