@@ -1,0 +1,23 @@
+# Modelos para el comparador. Los GGUF de .lmstudio\models y de Strata salen solos.
+
+[gguf]
+# carpetas = ['D:\\otros-modelos']                 # más carpetas donde buscar GGUF
+# args = { "Qwen3.6-35B-A3B-UD-Q4_K_M" = ["--n-cpu-moe", "10"] }   # flags extra por modelo
+# Aquí puedes añadir otros servidores con API OpenAI (llama-server de Skynet, Ollama, nube...).
+
+[lmstudio]
+url = "http://127.0.0.1:1234/v1"
+
+# Ajustes por modelo de LM Studio (se mandan en cada petición), p. ej. el muestreo oficial de Qwen:
+# [ajustes."qwen3.8-27b"]
+# temperature = 1.0
+# top_p = 0.95
+
+[modelos.skynet-local]          # el motor local de Skynet (encender antes en Ajustes)
+url = "http://127.0.0.1:8090/v1"
+modelo = "local"
+
+# [modelos.gemini]              # nube, con la clave en una variable de entorno
+# url = "https://generativelanguage.googleapis.com/v1beta/openai"
+# modelo = "gemini-flash-latest"
+# api_key = "env:GEMINI_API_KEY"
