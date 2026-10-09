@@ -5,7 +5,7 @@ import dataclasses
 import json
 from types import SimpleNamespace
 
-from conftest import FakeUI, ScriptedLLM, make_response, tool_call
+from conftest import FakeUI, ScriptedLLM, coder, make_response, tool_call
 
 from skynet.coordinator import Coordinator
 from skynet.llamadas import calls_in_text, parse_args
@@ -136,7 +136,7 @@ async def test_agent_survives_broken_tool_calls(make_rt, repo_path):
     ])
     rt = make_rt(llm)
     ui = FakeUI()
-    await Coordinator(rt, ui).handle("implementa doble")
+    await coder(Coordinator(rt, ui)).handle("implementa doble")
     task = rt.store.list_tasks(1)[0]
     assert task.status == HECHA, ui.infos
     assert (repo_path / "mod.py").read_text() == GOOD
@@ -160,7 +160,7 @@ async def test_agent_trims_context_with_small_window(make_rt, repo_path):
     rt = make_rt(snapshot)
     rt.settings.models["local"] = dataclasses.replace(rt.settings.models["local"], contexto_tokens=8192,
                                                       max_tokens=2048)
-    await Coordinator(rt, FakeUI()).handle("lee grande.txt por partes")
+    await coder(Coordinator(rt, FakeUI())).handle("lee grande.txt por partes")
     assert seen
     for prompt, out in seen:  # nunca se pide más de lo que cabe
         assert prompt + out <= 8192
@@ -188,3 +188,42 @@ async def test_toolhub_hides_tools(home):
             assert hub.resolve("sistema__run_command") is None
     finally:
         rt.store.close()
+
+
+# --- conversación primero (Coder apagado) ------------------------------------------
+async def test_hola_is_a_conversation_not_a_repo_task(make_rt, home):
+    (home / "memoria").mkdir(exist_ok=True)
+    (home / "memoria" / "USER.md").write_text("Daniel prefiere respuestas cortas.", encoding="utf-8")
+    llm = ScriptedLLM([("¡Hola!", None), ("Te dije hola.", None)])
+    sent: list[dict] = []
+    orig = llm.__call__
+
+    async def snap(**kwargs):  # copia: el agente sigue añadiendo a la misma lista después
+        sent.append({**kwargs, "messages": [dict(m) for m in kwargs["messages"]]})
+        return await orig(**kwargs)
+
+    rt = make_rt(snap)
+    c = Coordinator(rt, FakeUI())
+    assert c.repo_name == "prueba" and not c.coder        # hay repo elegido, pero Coder apagado
+    await c.handle("hola")
+    call = sent[0]
+    assert "tools" not in call                            # sin herramientas ni servidores MCP
+    assert call["messages"][-1] == {"role": "user", "content": "hola"}   # el mensaje tal cual
+    assert "PROGRESO" not in json.dumps(call["messages"]) and "git status" not in json.dumps(call["messages"])
+    assert "respuestas cortas" in call["messages"][0]["content"]          # la memoria va al system
+    assert call["reasoning_effort"] == "low"              # Auto: poco razonamiento en conversación
+    task = rt.store.list_tasks(1)[0]
+    assert task.repo is None and task.status == HECHA
+    await c.handle("¿qué te dije?")
+    roles = [m["role"] for m in sent[1]["messages"]]
+    assert roles == ["system", "user", "assistant", "user"]               # historial como turnos de verdad
+
+
+async def test_coder_toggle(make_rt):
+    c = Coordinator(make_rt(ScriptedLLM([])), FakeUI())
+    await c.handle("/coder on")
+    assert c.coder and c.active_repo == "prueba"
+    await c.handle("/repo ninguno")
+    assert not c.coder and c.active_repo is None
+    await c.handle("/coder on")
+    assert not c.coder                                    # sin repo no se activa

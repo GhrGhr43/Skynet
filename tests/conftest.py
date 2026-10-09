@@ -60,6 +60,12 @@ class ScriptedLLM:
         return make_response(content, calls)
 
 
+def coder(c):
+    """Coordinator con el modo Coder activado (el repo elegido entra en las tareas)."""
+    c.coder = True
+    return c
+
+
 @pytest.fixture
 def home(tmp_path: Path) -> Path:
     h = tmp_path / "home"

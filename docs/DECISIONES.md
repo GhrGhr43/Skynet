@@ -228,3 +228,18 @@ funciona igual.
 - **Muestreo por perfil** (`temperatura`, `top_p`, `top_k`, `min_p`, `presence_penalty`): el local usa los de Qwen
   para pensar/programar (0.6 / 0.95 / 20 / 0) en vez de la temperatura 0.8 de llama-server.
 - **Cara de cambiar:** qué se conserva al resumir (decide qué recuerda en tareas largas). Umbrales en `ventana.py`.
+
+## D17. Conversación primero; Coder como interruptor (2026-10-09)
+- Pedido por Daniel tras comparar con OpenClaw: un «hola» con repo elegido recibía ~3.000 tokens (informe del
+  repo + 15 herramientas), razonaba en «medio» y arrancaba 2 servidores MCP; contestaba sobre el repo.
+- **Por defecto, cada mensaje es un turno de conversación**: el mensaje tal cual, el historial de la sesión como
+  turnos user/assistant de verdad (antes, 3 pares recortados dentro del mensaje), memoria y skills en el system
+  prompt, sin herramientas de repo, sin verificador ni commits. Razonamiento Auto = bajo. Internet y los modos
+  de permisos siguen añadiendo sus herramientas como antes.
+- **Coder** (interruptor, apagado al arrancar; `/coder on|off`, `POST /api/ajustes {coder}`, `snapshot.coder`):
+  el comportamiento anterior sobre el repo elegido (contexto del repo, workspace, verificador, commits,
+  propuestas). Necesita repo; quitar el repo lo apaga. Retomar una tarea de código lo activa.
+- Medido en la nube con LLM guionizado: «hola» ≈ 125 tokens en «Solo repo» y ≈ 750 en «Ver y editar» (5
+  herramientas de `sistema`), frente a ~3.000.
+- Pendiente: mantener vivos los servidores MCP durante la sesión (hoy ~1,2 s por mensaje con `sistema`).
+- **Cara de cambiar:** poco; la tarea en SQLite se sigue creando (registro y consumo) aunque sea conversación.

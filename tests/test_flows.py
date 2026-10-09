@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from conftest import ORIGINAL_MOD, FakeUI, ScriptedLLM, tool_call
+from conftest import ORIGINAL_MOD, FakeUI, ScriptedLLM, coder, tool_call
 
 from skynet import gitops
 from skynet.coordinator import Coordinator
@@ -26,7 +26,7 @@ async def test_chat_code_task_with_permission_prompt(make_rt, repo_path):
     ])
     rt = make_rt(llm)
     ui = FakeUI(answers=["n"])
-    coord = Coordinator(rt, ui)
+    coord = coder(Coordinator(rt, ui))
     assert coord.repo_name == "prueba"
     await coord.handle("implementa doble en mod.py")
 
@@ -51,7 +51,7 @@ async def test_verifier_failure_marks_task_failed(make_rt):
     ])
     rt = make_rt(llm)
     ui = FakeUI()
-    await Coordinator(rt, ui).handle("implementa doble")
+    await coder(Coordinator(rt, ui)).handle("implementa doble")
     task = rt.store.list_tasks(1)[0]
     assert task.status == FALLIDA
     assert any("continúa" in i for i in ui.infos)
@@ -63,7 +63,7 @@ async def test_path_escape_denied(make_rt, repo_path):
         ("No pude.", None),
     ])
     rt = make_rt(llm)
-    await Coordinator(rt, FakeUI()).handle("escribe fuera")
+    await coder(Coordinator(rt, FakeUI())).handle("escribe fuera")
     assert not (repo_path.parent / "fuera.txt").exists()
     ev = rt.store.events(types=("tool",))[-1]
     assert ev["decision"] == "denegado"

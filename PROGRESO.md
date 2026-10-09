@@ -1,6 +1,15 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-09 (bucle pensado para el modelo local; antes, rediseño web con sesiones).
+Última actualización: 2026-10-09 (conversación primero y Coder como interruptor; antes, rediseño web).
+
+## Conversación primero y Coder aparte (2026-10-09, D17)
+- Daniel: el modo por defecto debe ser rápido y listo como OpenClaw; lo pesado, en interruptores como Internet.
+- Mensaje normal = turno de conversación con el historial real de la sesión, memoria/skills en el system prompt,
+  sin contexto de repo ni verificador; razonamiento Auto bajo. «hola»: de ~3.000 a ~125 tokens (750 en
+  «Ver y editar»).
+- Coder (`/coder on|off`, `coder` en /api/ajustes y snapshot) recupera el modo programador sobre el repo.
+  La UI del interruptor está en el PR #3 (caja de texto nueva).
+- Siguiente: MCP vivos por sesión, aprendizaje estilo Hermes (herramientas de memoria y skills + repaso).
 
 ## Local más listo, fase 1 (2026-10-09)
 - Propuesta aprobada por Daniel: docs/PROPUESTA-LOCAL-LISTO.md. Fase 1 hecha en la nube (D16): ventana de

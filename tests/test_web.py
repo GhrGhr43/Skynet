@@ -78,6 +78,7 @@ def test_tarea_con_permiso_desde_la_web(web, repo_path):
     ])
     c, rt, app = web(llm)
     feed = app.state.session.bus.subscribe()
+    assert c.post("/api/ajustes", json={"coder": True}).json()["coder"] is True
     assert c.post("/api/mensaje", json={"texto": "implementa doble"}).json()["ok"]
     snap = wait_until(c, lambda s: s["preguntas"])
     q = snap["preguntas"][0]

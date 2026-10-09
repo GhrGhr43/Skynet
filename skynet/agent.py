@@ -6,6 +6,7 @@ decide si su trabajo es bueno: eso lo hace el verificador fuera de este bucle.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -34,9 +35,9 @@ Responde siempre en español."""
 
 SYSTEM_CHAT = """Eres Skynet, el agente personal de Daniel. Responde en español. Ajusta la respuesta al peso
 de lo que te piden: a un saludo, un saludo; sin relleno ni repetir la petición.
-Si no tienes herramientas en esta conversación, no tienes acceso a archivos: si hace falta trabajar sobre
-un repo, dile que lo elija con /repo <nombre>; si hace falta tocar su PC, que suba el modo de permisos
-del modelo en Ajustes (o con /permisos)."""
+Usa las herramientas que tengas cuando la petición lo necesite; si no tienes las adecuadas, dilo en una frase:
+para programar sobre un repo, que active Coder; para buscar en la web, Internet; para tocar su PC, que suba
+el modo de permisos del modelo."""
 
 EventFn = Callable[[str, dict[str, Any]], None]
 
@@ -103,16 +104,17 @@ class Agent:
         user_content: str,
         caps: Capabilities,
         max_turns: int = 30,
+        history: list[tuple[str, str]] | None = None,
     ) -> AgentOutcome:
         decision: RouteDecision = self.router.choose(caps)
         self.audit.log("route", model=decision.profile.litellm,
                        detail={"motivo": decision.reason, "capacidades": caps.to_dict()})
         self.on_event("route", {"model": decision.profile.litellm, "reason": decision.reason})
 
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
+        for q, a in history or []:  # la conversación de verdad, como turnos (no un resumen dentro del mensaje)
+            messages += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
+        messages.append({"role": "user", "content": user_content})
         tools = self.hub.openai_tools() if self.hub else None
         known = {t["function"]["name"] for t in tools or []}
         p = decision.profile
@@ -130,6 +132,7 @@ class Agent:
                 self.audit.log("contexto", model=p.litellm,
                                detail={"recortes": ventana.recortes, "resumenes": ventana.resumenes,
                                        "turno": turn})
+            t0 = time.monotonic()
             try:
                 res = await self.router.complete(decision, messages, tools, self.audit, effort=caps.effort,
                                                  max_tokens=ventana.max_tokens(messages, tools))
@@ -140,7 +143,8 @@ class Agent:
             out.tokens_in += res.tokens_in
             out.tokens_out += res.tokens_out
             self.on_event("usage", {"tokens_in": res.tokens_in, "tokens_out": res.tokens_out,
-                                    "model": decision.profile.litellm})
+                                    "model": decision.profile.litellm,
+                                    "segundos": round(time.monotonic() - t0, 3)})
             out.cost_eur += res.cost_eur
             if not res.tool_calls and known:
                 calls, rest = calls_in_text(res.content, known)

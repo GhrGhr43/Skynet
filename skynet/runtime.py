@@ -90,6 +90,7 @@ class Runtime:
         max_turns: int | None = None,
         instructions: str | None = None,
         protected: list[str] | None = None,
+        history: list[tuple[str, str]] | None = None,
     ) -> StepRun:
         """Ejecuta un paso de agente con contexto fresco (sesión nueva). No verifica ni hace commit."""
         repo = self.repo_for(task)
@@ -115,6 +116,8 @@ class Runtime:
                 if repo or mode != "repo" or internet else None)
         specs = [s for s in self.server_specs(repo) if s.nombre != "internet"]
         system = system_prompt_for(repo)
+        if repo is None:
+            system += self.context.chat_system(task)
         if internet:
             specs.append(self.settings.server_spec("internet", None))
             system += "\n\n" + INTERNET_PROMPT
@@ -124,10 +127,10 @@ class Runtime:
         if specs:
             async with ToolHub(specs, self.settings.logs_dir, only=visible_tools(mode)) as hub:
                 agent = Agent(self.router, gate, hub, audit, **agent_kwargs)
-                outcome = await agent.run(system, context, caps, turns)
+                outcome = await agent.run(system, context, caps, turns, history=history)
         else:
             agent = Agent(self.router, None, None, audit, **agent_kwargs)
-            outcome = await agent.run(system, context, caps, turns)
+            outcome = await agent.run(system, context, caps, turns, history=history)
         return StepRun(step, outcome)
 
 
