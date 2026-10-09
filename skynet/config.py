@@ -46,6 +46,13 @@ class ModelProfile:
     timeout_seg: float = 600
     reasoning_effort: str | None = None  # low | medium | high (si el modelo lo admite)
     razonamiento_por_tokens: bool = False  # Strata: el nivel se manda como reasoning_budget_tokens
+    contexto_tokens: int = 0  # ventana del modelo; 0 = la del motor de skynet.toml con el mismo nombre o 128K
+    # Muestreo (None = lo del servidor). Para los locales importa: llama-server usa temperatura 0.8 por defecto.
+    temperatura: float | None = None
+    top_p: float | None = None
+    top_k: int | None = None
+    min_p: float | None = None
+    presence_penalty: float | None = None
 
     def resolved_api_key(self) -> str | None:
         if self.api_key_env:
@@ -186,6 +193,10 @@ def load_settings(home: Path | str | None = None) -> Settings:
         models[nombre] = ModelProfile(nombre=nombre, **m)
     if "local" not in models:
         raise ConfigError("router.toml debe definir [modelos.local] (el modelo de reserva)")
+    for nombre, prof in models.items():
+        if not prof.contexto_tokens:
+            motor = general.get("motores", {}).get(nombre, {})
+            prof.contexto_tokens = int(motor.get("contexto") or 0) or 128_000
 
     servers = {
         n: ServerSpec(n, s["comando"], list(s.get("args", [])), dict(s.get("env", {})))

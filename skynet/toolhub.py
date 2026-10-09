@@ -53,9 +53,13 @@ class ToolResult:
 class ToolHub:
     """Context manager asíncrono: `async with ToolHub(specs, log_dir) as hub: ...`."""
 
-    def __init__(self, specs: list[ServerSpec], log_dir: Path | None = None):
+    def __init__(self, specs: list[ServerSpec], log_dir: Path | None = None,
+                 only: dict[str, set[str]] | None = None):
         self.specs = specs
         self.log_dir = log_dir
+        # {servidor: herramientas visibles}: del resto de ese servidor el modelo no ve nada (no le sirven en
+        # este modo). Los servidores que no aparecen se enseñan enteros.
+        self.only = only or {}
         self.tools: dict[str, ToolSpec] = {}  # por llm_name
         self._sessions: dict[str, ClientSession] = {}
         self._stack: AsyncExitStack | None = None
@@ -101,7 +105,8 @@ class ToolHub:
         for t in listed.tools:
             schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None) or {}
             ts = ToolSpec(spec.nombre, t.name, t.description or "", dict(schema))
-            self.tools[ts.llm_name] = ts
+            if spec.nombre not in self.only or t.name in self.only[spec.nombre]:
+                self.tools[ts.llm_name] = ts
 
     def openai_tools(self) -> list[dict[str, Any]]:
         return [t.openai_schema() for t in self.tools.values()]

@@ -122,13 +122,25 @@ class Runtime:
             specs.append(self.sistema_spec())
             system += "\n\n" + mode_prompt(mode, repo is not None, free)
         if specs:
-            async with ToolHub(specs, self.settings.logs_dir) as hub:
+            async with ToolHub(specs, self.settings.logs_dir, only=visible_tools(mode)) as hub:
                 agent = Agent(self.router, gate, hub, audit, **agent_kwargs)
                 outcome = await agent.run(system, context, caps, turns)
         else:
             agent = Agent(self.router, None, None, audit, **agent_kwargs)
             outcome = await agent.run(system, context, caps, turns)
         return StepRun(step, outcome)
+
+
+# Herramientas de todo el PC que cada modo puede usar. Las demás ni se le enseñan al modelo: el gate
+# las denegaría igual, y cada esquema de más son tokens y una opción más para equivocarse (sobre todo en local).
+SISTEMA_POR_MODO = {
+    "lectura": {"read_file", "list_dir"},
+    "editar": {"read_file", "list_dir", "write_file", "edit_file", "delete_file"},
+}
+
+
+def visible_tools(mode: str) -> dict[str, set[str]]:
+    return {"sistema": SISTEMA_POR_MODO[mode]} if mode in SISTEMA_POR_MODO else {}
 
 
 def mode_prompt(mode: str, has_repo: bool, sin_preguntar: bool = False) -> str:

@@ -12,8 +12,10 @@ from typing import Any, Callable
 from .audit import Audit
 from .config import RepoConfig
 from .gate import PermissionGate
+from .llamadas import calls_in_text, parse_args
 from .router import Capabilities, ModelRouter, RouteDecision, RouterError
 from .toolhub import ToolHub
+from .ventana import Ventana
 
 DONE_MARK = "OBJETIVO_CUMPLIDO"
 
@@ -108,15 +110,25 @@ class Agent:
             {"role": "user", "content": user_content},
         ]
         tools = self.hub.openai_tools() if self.hub else None
-        out = AgentOutcome(status="error", final_text="", model=decision.profile.litellm)
+        known = {t["function"]["name"] for t in tools or []}
+        p = decision.profile
+        ventana = Ventana(p.contexto_tokens, p.max_tokens)
+        out = AgentOutcome(status="error", final_text="", model=p.litellm)
         seen: dict[str, int] = {}
         touched: set[str] = set()
 
         for turn in range(1, max_turns + 1):
             out.turns = turn
             self.on_event("thinking", {"turn": turn})
+            recortes, resumenes = ventana.recortes, ventana.resumenes
+            messages = ventana.ajustar(messages, tools)
+            if (ventana.recortes, ventana.resumenes) != (recortes, resumenes):
+                self.audit.log("contexto", model=p.litellm,
+                               detail={"recortes": ventana.recortes, "resumenes": ventana.resumenes,
+                                       "turno": turn})
             try:
-                res = await self.router.complete(decision, messages, tools, self.audit, effort=caps.effort)
+                res = await self.router.complete(decision, messages, tools, self.audit, effort=caps.effort,
+                                                 max_tokens=ventana.max_tokens(messages, tools))
             except RouterError as e:
                 out.status, out.error = "error", str(e)
                 out.final_text = str(e)
@@ -124,6 +136,12 @@ class Agent:
             out.tokens_in += res.tokens_in
             out.tokens_out += res.tokens_out
             out.cost_eur += res.cost_eur
+            if not res.tool_calls and known:
+                calls, rest = calls_in_text(res.content, known)
+                if calls:  # el modelo escribió la llamada como texto: se ejecuta igual
+                    res.message = {"role": "assistant", "content": rest, "tool_calls": calls}
+                    self.audit.log("tool", decision="reparado",
+                                   detail={"motivo": "llamada escrita como texto", "n": len(calls)})
             messages.append(res.message)
 
             if not res.tool_calls:
@@ -149,9 +167,9 @@ class Agent:
         name = tc["function"]["name"]
         raw = tc["function"].get("arguments") or "{}"
         try:
-            args = json.loads(raw) if isinstance(raw, str) else dict(raw)
-            if not isinstance(args, dict):
-                raise ValueError("los argumentos no son un objeto")
+            args, repaired = parse_args(raw)
+            if repaired:
+                self.audit.log("tool", tool=name, decision="reparado", detail={"motivo": "JSON de argumentos reparado"})
         except (ValueError, TypeError) as e:
             self.audit.log("tool", tool=name, decision="error", detail={"motivo": f"argumentos inválidos: {e}"})
             return f"ERROR: argumentos JSON inválidos ({e}). Repite la llamada con JSON válido."

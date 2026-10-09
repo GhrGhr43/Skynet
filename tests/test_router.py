@@ -95,7 +95,33 @@ async def test_reasoning_level_is_sent(router):
     # perfiles con razonamiento por tokens (p. ej. Strata) mandan un presupuesto en vez del nivel
     tokens = dataclasses.replace(s.models["local"], razonamiento_por_tokens=True)
     await r.complete(RouteDecision(tokens, "x"), [{"role": "user", "content": "x"}], None, Audit(store), effort="low")
-    assert llm.calls[1]["extra_body"] == {"reasoning_budget_tokens": 1024} and "reasoning_effort" not in llm.calls[1]
+    assert llm.calls[1]["extra_body"]["reasoning_budget_tokens"] == 1024 and "reasoning_effort" not in llm.calls[1]
+
+
+async def test_sampling_and_max_tokens_are_sent(router):
+    r, s, store = router
+    llm = ScriptedLLM([("a", None), ("b", None)])
+    r._completion = llm
+    prof = dataclasses.replace(s.models["local"], temperatura=0.6, top_p=0.95, top_k=20, min_p=0.0,
+                               presence_penalty=None)
+    await r.complete(RouteDecision(prof, "x"), [{"role": "user", "content": "x"}], None, Audit(store),
+                     max_tokens=2000)
+    call = llm.calls[0]
+    assert call["temperature"] == 0.6 and call["top_p"] == 0.95 and call["max_tokens"] == 2000
+    assert call["extra_body"]["top_k"] == 20 and call["extra_body"]["min_p"] == 0.0
+    assert "presence_penalty" not in call
+    plain = dataclasses.replace(s.models["local"], temperatura=None, top_p=None, top_k=None, min_p=None,
+                                reasoning_effort=None)
+    await r.complete(RouteDecision(plain, "x"), [{"role": "user", "content": "x"}], None, Audit(store))
+    assert "temperature" not in llm.calls[1] and "extra_body" not in llm.calls[1]
+    assert llm.calls[1]["max_tokens"] == plain.max_tokens
+
+
+def test_context_window_comes_from_engine(router):
+    _, s, _ = router
+    local = s.models["local"]
+    motor = s.engines.get("local", {}).get("contexto")
+    assert local.contexto_tokens == (motor or 128_000)
 
 
 def test_omniroute_nunca_con_privacidad(router):
