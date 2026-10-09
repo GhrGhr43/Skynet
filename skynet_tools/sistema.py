@@ -153,7 +153,7 @@ def abrir(destino: str) -> str:
     return f"Abierto: {target}"
 
 
-# Steam no deja instalar sin pulsar «Instalar» en su diálogo. Este script lo busca (título «Install - …»
+# Plan B de instalar_steam (el principal está en steam.py, sin interfaz). Este script busca el diálogo (título «Install - …»
 # o «Instalar - …», en cualquier idioma que empiece así) entre las ventanas de Steam y pulsa Intro.
 _PULSAR_INSTALAR = r"""
 Add-Type @'
@@ -190,25 +190,30 @@ while ((Get-Date) -lt $deadline) {
 """
 
 
-@mcp.tool()
-def instalar_steam(appid: int, esperar_seg: int = 60) -> str:
-    """Instala un juego de Steam por su AppID (p. ej. 730 = Counter-Strike 2): abre steam://install/<AppID>
-    y pulsa «Instalar» en el diálogo de Steam. La descarga sigue en Steam; no espera a que termine."""
-    if int(appid) <= 0:
-        raise ToolError("AppID no válido")
+def _pulsar_instalar(appid: int, seg: int) -> str:
+    """Plan B: abre steam://install/<AppID> y pulsa Intro en el diálogo «Instalar»."""
     url = f"steam://install/{int(appid)}"
     if os.name != "nt":
         webbrowser.open(url)
-        return f"Abierto {url} (pulsar «Instalar» solo funciona en Windows)"
+        return "sin_dialogo"
     os.startfile(url)  # type: ignore[attr-defined]
-    seg = max(10, min(int(esperar_seg), 180))
+    seg = max(10, min(int(seg), 180))
     script = _PULSAR_INSTALAR.replace("__SEG__", str(seg))
     r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
                        text=True, encoding="utf-8", errors="replace", timeout=seg + 30, stdin=subprocess.DEVNULL)
-    if "pulsado" in (r.stdout or ""):
-        return f"Instalación de {appid} iniciada en Steam (pulsado «Instalar»). La descarga sigue en Steam."
-    return (f"Abierto {url}, pero no encontré el diálogo «Instalar» de Steam en {seg} s. Puede que Steam esté "
-            f"cerrado, pida iniciar sesión o el juego ya esté instalado. {(r.stderr or '').strip()[:300]}")
+    return "pulsado" if "pulsado" in (r.stdout or "") else "sin_dialogo"
+
+
+@mcp.tool()
+def instalar_steam(appid: int, esperar_seg: int = 90) -> str:
+    """Instala un juego de Steam por su AppID (p. ej. 730 = Counter-Strike 2) sin que el usuario pulse nada:
+    lo pone en la cola de descargas de Steam (reinicia Steam si no hay un juego abierto) y comprueba que empieza
+    a descargarse. Si no, prueba el diálogo «Instalar» de Steam. No espera a que termine la descarga."""
+    if int(appid) <= 0:
+        raise ToolError("AppID no válido")
+    from .steam import Entorno, install
+
+    return install(int(appid), max(15, min(int(esperar_seg), 300)), Entorno(dialog=_pulsar_instalar))
 
 
 def main() -> None:

@@ -243,3 +243,14 @@ funciona igual.
   herramientas de `sistema`), frente a ~3.000.
 - Pendiente: mantener vivos los servidores MCP durante la sesión (hoy ~1,2 s por mensaje con `sistema`).
 - **Cara de cambiar:** poco; la tarea en SQLite se sigue creando (registro y consumo) aunque sea conversación.
+
+## D18. Instalar juegos de Steam sin pulsar nada (2026-10-09)
+- Daniel: al pedir instalar un juego, Steam se abría con el diálogo «Instalar» esperando un clic.
+- `sistema.instalar_steam` (EXECUTE, solo en «Control total»; con «Sin preguntar» no pregunta) ahora escribe
+  `steamapps/appmanifest_<AppID>.acf` con StateFlags 1026 en la biblioteca principal y reinicia Steam
+  (`steam.exe -shutdown` y `-silent`), que al leerlo descarga el juego. Comprueba que empieza (manifiesto
+  actualizado o carpeta `downloading/<AppID>`). Lógica en `skynet_tools/steam.py`.
+- No reinicia Steam si hay un juego abierto (RunningAppID): deja el juego en cola para el próximo arranque.
+- Si no empieza (p. ej. juego gratis sin licencia en la cuenta), borra el manifiesto y usa el plan B de
+  antes: `steam://install` + Intro en el diálogo. Descartado steamcmd: pide usuario, contraseña y Steam Guard.
+- Sin probar aún en Windows real; tests con una biblioteca de Steam simulada.
