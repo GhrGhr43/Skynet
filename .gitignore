@@ -11,3 +11,6 @@ skills/_propuestas/
 firma/
 *.jks
 *.apk
+
+# Dependencias de terceros instaladas en el PC (OmniRoute: npm)
+vendor/

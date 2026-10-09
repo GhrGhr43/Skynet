@@ -205,11 +205,21 @@ class Engines:
         return "Strata apagado"
 
 
-def load_engines(raw: dict[str, Any], logs_dir: Path) -> Engines:
+def load_engines(raw: dict[str, Any], logs_dir: Path, home: Path | None = None) -> Engines:
+    # {home} = carpeta de Skynet: así la config no depende de dónde esté clonado el repo.
+    def sub(v: Any) -> Any:
+        if isinstance(v, str):
+            return v.replace("{home}", str(home)) if home else v
+        if isinstance(v, list):
+            return [sub(x) for x in v]
+        if isinstance(v, dict):
+            return {k: sub(x) for k, x in v.items()}
+        return v
+
     specs = {}
     for n, e in (raw or {}).items():
-        known = {k: e[k] for k in ("tipo", "url", "modelo", "contexto", "carpeta", "config", "exe", "args", "env", "salud",
-                                       "firma", "gpu") if k in e}
+        known = {k: sub(e[k]) for k in ("tipo", "url", "modelo", "contexto", "carpeta", "config", "exe", "args", "env", "salud",
+                                            "firma", "gpu") if k in e}
         specs[n] = EngineSpec(nombre=n, **known)
     eng = Engines(specs, logs_dir)
     if "local" in specs and specs["local"].tipo == "llamacpp":  # modelo elegido en Ajustes

@@ -1,4 +1,4 @@
-# Configuración general de Skynet. Las rutas relativas son relativas a C:\Skynet.
+# Configuración general de Skynet. Las rutas relativas son relativas a la carpeta de Skynet.
 
 [general]
 base_datos = "data/skynet.db"
@@ -18,7 +18,7 @@ turnos_por_iteracion = 20
 timeout_verificador_seg = 900
 
 # Servidores MCP. {python} = Python de Skynet, {repo} = ruta del repo de la tarea,
-# {home} = C:\Skynet. Cada repo elige cuáles usa en repos.toml (campo "herramientas").
+# {home} = carpeta de Skynet (p. ej. C:\Git\Skynet). Cada repo elige cuáles usa en repos.toml (campo "herramientas").
 [mcp.workspace]
 comando = "{python}"
 args = ["-m", "skynet_tools.workspace", "--root", "{repo}"]
@@ -50,8 +50,8 @@ args = ["-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "--no-webui", "
 tipo = "proceso"
 url = "http://127.0.0.1:20128/v1"
 exe = "node"
-args = ['C:\Skynet\vendor\omniroute\node_modules\omniroute\bin\omniroute.mjs', "serve", "--no-open", "--no-tray", "--port", "20128"]
-env = { OMNIROUTE_SERVER_HOST = "127.0.0.1", HOST = "127.0.0.1", DATA_DIR = "C:/Skynet/data/omniroute", ENABLE_TLS_FINGERPRINT = "false", OPENCODE_SYNTHESIZE_CLI_HEADERS = "false", OPENCODE_FREE_TIER_REQUEST_CONTRACT = "off", NO_COLOR = "1" }
+args = ['{home}\vendor\omniroute\node_modules\omniroute\bin\omniroute.mjs', "serve", "--no-open", "--no-tray", "--port", "20128"]
+env = { OMNIROUTE_SERVER_HOST = "127.0.0.1", HOST = "127.0.0.1", DATA_DIR = "{home}/data/omniroute", ENABLE_TLS_FINGERPRINT = "false", OPENCODE_SYNTHESIZE_CLI_HEADERS = "false", OPENCODE_FREE_TIER_REQUEST_CONTRACT = "off", NO_COLOR = "1" }
 salud = "http://127.0.0.1:20128/api/health"
 firma = 'vendor\omniroute'
 gpu = false
