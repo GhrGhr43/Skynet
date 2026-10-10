@@ -216,12 +216,57 @@ def instalar_steam(appid: int, esperar_seg: int = 90) -> str:
     return install(int(appid), max(15, min(int(esperar_seg), 300)), Entorno(dialog=_pulsar_instalar))
 
 
+@mcp.tool()
+def desinstalar_steam(appid: int) -> str:
+    """Desinstala un juego de Steam sin pulsar nada: cierra Steam, quita el juego de su biblioteca (manifiesto y
+    carpeta) y vuelve a abrir Steam. No lo hace si hay un juego abierto. Si no sabes el AppID, búscalo."""
+    if int(appid) <= 0:
+        raise ToolError("AppID no válido")
+    from .steam import uninstall
+
+    return uninstall(int(appid))
+
+
+@mcp.tool()
+def buscar_archivo(nombre: str, limite: int = 20) -> str:
+    """Busca archivos por nombre en todo el PC (C:, con Program Files; sin Windows, ProgramData ni AppData) con un índice:
+    responde al instante. `nombre` es una o varias palabras del nombre, p. ej. "brotato exe" o "factura 2025".
+    Devuelve ruta completa, tamaño y fecha de los más recientes. Solo mira nombres, no el contenido."""
+    from . import indice
+
+    edad = indice.edad_h(INDICE)
+    if edad is None:
+        indice.lanzar_actualizacion(INDICE)
+        return ("El índice de archivos se está creando por primera vez (tarda unos minutos). Mientras, busca con "
+                "list_dir o vuelve a intentarlo en un rato.")
+    if edad > indice.MAX_EDAD_H:
+        indice.lanzar_actualizacion(INDICE)  # se refresca aparte; mientras, se usa el que hay
+    filas = indice.buscar(INDICE, nombre, max(1, min(int(limite), 100)))
+    if not filas:
+        return f"Ningún archivo con «{nombre}» en el nombre (índice de hace {edad:.0f} h)."
+    import time as _t
+
+    def tam(n: int) -> str:
+        for u in ("B", "KB", "MB", "GB"):
+            if n < 1024:
+                return f"{n:.0f} {u}"
+            n /= 1024
+        return f"{n:.1f} TB"
+    lineas = [f"{Path(c) / n}  ·  {tam(t)}  ·  {_t.strftime('%Y-%m-%d', _t.localtime(m))}" for n, c, t, m in filas]
+    return f"{len(filas)} resultados (índice de hace {edad:.0f} h):\n" + "\n".join(lineas)
+
+
+INDICE: Path = Path("indice.db")
+
+
 def main() -> None:
-    global HOME
+    global HOME, INDICE
     ap = argparse.ArgumentParser()
     ap.add_argument("--home", default=str(Path.home()))
+    ap.add_argument("--indice", default="", help="base de datos del índice de archivos (skynet_tools.indice)")
     a = ap.parse_args()
     HOME = Path(a.home).resolve()
+    INDICE = Path(a.indice) if a.indice else HOME / ".skynet-indice.db"
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     mcp.run()
 

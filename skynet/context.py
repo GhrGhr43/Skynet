@@ -17,6 +17,7 @@ from .config import RepoConfig
 from .store import Store, Task
 
 CHARS_PER_TOKEN = 4
+INSTRUCCIONES_MAX = 4000  # SKYNET.md y AGENTS.md/CLAUDE.md: tope para no comerse el contexto
 
 
 @dataclass
@@ -44,8 +45,15 @@ class ContextBuilder:
     def memory_sections(self) -> list[Section]:
         if self.home is None:
             return []
+        out = []
+        # memoria/SKYNET.md: las instrucciones de Daniel para Skynet (su «CLAUDE.md»); las escribe él a mano.
+        inst = self.home / "memoria" / "SKYNET.md"
+        if inst.is_file():
+            text = inst.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                out.append(Section("Instrucciones de Daniel (síguelas siempre)", text[:INSTRUCCIONES_MAX], 0))
         titles = {"MEMORY": "Memoria (hechos del entorno)", "USER": "Preferencias del usuario"}
-        return [Section(titles[k], v, 1) for k, v in propuestas.read_memory(self.home).items()]
+        return out + [Section(titles[k], v, 1) for k, v in propuestas.read_memory(self.home).items()]
 
     def skill_sections(self, task: Task) -> list[Section]:
         """Cuerpo de la skill que pidió la tarea (si la hay) y catálogo de las demás.
@@ -59,7 +67,7 @@ class ContextBuilder:
             out.append(Section(f"Skill «{chosen}» (instrucciones a seguir en esta tarea)", found[chosen].body(), 1))
         others = {k: v for k, v in found.items() if k != chosen}
         if others:
-            out.append(Section("Skills disponibles (el usuario puede cargarlas con /skill <nombre>)",
+            out.append(Section("Skills disponibles (carga la que encaje con ver_skill antes de empezar)",
                                skills.catalog(others), 3))
         return out
 
@@ -98,6 +106,13 @@ class ContextBuilder:
                     "\n".join(lines), 1))
 
         if repo is not None and repo.ruta.exists():
+            # Instrucciones del propio repo, con las convenciones de Codex y Claude Code (AGENTS.md, CLAUDE.md).
+            for name in ("AGENTS.md", "CLAUDE.md"):
+                f = repo.ruta / name
+                if f.is_file():
+                    text = f.read_text(encoding="utf-8", errors="replace").strip()
+                    out.append(Section(f"Instrucciones del repo ({name})", text[:INSTRUCCIONES_MAX], 1))
+                    break
             td = task_dir(repo, task.id)
             for name, prio, chars in (("PROGRESO.md", 1, 3000), ("ERRORES.md", 1, 2500)):
                 f = td / name

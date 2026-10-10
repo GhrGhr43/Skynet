@@ -123,8 +123,9 @@ def test_ajustes(web):
     assert s["repo"] is None and s["modelo"] == "local" and s["privado"] is True
     assert c.post("/api/ajustes", json={"repo": "no-existe"}).status_code == 400
     assert c.post("/api/ajustes", json={"modelo": "inventado"}).status_code == 400
-    s = c.post("/api/ajustes", json={"repo": "prueba", "modelo": "auto", "privado": False}).json()
-    assert s["repo"] == "prueba" and s["modelo"] == "auto" and not s["privado"]
+    assert c.post("/api/ajustes", json={"modelo": "auto"}).status_code == 400  # ya no hay modo automático (D21)
+    s = c.post("/api/ajustes", json={"repo": "prueba", "modelo": "local", "privado": False}).json()
+    assert s["repo"] == "prueba" and s["modelo"] == "local" and not s["privado"]
 
 
 def test_internet_switch_and_privacy(web):
@@ -171,18 +172,6 @@ def test_continuar_una_tarea_concreta(web):
     wait_until(c, lambda s: not s["ocupado"])
     assert rt.store.get_task(old.id).status == HECHA
     assert rt.store.steps_for(old.id)[-1].kind == "reanudar"
-
-
-def test_tarea_larga_pide_confirmacion(web):
-    c, rt, _ = web()
-    assert c.post("/api/largo", json={"horas": 0, "objetivo": "x"}).status_code == 400
-    assert c.post("/api/largo", json={"horas": 1, "objetivo": "x", "repo": "otro"}).status_code == 400
-    assert c.post("/api/largo", json={"horas": 1.5, "objetivo": "haz que pasen los tests"}).json()["ok"]
-    q = wait_until(c, lambda s: s["preguntas"])["preguntas"][0]
-    assert q["clase"] == "confirmar" and "1.5 h" in q["texto"]
-    c.post("/api/responder", json={"id": q["id"], "respuesta": "n"})
-    wait_until(c, lambda s: not s["ocupado"])
-    assert not any(t.is_long for t in rt.store.list_tasks())   # cancelado: no se crea nada
 
 
 def test_comando_doctor_va_a_la_web(web):

@@ -1,8 +1,8 @@
 """Model router: los agentes piden capacidades, no modelos (principio 4).
 
-`choose()` aplica las reglas de config/router.toml (gana la primera que encaja) y comprueba
-que el perfil elegido esté disponible (clave de API) y que quede presupuesto mensual; si no,
-cae al modelo local y lo dice en el motivo. `complete()` llama a LiteLLM y calcula tokens y
+`choose()` usa el modelo que eligió Daniel (no hay modo automático ni reglas: D21) y comprueba que
+esté disponible (clave de API, activado si es en línea, presupuesto mensual); si no, cae al modelo
+local y lo dice en el motivo. `complete()` llama a LiteLLM y calcula tokens y
 coste en euros. Toda decisión y llamada queda auditada.
 """
 from __future__ import annotations
@@ -92,10 +92,6 @@ class ModelRouter:
         return self._completion
 
     # --- elección --------------------------------------------------------
-    def _rule_matches(self, cond: dict[str, Any], caps: Capabilities) -> bool:
-        c = caps.to_dict()
-        return all(str(c.get(k)) == str(v) for k, v in cond.items())
-
     def _usable(self, profile: ModelProfile) -> tuple[bool, str]:
         ok, why = profile.available()
         if not ok:
@@ -120,10 +116,6 @@ class ModelRouter:
             target, why = caps.force, f"elegido por el usuario ({caps.force})"
         else:
             target, why = "local", "por defecto: local"
-            for rule in self.settings.rules:
-                if self._rule_matches(rule.get("si", {}), caps):
-                    target, why = rule["usar"], rule.get("motivo", f"regla {rule.get('si')}")
-                    break
         profile = models.get(target)
         if profile is None:
             return RouteDecision(local, f"{why}; el perfil '{target}' no existe, uso local")

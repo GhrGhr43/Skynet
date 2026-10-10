@@ -3,7 +3,7 @@
 - Mensaje normal: tarea nueva. Con repo elegido -> agente programador con herramientas MCP;
   sin repo -> conversación sin herramientas. El modelo lo elige el router por capacidades.
 - "continúa" (o "sigue"): retoma la última tarea sin terminar desde SQLite.
-- /largo H objetivo: tarea larga en segundo plano (Scheduler).
+- Tareas largas: el modelo las lanza hablando con la herramienta tarea_larga (internas.py).
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import shlex
 from typing import Any, Protocol
 
 from . import gitops, modos, propuestas, skills
-from .agent import summarize_args
+from .agent import comando_completo, summarize_args
 from .gate import Level, PermissionGate
 from .router import Capabilities
 from .runtime import Runtime
@@ -30,12 +30,11 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   continúa [indicaciones]   retoma la última tarea sin terminar
   /repos                    repos autorizados          /repo <nombre|ninguno>  elegir repo
   /razonamiento auto|rápido|medio|alto                  cuánto piensa el modelo
-  /modelo local|<nube>|auto elegir modelo (local por defecto; los de la nube piden confirmación)
+  /modelo local|hermes|...   elegir modelo (local por defecto; los de la nube piden confirmación)
   /permisos [modelo modo]   modos: repo | lectura | editar | total                /privado  privacidad alta on/off
   /nube <modelo> on|off     activar o desactivar un modelo en la nube en esta sesión
   /internet on|off         búsqueda web opcional (apagada al arrancar; sin navegador)
   /coder on|off             modo programador sobre el repo elegido (verificador y commits; apagado al arrancar)
-  /largo <horas> <objetivo> tarea larga en segundo plano con verificador y commits
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
   /parar <id>               parar una tarea larga      /log [id]               audit log
   /buscar <texto>           buscar en el historial     /skills                 skills disponibles
@@ -170,7 +169,9 @@ class Coordinator:
         async def ask(key: str, level: Level, args: dict[str, Any], reason: str) -> str:
             self.rt.store.update_task(task.id, status=ESPERANDO_PERMISO)
             options = "[s]í / [n]o" + (" / [t]odas en esta tarea" if level is not Level.DESTRUCTIVE else "")
-            prompt = f"{level.name} · {key}({summarize_args(args)})\nMotivo: {reason}\n¿Permitir? {options}"
+            cmd = comando_completo(args)
+            prompt = (f"{level.name} · {key}({summarize_args(args)})\n" + (f"Ejecutará: {cmd}\n" if cmd else "")
+                      + f"Motivo: {reason}\n¿Permitir? {options}")
             try:
                 return await self.ui.ask(prompt)
             finally:
@@ -210,16 +211,7 @@ class Coordinator:
             store.finish_step(run.step.id, out.status, summary, ver.summary() if ver else None)
             self.history.append((task.goal if kind == "chat" else (extra or "continúa"), out.final_text))
             self.ui.answer(out.final_text)
-            foot = (f"{out.model.split('/')[-1]} · {out.tokens_in}+{out.tokens_out} tokens · {out.cost_eur:.4f} € · "
-                    f"{out.tool_calls} herramientas · tarea {task.id}: {status}")
-            if ver is not None:
-                foot += f" · verificador {'OK' if ver.ok else 'FALLA'}"
-            self.ui.info(foot)
-            if ver is not None and not ver.ok:
-                self.ui.info("El verificador falla:\n" + "\n".join(ver.output_tail.strip().splitlines()[-12:])
-                             + "\nDi «continúa» para que intente arreglarlo.")
-            elif status == PAUSADA:
-                self.ui.info("Se quedó a medias. Di «continúa» para seguir.")
+            self._fin(task, status, out, ver)
         finally:
             store.update_task(task.id, status=status, result_summary=summary)
             store.clear_heartbeat(task.id)
@@ -232,6 +224,18 @@ class Coordinator:
             if created:
                 self.ui.info(f"Propuestas nuevas: {', '.join(created)}. Revísalas con /propuestas.")
         return store.get_task(task.id)
+
+    def _fin(self, task: Task, status: str, out: Any, ver: VerifierResult | None) -> None:
+        """Cierre de cada respuesta: tokens, tokens por segundo y estado. La web lo pinta a su manera
+        (con «Reintentar» si falla); aquí, en la terminal, como texto."""
+        tps = out.tokens_out / out.segundos if out.segundos > 0 else 0
+        self.ui.info(f"{out.tokens_in + out.tokens_out} tokens · {tps:.0f} tok/s · tarea {task.id}: {status}"
+                     + (f" · verificador {'OK' if ver.ok else 'FALLA'}" if ver is not None else ""))
+        if ver is not None and not ver.ok:
+            self.ui.info("El verificador falla:\n" + "\n".join(ver.output_tail.strip().splitlines()[-12:])
+                         + "\nDi «continúa» para que intente arreglarlo.")
+        elif status == PAUSADA:
+            self.ui.info("Se quedó a medias. Di «continúa» para seguir.")
 
     # --- comandos --------------------------------------------------------
     async def _command(self, text: str) -> bool:
@@ -265,17 +269,15 @@ class Coordinator:
             else:
                 self.ui.info(f"'{args[0]}' no está autorizado. Mira /repos.")
         elif cmd == "/modelo":
-            choice = (args[0] if args else "auto").lower()
-            if choice == "auto":
-                self.force_model = None
-            elif choice in self.rt.settings.models:
+            choice = (args[0] if args else "").lower()
+            if choice in self.rt.settings.models:
                 if not await self._confirm_cloud(choice):
                     return True
                 self.force_model = choice
             else:
-                self.ui.info(f"Modelos: {', '.join(self.rt.settings.models)} o auto")
+                self.ui.info(f"Modelo actual: {self.force_model}. Modelos: {', '.join(self.rt.settings.models)}")
                 return True
-            self.ui.info(f"Modelo: {self.force_model or 'automático (router)'}")
+            self.ui.info(f"Modelo: {self.force_model}")
         elif cmd == "/nube":
             acc = self.rt.access
             nube = [n for n in self.rt.settings.models if acc.es_nube(n)]
@@ -356,8 +358,6 @@ class Coordinator:
             if task:
                 st.set_status(task.id, FALLIDA, "descartada por el usuario")
                 self.ui.info(f"Tarea {task.id} descartada: «continúa» ya no la retomará.")
-        elif cmd == "/largo":
-            await self._long(args)
         elif cmd == "/buscar":
             self._search(text.split(None, 1)[1] if len(text.split(None, 1)) > 1 else "")
         elif cmd == "/skills":
@@ -498,34 +498,3 @@ class Coordinator:
             self.ui.info("No encuentro esa tarea.")
             return None
 
-    async def _long(self, args: list[str]) -> None:
-        if not self.repo_name:
-            self.ui.info("Elige antes un repo con /repo <nombre>.")
-            return
-        try:
-            hours = float(args[0].replace(",", "."))
-            goal = " ".join(args[1:]).strip()
-            if not goal or hours <= 0:
-                raise ValueError
-        except (IndexError, ValueError):
-            self.ui.info("Uso: /largo <horas> <objetivo>   (ej.: /largo 2 haz que pasen todos los tests)")
-            return
-        repo = self.rt.settings.repo(self.repo_name)
-        agent = "agente-godot" if repo.agente == "agente-godot" else "scheduler"
-        grants = ["coding_agent.start_task", "coding_agent.stop_task"] if agent == "agente-godot" else []
-        detail = ("lanzará agente-godot (noche.ps1)" if agent == "agente-godot" else
-                  f"iteraciones con el modelo local, verificador `{repo.verificador or 'ninguno'}`, commit si pasa y "
-                  "rollback si falla; las acciones que necesiten confirmación se denegarán")
-        answer = await self.ui.ask(f"Tarea larga en '{repo.nombre}' durante {hours} h: {detail}.\n¿Lanzar? [s/n]")
-        if answer.strip().lower() not in ("s", "si", "sí", "y", "yes"):
-            self.ui.info("Cancelado.")
-            return
-        task = self.rt.store.create_task(
-            title=goal[:70], goal=goal, agent=agent, repo=repo.nombre, status=PENDIENTE, max_hours=hours,
-            capabilities={"capacidades": self._caps(cost="bajo"), "permisos_preaprobados": grants},
-        )
-        self.rt.audit.log("task", task_id=task.id, decision="creada",
-                          detail={"mensaje": f"tarea larga {hours} h", "preaprobado": grants})
-        pid = spawn_background(self.rt, task.id)
-        self.ui.info(f"Tarea larga {task.id} lanzada en segundo plano (pid {pid}). Sigue su avance con "
-                     f"/estado {task.id}, /log {task.id} o en {repo.ruta / 'PROGRESO.md'}. Para pararla: /parar {task.id}.")

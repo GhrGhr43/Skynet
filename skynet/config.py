@@ -108,13 +108,13 @@ class Settings:
     default_level: str
     execute_whitelist: list[str]
     models: dict[str, ModelProfile]
-    rules: list[dict[str, Any]]
     budget_eur: float
     usd_eur: float
     servers: dict[str, ServerSpec]
     agent: AgentLimits
     long: LongLimits
     engines: dict[str, Any] = field(default_factory=dict)  # [motores.*] de skynet.toml
+    proyectos: Path = Path(".")  # dónde crea proyectos nuevos crear_proyecto ([general] proyectos)
     acceso: dict[str, Any] = field(default_factory=dict)   # [acceso] de skynet.toml (móvil por Tailscale)
 
     def repo(self, nombre: str) -> RepoConfig:
@@ -222,7 +222,6 @@ def load_settings(home: Path | str | None = None) -> Settings:
         default_level=permisos.get("nivel_por_defecto", "PRIVILEGED"),
         execute_whitelist=list(permisos.get("ejecutar", {}).get("lista_blanca", [])),
         models=models,
-        rules=list(router.get("reglas", [])),
         budget_eur=float(router.get("presupuesto", {}).get("mensual_eur", 0)),
         usd_eur=float(router.get("moneda_usd_eur", 0.86)),
         servers=servers,
@@ -230,6 +229,8 @@ def load_settings(home: Path | str | None = None) -> Settings:
         long=LongLimits(**general.get("largo", {})),
         engines=dict(general.get("motores", {})),
         acceso=dict(general.get("acceso", {})),
+        # Proyectos nuevos: junto a la carpeta de Skynet (p. ej. C:\Git) salvo que [general] proyectos diga otra cosa.
+        proyectos=_resolve(home, g["proyectos"]) if g.get("proyectos") else home.parent,
     )
 
 

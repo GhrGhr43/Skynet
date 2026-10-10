@@ -81,6 +81,12 @@ _DELETE_RE = re.compile(r"(^|[\s;&|(])(rm|del|erase|rd|rmdir|ri|remove-item|rimr
                         re.IGNORECASE)
 _SYS_WORDS = ("system32", "syswow64", "%windir%", "$env:windir", "%systemroot%", "$env:systemroot", "%programfiles",
               "$env:programfiles", "$env:programdata", "%programdata%")
+# Comandos que cambian algo (PowerShell, cmd o redirección). En las carpetas del sistema solo se pregunta si el
+# comando cambia algo: mirar, listar o buscar (p. ej. dónde está Steam, en Program Files) no pregunta (D21).
+_MODIFY_RE = re.compile(
+    r"(^|[\s;&|(])(set-content|add-content|out-file|new-item|copy-item|move-item|rename-item|set-item(property)?"
+    r"|new-itemproperty|set-acl|mkdir|md|copy|xcopy|robocopy|move|ren|rename|mklink|msiexec|expand-archive"
+    r"|start-process|setx|attrib)(\.exe)?(\s|$)|>{1,2}", re.IGNORECASE)
 
 
 def norm_path(p: str, base: str) -> str:
@@ -119,8 +125,8 @@ def command_risks(command: str, sysdirs: list[str]) -> str | None:
         return "pide permisos de administrador o cambia el sistema"
     if _DELETE_RE.search(command):
         return "borra archivos"
-    if any(d in low for d in sysdirs) or any(w in low for w in _SYS_WORDS):
-        return "toca carpetas del sistema"
+    if (any(d in low for d in sysdirs) or any(w in low for w in _SYS_WORDS)) and _MODIFY_RE.search(command):
+        return "cambia carpetas del sistema"
     if any(s in low for s in _SECRET_PARTS) or re.search(r"(^|[\s/\\\"'])\.env\b", low) or any(e in low for e in _SECRET_EXT):
         return "puede leer contraseñas, claves o cookies"
     return None
@@ -285,7 +291,8 @@ class PermissionGate:
         if level is Level.DESTRUCTIVE:
             return self._always(level, "borra archivos")
         if level is Level.WRITE:
-            if paths and not all(_under(p, [self.user_home]) for p in paths):
+            # En Control total, fuera del usuario también (otros discos, D:\Juegos...); el sistema ya se preguntó arriba.
+            if self.mode != "total" and paths and not all(_under(p, [self.user_home]) for p in paths):
                 return self._always(level, "escribe fuera de tu carpeta de usuario")
             return GateResult(Decision.ALLOW, level, f"escritura en tu usuario (modo «{nombre}»)")
         if level in (Level.EXECUTE, Level.PRIVILEGED):

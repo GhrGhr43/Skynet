@@ -24,7 +24,7 @@ from .config import RepoConfig
 from .context import task_dir
 from .gate import PermissionGate
 from .runtime import Runtime
-from .store import EN_CURSO, FALLIDA, HECHA, PAUSADA, Task
+from .store import EN_CURSO, FALLIDA, HECHA, PAUSADA, PENDIENTE, Task
 from .toolhub import ToolHub
 from .verifier import VerifierResult, run_verifier
 
@@ -285,6 +285,17 @@ class LongTaskRunner:
             self.store.clear_heartbeat(task.id)
             audit.log("task", decision=final, detail={"motivo": reason})
         return self.store.get_task(task.id)
+
+
+def lanzar_larga(rt: Runtime, repo: RepoConfig, objetivo: str, horas: float, caps: dict[str, Any]) -> tuple[Task, int]:
+    """Crea la tarea larga y la lanza en segundo plano. Devuelve (tarea, pid). La usa la herramienta tarea_larga."""
+    agent = "agente-godot" if repo.agente == "agente-godot" else "scheduler"
+    grants = ["coding_agent.start_task", "coding_agent.stop_task"] if agent == "agente-godot" else []
+    task = rt.store.create_task(title=objetivo[:70], goal=objetivo, agent=agent, repo=repo.nombre, status=PENDIENTE,
+                                max_hours=horas, capabilities={"capacidades": caps, "permisos_preaprobados": grants})
+    rt.audit.log("task", task_id=task.id, decision="creada",
+                 detail={"mensaje": f"tarea larga {round(horas * 60)} min", "preaprobado": grants})
+    return task, spawn_background(rt, task.id)
 
 
 def spawn_background(rt: Runtime, task_id: int) -> int:

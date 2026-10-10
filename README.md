@@ -27,7 +27,9 @@ En el chat:
 |---|---|
 | `implementa slug en textos.py` | Tarea nueva sobre el repo elegido. Skynet lee, edita y prueba con herramientas MCP; al final pasa el verificador. |
 | `continúa` (o `continúa: y añade tests`) | Retoma la última tarea sin terminar, aunque hayas cerrado Skynet. |
-| `/largo 2 haz que pasen todos los tests` | Tarea larga en segundo plano con el modelo local: iteraciones verificadas, commit si avanza, rollback si empeora y `PROGRESO.md` en el repo. |
+| `hazme un juego de naves y trabaja una hora en él` | Crea el proyecto (carpeta, git y un test) y lo deja trabajando solo los minutos que digas, en pasos verificados con commits. Pide confirmación antes de cada cosa. |
+| `¿dónde está el exe de PEAK?` | Lo encuentra al instante con el índice de nombres de todo `C:` (modo «Ver mi PC» o más). |
+| `desinstala X de Steam e instálame Y` | Encadena las herramientas de Steam sin que pulses nada (modo «Control total»). Para programas normales usa `winget`. |
 | `/estado 3`, `/parar 3`, `/tareas` | Seguir o parar tareas. |
 | `/log` o `/log 3` | Herramientas usadas, decisión de permisos, modelo, tokens y coste. |
 | `/permisos local total` | Modo de permisos de un modelo: `repo`, `lectura`, `editar` o `total`. Sin argumentos, los lista. |
@@ -35,12 +37,12 @@ En el chat:
 | `/nube hermes-nube on` | Activa Hermes con un modelo en línea para esta sesión (pide confirmación). |
 | `/internet on`, `/internet off` | Activa o desactiva la búsqueda web. Apagada al arrancar; también se cambia con el globo junto al chat. |
 | `/repo demo`, `/repos` | Elegir repo autorizado. `/repo ninguno` = conversación sin herramientas. |
-| `/modelo local\|cloud\|auto`, `/privado` | Forzar modelo o exigir privacidad (solo local). |
+| `/privado` | Exigir privacidad: solo el modelo local. |
 | `/buscar parser toml` | Busca en el historial de todas las tareas (pasos y eventos); 10 resultados por relevancia. |
 | `/skills`, `/skill escribir-tests añade tests a textos.py` | Lista las skills o lanza una tarea siguiendo una ([Skills](#skills)). |
 
 Fuera del chat: `skynet log [--tarea N]`, `skynet tareas`, `skynet estado N`,
-`skynet largo --repo demo --horas 1 "objetivo"`.
+`skynet largo --tarea N` (lo usan las tareas largas por dentro).
 
 Cuando una acción es de riesgo (comando fuera de la lista blanca, acción privilegiada o
 destructiva), Skynet pregunta: `s` (sí), `n` (no) o `t` (sí a esa herramienta durante la tarea).
@@ -62,6 +64,10 @@ memoria). La memoria son `memoria\MEMORY.md` (hechos del entorno) y `memoria\USE
 (tus preferencias), de 2 KB como mucho cada una; siempre van en el contexto y puedes editarlas
 a mano.
 
+**Tus instrucciones:** escribe en `memoria\SKYNET.md` cómo quieres que trabaje (como un CLAUDE.md
+personal); va siempre en el contexto. En cada repo, Skynet lee también su `AGENTS.md` o `CLAUDE.md`.
+Las skills las carga el modelo solo cuando encajan (`/skill` sigue sirviendo para forzar una).
+
 **Memoria automática (como Hermes):** si le dices una preferencia, le corriges o le cuentas algo
 estable de tu PC, Skynet lo guarda por su cuenta con su herramienta `memoria` y lo recuerda en las
 conversaciones siguientes. Cada cambio sale en `/log`; no guarda secretos y no se usa en tareas
@@ -82,20 +88,20 @@ con todo visible sin saberse comandos:
   azulado en espera, azul pensando, violeta usando herramientas, turquesa verificando, ámbar
   cuando te necesita, verde hecho, rojo si algo falla. Cada tarea larga en marcha es una luz
   en órbita.
-- **Abajo:** escribe lo que quieras; las sugerencias cambian según el estado (continuar la
-  tarea pendiente, tarea larga...). El botón cuadrado detiene la tarea (queda pausada).
-- **Izquierda:** Tareas (continuar, parar, descartar, pasos, consumo, PROGRESO.md), Tarea
-  larga (formulario), Registro y consumo, Modelos y repos (repo, modelo, privacidad, reglas
-  del router, calidad visual), Diagnóstico y Qué puede hacer Skynet.
-- **Permisos:** las acciones de riesgo salen en un diálogo: Permitir (`S`), Denegar (`N`) o
-  Permitir en toda la tarea (`T`).
-- **Modos de permisos por modelo** (junto al cuadro de texto y en Modelos y repos): Solo repo,
-  Ver mi PC, Ver y editar y Control total (ejecuta comandos y abre programas, p. ej. instalar un
-  juego de Steam). Administrador, carpetas del sistema, borrar y secretos se preguntan siempre.
-- **Cerebros:** Local (el bucle rápido de Skynet, por defecto), Hermes (agente que aprende, con el
-  modelo local) y Nube (Hermes con un modelo en línea, con confirmación). Coder y las tareas largas
+- **Abajo:** escribe lo que quieras. El botón cuadrado detiene la tarea (queda pausada). Debajo de
+  cada respuesta: tokens, tokens por segundo y estado; si falla o queda a medias, **Reintentar**.
+- **Izquierda:** sesiones, **Uso** (modelos, tokens, herramientas y permisos de cada tarea),
+  **Estado** (comprobar la instalación) y Configuración (modelos, repos, permisos, calidad visual).
+- **Permisos:** lo que necesita tu visto bueno sale en un diálogo con el comando exacto que se va a
+  ejecutar: Permitir (`S`), Denegar (`N`) o Permitir en toda la tarea (`T`).
+- **Modos de permisos por modelo** (junto al cuadro de texto y en Configuración): Solo repo, Ver mi
+  PC, Ver y editar y Control total. En Control total solo se pregunta lo delicado, como Claude o
+  Hermes: administrador, cambiar carpetas del sistema, borrar y secretos. Mirar, buscar, instalar
+  juegos o programas no pregunta.
+- **Cerebros** (no hay modo automático: eliges tú): Local (el bucle rápido de Skynet, por defecto),
+  Hermes (agente que aprende, con el modelo local) y Nube (Hermes con un modelo en línea, con confirmación). Coder y las tareas largas
   van siempre con Skynet. Ver [Hermes como segundo cerebro](#hermes-como-segundo-cerebro).
-- `Ctrl+K` abre todas las acciones con buscador. Los comandos `/` siguen funcionando.
+- `Ctrl+K` abre todas las acciones con buscador. Los comandos `/` siguen funcionando como atajos.
 
 Solo escucha en `127.0.0.1` y rechaza peticiones de otras webs (comprueba Host y Origin).
 
@@ -118,7 +124,7 @@ según la GPU; se puede forzar con `?calidad=baja|media|alta|ultra` o en Modelos
 |---|---|
 | `repos.toml` | Repos autorizados (fuera de ellos no se lee ni escribe nada), su verificador, privacidad y agente. |
 | `permisos.toml` | Nivel de cada herramienta y lista blanca de comandos. |
-| `router.toml` | Perfiles de modelo (local llama-server, Hermes local y Hermes en la nube) y reglas por capacidades. |
+| `router.toml` | Perfiles de modelo: local (llama-server), Hermes local y Hermes en la nube. |
 | `skynet.toml` | Rutas, límites del agente y de las tareas largas, y servidores MCP. |
 
 Para cambios personales sin tocar los archivos versionados, crea `config/<nombre>.local.toml`
@@ -158,7 +164,7 @@ agente = "agente-godot"
 herramientas = ["coding_agent"]
 ```
 
-y en el chat `/repo feudo` y `/largo 3 avanza el PLAN.md`.
+y en el chat: «trabaja 3 horas en feudo siguiendo su PLAN.md».
 
 ## Estructura
 

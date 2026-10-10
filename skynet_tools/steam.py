@@ -1,4 +1,4 @@
-"""Instalar juegos de Steam sin pulsar nada (lo usa `sistema.instalar_steam`).
+"""Instalar y desinstalar juegos de Steam sin pulsar nada (`sistema.instalar_steam` y `sistema.desinstalar_steam`).
 
 Steam no tiene una orden para «instalar ya»: `steam://install/<AppID>` solo abre un diálogo que hay que
 aceptar a mano, y pulsarlo con el teclado falla según el idioma, el foco o la versión del cliente.
@@ -9,11 +9,15 @@ se borra ese manifiesto y se recurre al diálogo `steam://install` pulsando «In
 
 Nunca se reinicia Steam con un juego abierto (RunningAppID del registro): en ese caso el manifiesto queda
 escrito y la descarga empieza la próxima vez que se abra Steam.
+
+Desinstalar tampoco tiene orden sin diálogo (`steam://uninstall` pide confirmar): se cierra Steam, se quitan el
+manifiesto y la carpeta del juego (solo dentro de su biblioteca) y se vuelve a abrir. Con un juego abierto, no.
 """
 from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -151,14 +155,24 @@ def game_running() -> bool:
     return bool(_reg("RunningAppID") or 0)
 
 
+def stop_steam(steam: Path, wait_s: float = 60) -> bool:
+    """Cierra Steam si está abierto. Devuelve si lo estaba."""
+    if not steam_running():
+        return False
+    subprocess.Popen([str(steam / "steam.exe"), "-shutdown"], stdin=subprocess.DEVNULL)
+    end = time.monotonic() + wait_s
+    while steam_running() and time.monotonic() < end:
+        time.sleep(1)
+    return True
+
+
+def start_steam(steam: Path) -> None:
+    subprocess.Popen([str(steam / "steam.exe"), "-silent"], stdin=subprocess.DEVNULL)
+
+
 def restart_steam(steam: Path, wait_s: float = 60) -> None:
-    exe = steam / "steam.exe"
-    if steam_running():
-        subprocess.Popen([str(exe), "-shutdown"], stdin=subprocess.DEVNULL)
-        end = time.monotonic() + wait_s
-        while steam_running() and time.monotonic() < end:
-            time.sleep(1)
-    subprocess.Popen([str(exe), "-silent"], stdin=subprocess.DEVNULL)
+    stop_steam(steam, wait_s)
+    start_steam(steam)
 
 
 def store_name(appid: int) -> str:
@@ -185,6 +199,8 @@ class Entorno:
     name: Callable[[int], str] = store_name
     dialog: Callable[[int, int], str] = lambda appid, seg: "sin_dialogo"
     sleep: Callable[[float], None] = time.sleep
+    stop: Callable[[Path], bool] = stop_steam
+    start: Callable[[Path], None] = start_steam
 
 
 def install(appid: int, wait_s: int = 90, env: Entorno | None = None) -> str:
@@ -225,3 +241,46 @@ def install(appid: int, wait_s: int = 90, env: Entorno | None = None) -> str:
         return f"{label}: instalación aceptada en el diálogo de Steam. La descarga sigue en Steam."
     return (f"{label}: Steam no empezó a descargarlo en {wait_s} s. Puede que la cuenta no lo tenga (si es de pago, "
             "hay que comprarlo) o que Steam pida iniciar sesión.")
+
+
+def _size(p: Path) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(p):
+        for n in files:
+            try:
+                total += (Path(root) / n).stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def uninstall(appid: int, env: Entorno | None = None) -> str:
+    env = env or Entorno()
+    steam = env.steam_dir()
+    if steam is None:
+        return "No encuentro Steam en este PC (ni en el registro ni en Program Files)."
+    prev = state(steam, appid)
+    if prev is None:
+        return f"El juego {appid} no está instalado (no hay manifiesto en ninguna biblioteca de Steam)."
+    f, st = prev
+    name = st.get("name") or str(appid)
+    if env.game_running():
+        return f"Hay un juego abierto: ciérralo y vuelve a pedírmelo para desinstalar {name}."
+    lib = f.parent.resolve()
+    installdir = (st.get("installdir") or "").strip()
+    carpetas = [lib / "downloading" / str(appid), lib / "shadercache" / str(appid),
+                lib / "workshop" / "content" / str(appid)]
+    if installdir:
+        carpetas.insert(0, lib / "common" / installdir)
+    # Solo carpetas de esta biblioteca y con nombre: nunca la biblioteca entera ni algo de fuera.
+    carpetas = [c for c in carpetas if c.resolve().parent != lib and lib in c.resolve().parents]
+    liberado = sum(_size(c) for c in carpetas if c.is_dir())
+    estaba = env.stop(steam)
+    f.unlink(missing_ok=True)
+    for c in carpetas:
+        if c.is_dir():
+            shutil.rmtree(c, ignore_errors=True)
+    if estaba:
+        env.start(steam)
+    return (f"{name} ({appid}) desinstalado de {lib.parent}: {liberado / 1e9:.1f} GB liberados."
+            + (" Steam se ha reiniciado." if estaba else ""))

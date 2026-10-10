@@ -1,6 +1,19 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-10 (comparativa Skynet contra Hermes y motores locales).
+Última actualización: 2026-10-10 (todo hablando, Control total sin preguntas de más, interfaz simplificada).
+
+## Todo hablando y Control total sin preguntas de más (2026-10-10 noche, D21)
+- Se pide hablando: crear proyectos, tareas largas (en minutos), cargar skills, buscar archivos de todo el PC (índice de
+  nombres de C:, 1 ms) y desinstalar juegos de Steam sin clics; programas con winget. `/largo` y su pestaña, fuera.
+- Control total pregunta solo lo delicado (cambiar sistema, borrar, administrador, secretos); el diálogo enseña el
+  comando entero. Sin modo automático de modelos. `memoria/SKYNET.md` + AGENTS.md/CLAUDE.md del repo en el contexto.
+- Web: Uso y Estado; pie con tokens, tok/s, estado y Reintentar; cursores nuevos; arreglado el salto de scroll en
+  Configuración. Móvil (`movil/www`) con lo mismo y solo el modelo local; **falta compilar la APK en la nube**.
+- Limpieza: fuera `herramientas/comparador` y tres propuestas ya hechas; data/ sin restos (a la Papelera).
+- Probado con el modelo real: busca PEAK.exe en 9 s, guarda una preferencia en 4 s, llama a crear_proyecto
+  directamente con su confirmación. Tests: 177 (todos pasan).
+- Siguiente: probar en el PC desinstalar e instalar un juego pequeño de Steam y un programa con winget; propuestas
+  para el móvil (correo, Drive, aprobar permisos) pendientes de que Daniel elija.
 
 ## Skynet contra Hermes y motores locales (2026-10-10)
 - Informe: docs/COMPARATIVA-HERMES.md. Herramienta: `herramientas/bench-hermes/` (Hermes entero en Docker).
@@ -40,7 +53,7 @@
 - Siguiente: MCP vivos por sesión, aprendizaje estilo Hermes (herramientas de memoria y skills + repaso).
 
 ## Local más listo, fase 1 (2026-10-09)
-- Propuesta aprobada por Daniel: docs/PROPUESTA-LOCAL-LISTO.md. Fase 1 hecha en la nube (D16): ventana de
+- Propuesta aprobada por Daniel (ya cumplida; el documento se retiró). Fase 1 hecha en la nube (D16): ventana de
   contexto que recorta y resume (`ventana.py`), llamadas rotas reparadas (`llamadas.py`), herramientas de
   `sistema` según el modo y muestreo de Qwen en el perfil local.
 - Verificado en la nube con LLM guionizado: 147 tests pasan (falla solo el de rutas de Windows en Linux).

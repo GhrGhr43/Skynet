@@ -207,32 +207,50 @@ async def test_long_task_stop_requested(make_rt):
 
 
 # --- comandos del chat -------------------------------------------------------------
-async def test_largo_command_creates_and_spawns(make_rt, monkeypatch):
+async def test_tarea_larga_hablando(make_rt, monkeypatch):
+    """«Trabaja hora y media en esto»: el modelo usa tarea_larga (en minutos) y pide confirmación (D21)."""
     import skynet.coordinator as coord_mod
+    import skynet.scheduler as sched_mod
 
     spawned = []
-    monkeypatch.setattr(coord_mod, "spawn_background", lambda rt, tid: spawned.append(tid) or 4242)
-    rt = make_rt(ScriptedLLM([]))
+    fake = lambda rt, tid: spawned.append(tid) or 4242  # noqa: E731
+    monkeypatch.setattr(sched_mod, "spawn_background", fake)
+    monkeypatch.setattr(coord_mod, "spawn_background", fake)
+    rt = make_rt(ScriptedLLM([
+        ("", [tool_call("tarea_larga", {"objetivo": "haz que pasen los tests", "minutos": 90, "repo": "prueba"})]),
+        ("Lanzada: trabajo hora y media.", None),
+    ]))
     ui = FakeUI(answers=["s"])
     c = Coordinator(rt, ui)
-    await c.handle("/largo 1,5 haz que pasen los tests")
+    await c.handle("trabaja hora y media en que pasen los tests de prueba")
     task = rt.store.get_task(spawned[0])
     assert task.agent == "scheduler" and task.max_hours == 1.5 and task.goal == "haz que pasen los tests"
-    assert task.capabilities["capacidades"]["cost"] == "bajo"
+    assert task.capabilities["capacidades"]["cost"] == "bajo" and task.repo == "prueba"
     # continúa sobre una tarea larga sin runner vivo: la relanza en segundo plano
     rt.store.update_task(task.id, status=PAUSADA)
     await c.handle("continúa")
     assert spawned == [task.id, task.id]
 
 
-async def test_largo_cancelled(make_rt, monkeypatch):
-    import skynet.coordinator as coord_mod
+async def test_tarea_larga_rechazada(make_rt, monkeypatch):
+    import skynet.scheduler as sched_mod
 
-    monkeypatch.setattr(coord_mod, "spawn_background", lambda rt, tid: 1 / 0)
-    rt = make_rt(ScriptedLLM([]))
-    ui = FakeUI(answers=["n"])
-    await Coordinator(rt, ui).handle("/largo 2 algo")
-    assert rt.store.list_tasks() == [] and ui.infos[-1] == "Cancelado."
+    monkeypatch.setattr(sched_mod, "spawn_background", lambda rt, tid: 1 / 0)
+    rt = make_rt(ScriptedLLM([("", [tool_call("tarea_larga", {"objetivo": "algo", "minutos": 30, "repo": "prueba"})]),
+                              ("Vale, no la lanzo.", None)]))
+    await Coordinator(rt, FakeUI(answers=["n"])).handle("trabaja media hora en algo")
+    assert not any(t.is_long for t in rt.store.list_tasks())
+
+
+async def test_crear_proyecto_hablando(make_rt, tmp_path):
+    rt = make_rt(ScriptedLLM([("", [tool_call("crear_proyecto", {"nombre": "juego-naves", "descripcion": "Naves"})]),
+                              ("Creado.", None)]))
+    rt.settings.proyectos = tmp_path / "proyectos"
+    await Coordinator(rt, FakeUI(answers=["s"])).handle("hazme un juego de naves")
+    ruta = tmp_path / "proyectos" / "juego-naves"
+    assert (ruta / ".git").exists() and (ruta / "tests" / "test_inicio.py").exists()
+    assert rt.settings.repos["juego-naves"].verificador == "python -m pytest -q"
+    assert "juego-naves" in (rt.settings.home / "config" / "repos.local.toml").read_text(encoding="utf-8")
 
 
 async def test_info_commands(make_rt):

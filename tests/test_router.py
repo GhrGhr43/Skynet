@@ -32,13 +32,6 @@ def test_privacy_always_local(router):
     assert d.profile.nombre == "local" and "privacidad" in d.reason
 
 
-def test_reasoning_high_without_key_falls_back(router):
-    r, s, _ = router
-    s.budget_eur = 100
-    d = r.choose(Capabilities(reasoning="alto"))
-    assert d.profile.nombre == "local" and "GEMINI_API_KEY" in d.reason
-
-
 def test_reasoning_high_with_key_and_budget_goes_cloud(router, monkeypatch):
     r, s, _ = router
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
@@ -77,13 +70,14 @@ async def test_complete_records_tokens_and_cost(router, monkeypatch):
     assert ev["tokens_in"] == 100 and ev["model"] == "anthropic/claude-opus-5-5"
 
 
-def test_free_gemini_needs_no_budget(router, monkeypatch):
+def test_free_cloud_needs_no_budget(router, monkeypatch):
     r, s, _ = router
     s.budget_eur = 0
-    assert r.choose(Capabilities(reasoning="alto")).profile.nombre == "local"  # sin clave
+    r.access = None  # sin activación: aquí se prueba solo la clave y el presupuesto
+    assert r.choose(Capabilities(force="gemini")).profile.nombre == "local"  # sin clave
     monkeypatch.setenv("GEMINI_API_KEY", "x")
-    assert r.choose(Capabilities(reasoning="alto")).profile.nombre == "gemini"
-    assert r.choose(Capabilities(reasoning="alto", privacy="alta")).profile.nombre == "local"
+    assert r.choose(Capabilities(force="gemini")).profile.nombre == "gemini"
+    assert r.choose(Capabilities(force="gemini", privacy="alta")).profile.nombre == "local"
 
 
 async def test_reasoning_level_is_sent(router):

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import memoria
+from . import internas, memoria
 from .agent import Agent, AgentOutcome, EventFn, system_prompt_for
 from .audit import Audit
 from .config import RepoConfig, ServerSpec, Settings, load_settings
@@ -66,7 +66,8 @@ class Runtime:
         spec = self.settings.servers.get("sistema")
         if spec is not None:
             return self.settings.server_spec("sistema", None)
-        return ServerSpec("sistema", sys.executable, ["-m", "skynet_tools.sistema", "--home", str(Path.home())])
+        return ServerSpec("sistema", sys.executable, ["-m", "skynet_tools.sistema", "--home", str(Path.home()),
+                                                      "--indice", str(self.settings.db_path.parent / "indice.db")])
 
     def mode_for(self, task: Task, caps: Capabilities) -> str:
         """Modo de permisos del modelo que va a hacer el paso. Las tareas largas (sin nadie delante) van
@@ -132,7 +133,7 @@ class Runtime:
             specs.append(self.sistema_spec())
             system += "\n\n" + mode_prompt(mode, repo is not None, free)
         if not task.is_long:  # sin nadie delante, un repo o una web podrían colarle recuerdos falsos (D20)
-            agent_kwargs["memoria_home"] = self.settings.home
+            agent_kwargs["internas"] = internas.construir(self, task, asker)
             system += "\n\n" + memoria.PROMPT
         if specs:
             async with ToolHub(specs, self.settings.logs_dir, only=visible_tools(mode)) as hub:
@@ -147,8 +148,8 @@ class Runtime:
 # Herramientas de todo el PC que cada modo puede usar. Las demás ni se le enseñan al modelo: el gate
 # las denegaría igual, y cada esquema de más son tokens y una opción más para equivocarse (sobre todo en local).
 SISTEMA_POR_MODO = {
-    "lectura": {"read_file", "list_dir"},
-    "editar": {"read_file", "list_dir", "write_file", "edit_file", "delete_file"},
+    "lectura": {"read_file", "list_dir", "buscar_archivo"},
+    "editar": {"read_file", "list_dir", "buscar_archivo", "write_file", "edit_file", "delete_file"},
 }
 
 
@@ -158,12 +159,16 @@ def visible_tools(mode: str) -> dict[str, set[str]]:
 
 def mode_prompt(mode: str, has_repo: bool, sin_preguntar: bool = False) -> str:
     m = MODOS[mode]
-    can = {"lectura": "leer archivos de todo el PC (sistema__read_file, sistema__list_dir)",
+    can = {"lectura": "leer archivos de todo el PC (sistema__read_file, sistema__list_dir) y encontrarlos al instante por "
+                       "su nombre (sistema__buscar_archivo)",
            "editar": "leer archivos de todo el PC y crear o editar archivos de la carpeta de usuario",
            "total": ("leer y editar archivos, ejecutar comandos de PowerShell (sistema__run_command) y abrir "
                      "programas o enlaces (sistema__abrir). Para instalar un juego de Steam usa "
-                     "sistema__instalar_steam con su AppID (nunca sistema__abrir con steam://install, que deja un diálogo "
-                     "pendiente): lo instala sin que el usuario pulse nada. Si no sabes el AppID, búscalo")}[mode]
+                     "sistema__instalar_steam con su AppID y para quitarlo sistema__desinstalar_steam (nunca sistema__abrir con "
+                     "steam://install o steam://uninstall, que dejan un diálogo pendiente): no hace falta que el usuario "
+                     "pulse nada. Si no sabes el AppID, búscalo. Para encontrar un archivo usa sistema__buscar_archivo. Para "
+                     "instalar o quitar programas usa winget con sistema__run_command (winget install|uninstall --id <id> "
+                     "--silent --accept-package-agreements --accept-source-agreements; busca el id con winget search)")}[mode]
     where = ("Las herramientas workspace__* siguen siendo para el repo; las sistema__* usan rutas absolutas de Windows."
              if has_repo else "Las herramientas sistema__* usan rutas absolutas de Windows.")
     rule = ("El usuario ha activado «Sin preguntar»: nada pide confirmación, así que actúa con cuidado y no hagas "

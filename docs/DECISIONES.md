@@ -290,3 +290,29 @@ funciona igual.
 - Ese mismo día: motor local por defecto Qwen3.8-27B GSQ-RCO IQ3_S con MTP a 64K y caché q4 (lo mínimo que pide
   Hermes; mismos aciertos y más rápido en la comparativa) y fuera del código el motor Strata y
   `razonamiento_por_tokens` (solo lo usaba Strata).
+
+## D21. Todo hablando, Control total sin preguntas de más e interfaz simplificada (2026-10-10)
+Pedido por Daniel: que lo que le pide a Claude lo pueda pedir igual a Skynet, sin comandos ni permisos molestos.
+- **Herramientas internas** (`skynet/internas.py`, como la memoria de D20): `crear_proyecto` (carpeta junto a
+  Skynet o en `[general] proyectos`, git, test mínimo y repo autorizado), `tarea_larga` (en **minutos**, sobre un
+  repo con verificador; sustituye a `/largo` y a su pestaña) y `ver_skill` (el modelo carga la skill que encaja;
+  `/skill` queda como atajo). Las dos primeras piden confirmación con el diálogo de siempre.
+- **Instrucciones:** `memoria/SKYNET.md` (las escribe Daniel, como un CLAUDE.md personal) va siempre en el
+  contexto; en Coder se añade el `AGENTS.md` o `CLAUDE.md` del repo (tope de 4.000 caracteres cada uno).
+- **PC:** `sistema.buscar_archivo` sobre un índice de nombres de `C:` (`skynet_tools/indice.py`, SQLite FTS5 con
+  trigramas en data/indice.db; con Program Files, sin Windows, ProgramData, AppData ni ruido de SDKs; ~1 M de
+  archivos en ~10 s, búsquedas de 1 ms; se rehace aparte si tiene más de 12 h). `sistema.desinstalar_steam`
+  (cierra Steam, quita manifiesto y carpeta dentro de su biblioteca, vuelve a abrirlo; nunca con un juego abierto).
+  Para programas, el prompt de Control total indica `winget`.
+- **Política (cara de cambiar):** en Control total ya no se pregunta por mirar las carpetas del sistema (antes, cualquier
+  comando que nombrara Program Files preguntaba, p. ej. al buscar Steam); se pregunta si el comando las **cambia**
+  (`_MODIFY_RE` en gate.py), además de administrador, borrar y secretos. En Control total también se escribe fuera de la
+  carpeta de usuario sin preguntar (salvo sistema y Skynet). `desinstalar_steam` es EXECUTE (reversible: se vuelve
+  a descargar). El diálogo de permisos muestra el comando entero (`comando_completo`).
+- **Sin modo automático de modelos:** fuera la opción «Automático», `/modelo auto` y las reglas de router.toml; el
+  modelo es el que eliges (local por defecto). Se mantiene «Auto» en el nivel de razonamiento.
+- **Interfaz:** barra lateral con Uso (antes Registro) y Estado (antes Diagnóstico); fuera Tareas, Tarea larga,
+  «Qué puede hacer» y el botón de acciones de arriba (Ctrl+K sigue). Pie de cada respuesta: tokens, tokens/s y estado,
+  con **Reintentar** si falla o queda a medias (evento `fin`; retoma la misma tarea). Cursores nuevos (flecha de
+  navegación; la de enlaces en azul de acento). Arreglado el salto de scroll en Configuración: al redibujar se
+  cerraba «Avanzado».

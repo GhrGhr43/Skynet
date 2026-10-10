@@ -61,8 +61,9 @@ class ScriptedLLM:
 
 
 def herramientas(call: dict[str, Any]) -> set[str]:
-    """Herramientas que vio el modelo en una llamada, sin la interna de memoria (va siempre en el chat, D20)."""
-    return {t["function"]["name"] for t in call.get("tools") or []} - {"memoria"}
+    """Herramientas que vio el modelo en una llamada, sin las internas de Skynet (van siempre en el chat: D20, D21)."""
+    return {t["function"]["name"] for t in call.get("tools") or []} - {"memoria", "crear_proyecto", "tarea_larga",
+                                                                       "ver_skill"}
 
 
 def coder(c):
@@ -96,12 +97,6 @@ privado = false
 coste_entrada_usd_mtok = 4.0
 coste_salida_usd_mtok = 20.0
 max_tokens = 16000
-
-[[reglas]]
-si = { reasoning = "alto" }
-usar = "gemini"
-motivo = "razonamiento alto: Gemini (gratis)"
-
 '''
 
 
@@ -112,8 +107,7 @@ def home(tmp_path: Path) -> Path:
     for f in ("skynet.toml", "permisos.toml", "router.toml"):
         shutil.copy(ROOT / "config" / f, h / "config" / f)
     router = (h / "config" / "router.toml").read_text(encoding="utf-8")
-    i = router.index("[[reglas]]\nsi = {}")  # antes de la regla por defecto, que siempre encaja
-    (h / "config" / "router.toml").write_text(router[:i] + PERFILES_PRUEBA + router[i:], encoding="utf-8")
+    (h / "config" / "router.toml").write_text(router.rstrip() + "\n" + PERFILES_PRUEBA, encoding="utf-8")
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "pytest.ini").write_text("[pytest]\ntestpaths = tests\n", encoding="utf-8")

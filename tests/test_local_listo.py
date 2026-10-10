@@ -171,7 +171,7 @@ async def test_agent_trims_context_with_small_window(make_rt, repo_path):
 # --- herramientas por modo -------------------------------------------------------
 def test_tools_visible_per_mode():
     assert visible_tools("repo") == {} and visible_tools("total") == {}
-    assert visible_tools("lectura") == {"sistema": {"read_file", "list_dir"}}
+    assert visible_tools("lectura") == {"sistema": {"read_file", "list_dir", "buscar_archivo"}}
     assert "run_command" not in visible_tools("editar")["sistema"]
 
 
@@ -184,7 +184,7 @@ async def test_toolhub_hides_tools(home):
     try:
         async with ToolHub([rt.sistema_spec()], only=visible_tools("lectura")) as hub:
             names = {t["function"]["name"] for t in hub.openai_tools()}
-            assert names == {"sistema__read_file", "sistema__list_dir"}
+            assert names == {"sistema__read_file", "sistema__list_dir", "sistema__buscar_archivo"}
             assert hub.resolve("sistema__run_command") is None
     finally:
         rt.store.close()

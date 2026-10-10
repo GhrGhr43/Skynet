@@ -8,12 +8,9 @@ import { QUALITY } from './scene/engine.js';
 const $ = (s, r = document) => r.querySelector(s);
 
 const TITLES = {
-  tareas: 'Tareas',
-  largo: 'Tarea larga',
-  registro: 'Registro y consumo',
+  registro: 'Uso',
   ajustes: 'Configuración',
-  diagnostico: 'Diagnóstico',
-  ayuda: 'Qué puede hacer Skynet',
+  diagnostico: 'Estado',
   aprendizaje: 'Lo que ha aprendido',
 };
 
@@ -22,7 +19,6 @@ const STATUS_TEXT = {
   hecha: 'hecha', fallida: 'fallida', pausada: 'pausada',
 };
 
-const AGENT_TEXT = { chat: 'conversación', skynet: 'programador', scheduler: 'tarea larga', 'agente-godot': 'agente-godot' };
 
 function ago(ts) {
   if (!ts) return '';
@@ -123,7 +119,7 @@ export class Panels {
     clearInterval(this.timer);
     if (name === 'ajustes') this.loadDevices();
     this.render();
-    if (name === 'tareas' || name === 'registro') this.timer = setInterval(() => this.render(true), 4000);
+    if (name === 'registro') this.timer = setInterval(() => this.render(true), 4000);
   }
 
   close() {
@@ -163,12 +159,9 @@ export class Panels {
     const body = this.body;
     if (!silent) body.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
     try {
-      if (name === 'tareas') await (this.detail ? this.renderTask(this.detail, silent) : this.renderTasks());
-      else if (name === 'largo') this.renderLong();
-      else if (name === 'registro') await this.renderLog(silent);
+      if (name === 'registro') await this.renderLog(silent);
       else if (name === 'ajustes') this.renderSettings();
       else if (name === 'diagnostico') this.renderDiag();
-      else if (name === 'ayuda') this.renderHelp();
       else if (name === 'aprendizaje') await this.renderLearn(silent);
     } catch (e) {
       if (!silent) body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
@@ -176,135 +169,16 @@ export class Panels {
     paintIcons(body);
   }
 
-  // Mantiene el scroll y el foco al refrescar en caliente.
+  // Mantiene el scroll, el foco y los <details> abiertos (p. ej. «Avanzado») al refrescar en caliente: si se
+  // cerraban, el panel encogía y el scroll saltaba arriba.
   paint(html) {
     const top = this.body.scrollTop;
     const active = document.activeElement && this.body.contains(document.activeElement) ? document.activeElement.id : null;
+    const open = [...this.body.querySelectorAll('details')].map((d) => d.open);
     this.body.innerHTML = html;
+    this.body.querySelectorAll('details').forEach((d, i) => { if (open[i]) d.open = true; });
     this.body.scrollTop = top;
     if (active) document.getElementById(active)?.focus();
-  }
-
-  // --- tareas -------------------------------------------------------------
-  async renderTasks() {
-    const tasks = await api.tareas(40);
-    if (this.current !== 'tareas' || this.detail) return;
-    const pend = this.app.snap?.pendiente;
-    let html = '<p class="lead">Todo lo que le has pedido queda guardado. Las tareas a medias se pueden continuar aunque hayas cerrado Skynet.</p>';
-    if (!tasks.length) html += '<div class="empty">Aún no hay tareas. Pídele algo a Skynet abajo.</div>';
-    for (const t of tasks) {
-      const isPend = pend && pend.id === t.id;
-      html += `<div class="card clickable ${isPend ? 'selected' : ''}" data-task="${t.id}">
-        <div class="card-row"><div class="grow card-title ellipsis">${esc(t.title)}</div>${pill(t.status, t.vivo)}</div>
-        <div class="card-sub">#${t.id} · ${esc(AGENT_TEXT[t.agent] || t.agent)}${t.repo ? ` · ${esc(t.repo)}` : ''}${t.larga ? ` · ${t.iters_done} iteraciones` : ''} · ${ago(t.updated_at)}${isPend ? ' · <b>la retoma «continuar»</b>' : ''}</div>
-      </div>`;
-    }
-    this.paint(html);
-    for (const c of this.body.querySelectorAll('[data-task]')) c.addEventListener('click', () => { this.detail = +c.dataset.task; this.render(); });
-  }
-
-  async renderTask(id, silent) {
-    const d = await api.tarea(id);
-    if (this.current !== 'tareas' || this.detail !== id) return;
-    const t = d.tarea;
-    const done = t.status === 'hecha' || t.status === 'fallida';
-    const busy = this.app.busy;
-    const c = d.consumo || {};
-    let html = `<button class="btn small" id="taskBack">${icon('chev')} Todas las tareas</button>
-      <div class="section-k">Tarea #${t.id}</div>
-      <div class="card">
-        <div class="card-row"><div class="grow card-title">${esc(t.title)}</div>${pill(t.status, t.vivo)}</div>
-        <div class="card-sub">${esc(AGENT_TEXT[t.agent] || t.agent)}${t.repo ? ` · repo ${esc(t.repo)}` : ''} · creada ${ago(t.created_at)}${t.max_hours ? ` · límite ${t.max_hours} h` : ''}</div>
-        ${t.goal !== t.title ? `<div class="card-text">${esc(t.goal)}</div>` : ''}
-        ${t.result_summary ? `<div class="section-k" style="margin:14px 0 6px">Resultado</div><div class="md" style="font-size:13px">${md(t.result_summary.slice(0, 1500))}</div>` : ''}
-        <div class="btn-row">
-          ${!done && !t.vivo ? `<button class="btn primary small" id="tContinue" ${busy ? 'disabled' : ''}>${icon('resume')} Continuar</button>` : ''}
-          ${done ? `<button class="btn small" id="tContinue" ${busy ? 'disabled' : ''}>${icon('resume')} Retomar igualmente</button>` : ''}
-          ${t.larga && !done ? `<button class="btn warn small" id="tStop">${icon('pause')} Parar</button>` : ''}
-          ${!done ? `<button class="btn danger small" id="tDrop">${icon('trash')} Descartar</button>` : ''}
-          <button class="btn small" id="tLog">${icon('log')} Ver su registro</button>
-        </div>
-      </div>
-      <div class="section-k">Consumo</div>
-      <div class="stats">
-        <div class="stat"><div class="stat-v">${fmt(c.llamadas)}</div><div class="stat-k">llamadas al modelo</div></div>
-        <div class="stat"><div class="stat-v">${eur(c.cost_eur)}</div><div class="stat-k">coste</div></div>
-        <div class="stat"><div class="stat-v">${fmt(c.tokens_in)}</div><div class="stat-k">tokens de entrada</div></div>
-        <div class="stat"><div class="stat-v">${fmt(c.tokens_out)}</div><div class="stat-k">tokens de salida</div></div>
-      </div>`;
-    if (d.pasos?.length) {
-      html += '<div class="section-k">Pasos</div><div class="evlist">';
-      for (const s of d.pasos.slice(-25).reverse()) {
-        const good = ['completado', 'ok', 'avance'].includes(s.status);
-        const bad = ['error', 'revertida', 'interrumpido', 'limite_turnos'].includes(s.status);
-        html += `<div class="ev"><span class="ev-t">${clock(s.started_at)}</span><span class="ev-i ${good ? 'ok' : bad ? 'bad' : ''}">${icon(good ? 'check' : bad ? 'x' : 'dot')}</span>
-          <div class="ev-main"><div class="ev-title">${s.n}. ${esc(s.kind)} · ${esc(s.status)}${s.commit_sha ? ` · <span class="mono">${esc(s.commit_sha.slice(0, 8))}</span>` : ''}</div>
-          ${s.output_summary ? `<div class="ev-meta">${esc(s.output_summary.slice(0, 220))}</div>` : ''}
-          ${s.verifier_result ? `<div class="ev-sub">${esc(s.verifier_result)}</div>` : ''}</div></div>`;
-      }
-      html += '</div>';
-    }
-    if (d.progreso) html += `<div class="section-k">PROGRESO.md del repo</div><div class="card progress-md"><div class="md">${md(d.progreso)}</div></div>`;
-    this.paint(html);
-    $('#taskBack').addEventListener('click', () => { this.detail = null; this.render(); });
-    $('#tContinue')?.addEventListener('click', () => { this.app.resumeTask(t.id); this.close(); });
-    $('#tStop')?.addEventListener('click', () => this.taskAction(t.id, 'parar'));
-    $('#tDrop')?.addEventListener('click', () => this.taskAction(t.id, 'descartar'));
-    $('#tLog').addEventListener('click', () => { this.logTask = t.id; this.open('registro'); });
-  }
-
-  async taskAction(id, action) {
-    try {
-      await api.accion(id, action);
-      this.app.toast(action === 'parar' ? `Parada pedida: la tarea ${id} se detiene al acabar la iteración en curso.` : `Tarea ${id} descartada.`);
-      this.render(true);
-      this.app.poll();
-    } catch (e) { this.app.toast(e.message, 'bad'); }
-  }
-
-  // --- tarea larga ----------------------------------------------------------
-  renderLong() {
-    const s = this.app.snap || {};
-    const repos = s.repos || [];
-    const maxH = s.limites?.max_horas || 8;
-    if (!repos.length) {
-      this.paint('<p class="lead">Para lanzar una tarea larga necesitas al menos un repo autorizado en <span class="mono">config/repos.toml</span>.</p>');
-      return;
-    }
-    const cur = s.repo || repos[0].nombre;
-    const opts = repos.map((r) => `<option value="${esc(r.nombre)}" ${r.nombre === cur ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('');
-    this.paint(`
-      <p class="lead">Skynet trabaja solo durante horas, en pasos pequeños que un verificador comprueba. Puedes cerrar esta ventana: sigue en segundo plano.</p>
-      <label class="field"><span class="field-k">Repo</span><select class="select" id="lRepo">${opts}</select></label>
-      <label class="field"><span class="field-k">Objetivo</span><textarea class="textarea" id="lGoal" placeholder="Ej.: haz que pasen todos los tests"></textarea></label>
-      <label class="field"><span class="field-k">Duración máxima</span>
-        <div class="range-row"><input type="range" id="lHours" min="0.5" max="${maxH}" step="0.5" value="1"><output id="lHoursV">1 h</output></div></label>
-      <div class="section-k">Qué va a pasar</div>
-      <ol class="steps-list" id="lExplain"></ol>
-      <div class="btn-row"><button class="btn primary" id="lGo">${icon('play')} Revisar y lanzar</button></div>
-      <p class="note">Antes de empezar te pedirá confirmación. Las acciones que necesiten permiso se deniegan solas durante la tarea, porque no estarás delante.</p>`);
-    const explain = () => {
-      const r = repos.find((x) => x.nombre === $('#lRepo').value) || repos[0];
-      const h = $('#lHours').value;
-      $('#lHoursV').textContent = `${String(h).replace('.', ',')} h`;
-      $('#lExplain').innerHTML = r.agente === 'agente-godot'
-        ? `<li>Lanza <b>agente-godot</b> (noche.ps1) sobre el juego de <b>${esc(r.nombre)}</b>.</li><li>Skynet lo vigila sin gastar modelo.</li><li>Se para al cumplir el plan o a las ${esc(h)} h.</li>`
-        : `<li>Guarda un punto de partida con git en <b>${esc(r.nombre)}</b>.</li>
-           <li>Cada iteración: el modelo local da un paso y el verificador <span class="mono">${esc(r.verificador || 'ninguno')}</span> lo comprueba.</li>
-           <li>Si avanza o no empeora, hace commit; si empeora, lo deshace y apunta el error.</li>
-           <li>Escribe el avance en <span class="mono">PROGRESO.md</span>. Para a las ${esc(String(h).replace('.', ','))} h, al cumplirse el objetivo, o si se atasca.</li>`;
-    };
-    $('#lRepo').addEventListener('change', explain);
-    $('#lHours').addEventListener('input', explain);
-    explain();
-    $('#lGo').addEventListener('click', async () => {
-      const objetivo = $('#lGoal').value.trim();
-      if (!objetivo) { $('#lGoal').focus(); this.app.toast('Escribe el objetivo de la tarea.'); return; }
-      try {
-        await api.largo({ repo: $('#lRepo').value, horas: +$('#lHours').value, objetivo });
-        this.close();
-      } catch (e) { this.app.toast(e.message, 'bad'); }
-    });
   }
 
   // --- registro -----------------------------------------------------------
@@ -414,13 +288,7 @@ export class Panels {
     }
 
     html += '<details class="adv"><summary>Avanzado</summary>';
-    html += '<div class="section-k" style="margin-top:12px">Cómo elige el modelo «Automático»</div><div class="card">';
-    (s.reglas || []).forEach((r, i) => {
-      const cond = Object.entries(r.si || {}).map(([k, v]) => `${k} = ${v}`).join(', ') || 'en cualquier otro caso';
-      html += `<div class="card-sub" style="margin-top:${i ? 8 : 0}px">${i + 1}. ${esc(r.motivo || cond)} → <b style="color:var(--fg)">${esc(r.usar)}</b></div>`;
-    });
-    html += '<div class="card-sub" style="margin-top:8px">Un modelo online solo se usa si lo has activado.</div></div>';
-    html += '<div class="section-k">Permisos</div><div class="card">';
+    html += '<div class="section-k" style="margin-top:12px">Permisos</div><div class="card">';
     html += modos.map((o) => `<div class="card-sub" style="margin-top:6px"><b style="color:var(--fg)">${esc(o.nombre)}:</b> ${esc(o.descripcion)}</div>`).join('');
     html += `<div class="card-sub" style="margin-top:8px">${esc(s.siempre || '')}</div>`;
     html += `<div class="card-sub" style="margin-top:8px">${esc(s.sin_preguntar_texto || '')}</div></div>`;
@@ -811,39 +679,4 @@ export class Panels {
     }
   }
 
-  renderHelp() {
-    const s = this.app.snap || {};
-    const caps = [
-      ['chat', 'Pídeselo con tus palabras', 'Escribe abajo lo que quieres, como a una persona. Con un repo elegido, Skynet lee, edita y prueba el código; sin repo, solo conversa.', 'Probar', () => this.app.fill(s.repo ? 'Explícame qué hace este repo y qué falta por hacer' : '¿Qué puedes hacer por mí?')],
-      ['shield', 'Te pregunta antes de lo arriesgado', 'Leer y editar dentro del repo es automático. Ejecutar comandos fuera de la lista blanca, acciones privilegiadas o borrar siempre te piden permiso en un diálogo.', null, null],
-      ['check', 'No se da la razón a sí mismo', 'Al terminar, un verificador objetivo (por ejemplo, los tests del repo) decide si la tarea queda hecha o fallida.', null, null],
-      ['resume', 'Continúa donde lo dejó', 'Si cierras Skynet, lo detienes o falla, la tarea queda pausada. Pulsa «Continuar» (o escribe «continúa») y la retoma.', 'Ver tareas', () => this.open('tareas')],
-      ['orbit', 'Trabaja solo durante horas', 'Las tareas largas avanzan en pasos verificados con commits y PROGRESO.md, con el modelo local. Cada una aparece como una luz en órbita alrededor de la nebulosa.', 'Lanzar una', () => this.open('largo')],
-      ['route', 'Elige el modelo por ti', 'Local (Qwen3.8-27B en tu PC, privado y gratis) con el bucle rápido de Skynet, o Hermes, un agente que aprende y recuerda, con el modelo local o uno en línea. Coder y las tareas largas van siempre con Skynet.', 'Modelos', () => this.open('ajustes')],
-      ['log', 'Todo queda registrado', 'Herramientas usadas, permisos, modelo, tokens y coste de cada tarea.', 'Ver registro', () => this.open('registro')],
-    ];
-    let html = '<p class="lead">La nebulosa del centro es Skynet: su color te dice qué está haciendo.</p>';
-    html += `<div class="card"><div class="shortcuts">
-      <span class="pill plain" style="color:#86a8ff">blanco azulado</span><span>en espera</span>
-      <span class="pill plain" style="color:#3a9dff">azul</span><span>pensando</span>
-      <span class="pill plain" style="color:#9b78ff">violeta</span><span>usando herramientas</span>
-      <span class="pill plain" style="color:#2fe3bd">turquesa</span><span>verificando</span>
-      <span class="pill plain" style="color:#ffa63d">ámbar</span><span>te necesita</span>
-      <span class="pill plain" style="color:#5bffaa">verde</span><span>hecho</span>
-      <span class="pill plain" style="color:#ff4558">rojo</span><span>algo falló</span>
-    </div></div>`;
-    caps.forEach(([ico, title, text, btn], i) => {
-      html += `<div class="card cap" style="margin-top:10px"><span class="cap-i">${icon(ico)}</span><div><div class="card-title">${esc(title)}</div><div class="card-text">${esc(text)}</div>${btn ? `<button class="btn small" data-cap="${i}">${esc(btn)}</button>` : ''}</div></div>`;
-    });
-    html += `<div class="section-k">Atajos</div><div class="card"><div class="shortcuts">
-      <span><kbd>Ctrl</kbd> <kbd>K</kbd></span><span>todas las acciones, buscando por nombre</span>
-      <span><kbd>/</kbd></span><span>escribir a Skynet</span>
-      <span><kbd>Esc</kbd></span><span>cerrar panel · detener lo que hace</span>
-      <span><kbd>S</kbd> <kbd>N</kbd> <kbd>T</kbd></span><span>sí, no o sí a toda la tarea en un permiso</span>
-    </div></div>
-    <div class="section-k">Comandos de texto (opcionales)</div>
-    <div class="card"><pre class="mono" style="margin:0;white-space:pre-wrap;color:var(--fg3)">${esc(s.ayuda || '')}</pre></div>`;
-    this.paint(html);
-    for (const b of this.body.querySelectorAll('[data-cap]')) b.addEventListener('click', () => caps[+b.dataset.cap][4]());
-  }
 }

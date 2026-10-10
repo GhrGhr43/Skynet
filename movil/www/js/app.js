@@ -42,7 +42,7 @@ const LEVEL_TEXT = {
   READ: ['Quiere leer', ''],
 };
 
-const WHERE = { auto: 'Automático', local: 'Local', hermes: 'Hermes', nube: 'Nube' };
+const WHERE = { local: 'Local', hermes: 'Hermes', nube: 'Nube' };
 const EFFORT = { auto: 'Auto', low: 'Rápido', medium: 'Equilibrado', high: 'Pensar más' };
 
 const fmtN = (n) => Number(n || 0).toLocaleString('es-ES');
@@ -115,7 +115,6 @@ export class App {
     $('#sideScrim').addEventListener('click', () => this.toggleSide(false));
     $('#sessionTitle').addEventListener('click', () => this.renameTitle());
     $('#meter').addEventListener('click', () => this.toggleMeter());
-    $('#paletteBtn').addEventListener('click', () => this.openPalette());
     for (const b of document.querySelectorAll('[data-panel]')) {
       b.addEventListener('click', () => this.panels.toggle(b.dataset.panel));
     }
@@ -224,7 +223,6 @@ export class App {
 
   // --- compositor: pestañas (repo, dónde piensa) y modelo/razonamiento/permisos debajo --------
   where(s) {
-    if (s.modelo === 'auto') return 'auto';
     const m = (s.modelos || []).find((x) => x.nombre === s.modelo);
     if (m && m.agente) return 'hermes';
     return m && !m.privado ? 'nube' : 'local';
@@ -236,7 +234,7 @@ export class App {
     tr.innerHTML = `${icon('repo')}<span class="tab-v">${esc(s.repo || 'Sin repo')}</span>${chev}`;
     tr.classList.toggle('off', !s.repo);
     const w = this.where(s);
-    const model = s.modelo === 'auto' ? `Auto · ${s.modelo_efectivo || 'local'}` : s.modelo;
+    const model = s.modelo;
     const bm = $('#btnModel');
     bm.innerHTML = `${icon(w === 'nube' ? 'cloud' : w === 'local' ? 'cpu' : 'route')}<span>${esc(model)}</span>${chev}`;
     bm.title = `Modelo: ${WHERE[w]}`;
@@ -352,11 +350,9 @@ export class App {
     const s = this.snap || {};
     const w = this.where(s);
     this.openMenu(anchor, [{ items: [
-      { value: 'auto', label: 'Automático', sub: 'Skynet elige según la tarea', ico: 'route', on: w === 'auto' },
-      { value: 'local', label: 'Local', sub: 'En tu PC: nada sale de él', ico: 'cpu', on: w !== 'auto' },
+      { value: 'local', label: 'Local', sub: 'En tu PC: nada sale de él', ico: 'cpu', on: true },
     ] }], (v) => {
       const ms = s.modelos || [];
-      if (v === 'auto') return this.ajustes({ modelo: 'auto' });
       if (v === 'local') return this.ajustes({ modelo: (ms.find((m) => m.privado && !m.agente) || { nombre: 'local' }).nombre });
       if (v === 'hermes') return this.ajustes({ modelo: (ms.find((m) => m.agente && m.privado) || { nombre: 'hermes' }).nombre });
       const cloud = ms.find((m) => !m.privado && m.activado && m.disponible) || ms.find((m) => !m.privado && m.activado) || ms.find((m) => !m.privado);
@@ -370,7 +366,6 @@ export class App {
     const item = (m) => ({ value: m.nombre, label: m.nombre, sub: m.litellm.split('/').slice(1).join('/') + (m.privado || m.activado ? '' : ' · pide confirmación'),
       ico: m.privado ? 'cpu' : 'cloud', on: s.modelo === m.nombre });
     this.openMenu(anchor, [
-      { items: [{ value: 'auto', label: 'Automático', sub: 'Skynet elige', ico: 'route', on: s.modelo === 'auto' }] },
       { title: 'Local', items: ms.filter((m) => m.privado).map(item) },
       { title: 'Nube', items: ms.filter((m) => !m.privado).map(item) },
     ], (v) => this.ajustes({ modelo: v }));
@@ -441,9 +436,6 @@ export class App {
     $('#build').title = b.carpeta || '';
     this.renderHero(s);
     this.engine?.setSatellites((s.largas_vivas || []).length);
-    const badge = document.querySelector('.rail-btn[data-panel="tareas"]');
-    badge.querySelector('.badge')?.remove();
-    if ((s.largas_vivas || []).length || s.pendiente) badge.insertAdjacentHTML('beforeend', '<span class="badge"></span>');
     this.renderSuggestions();
     this.setState();
     this.panels.onSnap(s);
@@ -595,6 +587,7 @@ export class App {
 
   addEvent(kind, d, live) {
     if (kind === 'usage') { if (live) this.liveUsage(d); return; }
+    if (kind === 'fin') { this.addFin(d, live); return; }
     const t = this.ensureTurn();
     if (kind === 'route') {
       const model = String(d.model || '').split('/').pop();
@@ -650,6 +643,28 @@ export class App {
     this.append(el);
     this.lastAnswer = el;
     if (live) this.engine?.pulse(0.8);
+  }
+
+  // Pie de cada respuesta: tokens, tokens por segundo y estado. Si falló o quedó a medias, «Reintentar»
+  // retoma la misma tarea (con lo que ya hizo) en vez de empezar otra.
+  addFin(d, live) {
+    const ans = this.lastAnswer;
+    if (!ans || ans.querySelector('.meta')) return;
+    const fallo = d.estado === 'fallida' || d.estado === 'pausada';
+    const label = { hecha: 'Hecha', fallida: 'Falló', pausada: 'A medias' }[d.estado] || d.estado;
+    const bits = [`${(+d.tokens || 0).toLocaleString('es-ES')} tokens`];
+    if (+d.tok_s > 0) bits.push(`${Math.round(+d.tok_s)} tok/s`);
+    bits.push(`<span class="${d.estado === 'hecha' ? 'ok' : fallo ? 'bad' : ''}">${esc(label)}</span>`);
+    ans.querySelector('.bubble').insertAdjacentHTML('beforeend', `<div class="meta">${bits.map((b) => `<span>${b}</span>`).join('')}${
+      fallo ? `<button class="btn small retry">${icon('resume')} Reintentar</button>` : ''}</div>`);
+    ans.querySelector('.retry')?.addEventListener('click', (e) => { e.currentTarget.disabled = true; this.resumeTask(d.tarea); });
+    const v = this.turn?.verify;
+    if (v && d.verificador !== null && d.verificador !== undefined) {
+      v.classList.remove('running');
+      v.classList.add(d.verificador ? 'ok' : 'bad');
+      v.querySelector('.act-i').innerHTML = icon(d.verificador ? 'check' : 'x');
+    }
+    if (live) this.flash(d.estado === 'hecha' ? 'exito' : fallo ? 'error' : 'reposo', fallo ? 2.2 : 2.4);
   }
 
   addInfo(text, live) {
@@ -733,7 +748,7 @@ export class App {
         <div class="ask-level">${esc(q.nivel)} · tarea ${esc(q.tarea)}</div>
         <h3 class="ask-title" id="askTitle">${esc(title)}</h3>
         <div class="card-sub">${esc(w.verb)} ${w.target ? `<b>${esc(w.target)}</b>` : ''}</div>
-        <div class="ask-tool">${esc(q.herramienta)}(${esc(q.args)})</div>
+        ${q.comando ? `<pre class="ask-cmd">${esc(q.comando)}</pre>` : `<div class="ask-tool">${esc(q.herramienta)}(${esc(q.args)})</div>`}
         <div class="ask-why">Motivo: ${esc(q.motivo || extra)}</div>
         <div class="ask-actions">
           <button class="btn danger" data-a="n">Denegar <kbd>N</kbd></button>
@@ -790,11 +805,9 @@ export class App {
           if (this.snap?.coder === false && !(await this.ajustes({ coder: true }))) return;
           this.fill('Revisa el estado del repo y dime qué falta o qué está roto');
         } });
-        items.push({ ico: 'orbit', text: 'Tarea larga…', run: () => this.panels.open('largo') });
       } else {
         items.push({ ico: 'repo', text: 'Elegir un repo para programar', run: () => this.panels.open('ajustes') });
       }
-      if (fresh) items.push({ ico: 'spark', text: '¿Qué puedes hacer?', run: () => this.panels.open('ayuda') });
     }
     const key = items.slice(0, 4).map((it) => it.text).join('|');
     if (key === this.sgKey) return;  // el sondeo periódico no debe re-animar los chips
@@ -819,15 +832,11 @@ export class App {
     g('Hablar', 'chat', 'Escribir a Skynet', () => this.input.focus(), '/');
     if (s.pendiente) g('Hablar', 'resume', `Continuar «${s.pendiente.title}»`, () => this.resumeTask(s.pendiente.id), `tarea ${s.pendiente.id}`);
     if (this.busy) g('Hablar', 'stop', 'Detener lo que está haciendo', () => this.stop(), 'Esc');
-    g('Tareas', 'tasks', 'Ver tareas', () => this.panels.open('tareas'));
-    g('Tareas', 'orbit', 'Lanzar una tarea larga', () => this.panels.open('largo'));
-    g('Tareas', 'log', 'Registro: herramientas, modelos, tokens y coste', () => this.panels.open('registro'));
+    g('Sistema', 'log', 'Uso: modelos, tokens y herramientas', () => this.panels.open('registro'));
     for (const r of s.repos || []) g('Repo', 'repo', `Trabajar en ${r.nombre}`, () => this.panels.setRepo(r.nombre), r.nombre === s.repo ? 'actual' : '');
     g('Repo', 'chat', 'Sin repo (solo conversación)', () => this.panels.setRepo(null));
-    g('Modelo', 'route', 'Modelo automático (router)', () => this.panels.setModel('auto'), s.modelo === 'auto' ? 'actual' : '');
     for (const m of s.modelos || []) g('Modelo', m.privado ? 'cpu' : 'cloud', `Usar ${m.nombre}`, () => this.panels.setModel(m.nombre), m.disponible ? (s.modelo === m.nombre ? 'actual' : '') : 'no disponible');
-    g('Sistema', 'pulse', 'Diagnóstico de la instalación', () => this.panels.open('diagnostico'));
-    g('Sistema', 'spark', 'Qué puede hacer Skynet', () => this.panels.open('ayuda'));
+    g('Sistema', 'pulse', 'Estado: comprobar la instalación', () => this.panels.open('diagnostico'));
     g('Sesiones', 'compose', 'Sesión nueva', () => this.newSession(), 'Ctrl ⇧ O');
     g('Sesiones', 'search', 'Buscar sesiones', () => { this.toggleSide(true); $('#sessionSearch').focus(); });
     g('Sesiones', 'edit', 'Renombrar esta sesión', () => this.renameTitle());

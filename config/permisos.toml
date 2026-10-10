@@ -27,11 +27,13 @@ nivel_por_defecto = "PRIVILEGED"
 "coding_agent.stop_task" = "PRIVILEGED"
 "sistema.read_file" = "READ"          # herramientas de todo el PC: solo con el modo del modelo
 "sistema.list_dir" = "READ"           # (Ajustes > Permisos o /permisos). Ver skynet/modos.py
+"sistema.buscar_archivo" = "READ"     # índice de nombres de archivo de todo C: (skynet_tools/indice.py)
 "sistema.write_file" = "WRITE"
 "sistema.edit_file" = "WRITE"
 "sistema.run_command" = "EXECUTE"
 "sistema.abrir" = "EXECUTE"
 "sistema.instalar_steam" = "EXECUTE"
+"sistema.desinstalar_steam" = "EXECUTE"    # reversible (se vuelve a descargar); sin diálogo en Control total
 "sistema.delete_file" = "DESTRUCTIVE"
 "skynet.aprobar" = "PRIVILEGED"        # /aprobar: activa una skill o fusiona la memoria propuesta
 

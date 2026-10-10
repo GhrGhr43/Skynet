@@ -1,6 +1,6 @@
 # Muestra qué motores de IA están encendidos, cuánta memoria usan y la VRAM ocupada.
 # Opcional: pararlos todos. Lanzar con motores.cmd (doble clic).
-$puertos = @{ 8090 = "Skynet (motor local)"; 8091 = "Comparador"; 1234 = "LM Studio (servidor)"; 20128 = "OmniRoute" }
+$puertos = @{ 8090 = "Skynet (motor local)"; 8642 = "Hermes (Docker)"; 1234 = "LM Studio (servidor)" }
 Write-Host "`n=== Motores de IA encendidos ===`n" -ForegroundColor Cyan
 $procs = Get-Process llama-server, lms, "LM Studio" -ErrorAction SilentlyContinue
 if ($procs) {

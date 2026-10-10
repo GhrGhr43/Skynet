@@ -38,7 +38,6 @@ export const api = {
   tareas: (n = 40) => request('GET', `/api/tareas?n=${n}`),
   tarea: (id) => request('GET', `/api/tareas/${id}`),
   accion: (id, accion, body = {}) => request('POST', `/api/tareas/${id}/${accion}`, body),
-  largo: (datos) => request('POST', '/api/largo', datos),
   log: (tarea, n = 150) => request('GET', `/api/log?n=${n}${tarea ? `&tarea=${tarea}` : ''}`),
   doctor: () => request('GET', '/api/doctor'),
   // Sesiones (historial de conversaciones, como en Claude/Codex).

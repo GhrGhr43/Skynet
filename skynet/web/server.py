@@ -39,7 +39,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .. import __version__, modos, modelos_locales, propuestas, skills
-from ..agent import summarize_args
+from ..agent import comando_completo, summarize_args
 from ..audit import describe_event
 from ..config import ConfigError, add_repo
 from ..coordinator import HELP, Coordinator
@@ -168,7 +168,7 @@ class WebUI:
     async def ask_permission(self, task_id: int, key: str, level: Level, args: dict[str, Any], reason: str) -> str:
         return await self._request({
             "clase": "permiso", "tarea": task_id, "herramienta": key, "nivel": level.name,
-            "args": summarize_args(args), "motivo": reason,
+            "args": summarize_args(args), "motivo": reason, "comando": comando_completo(args),
             "todas": level is not Level.DESTRUCTIVE and SIEMPRE_TAG not in reason,
         })
 
@@ -189,6 +189,14 @@ class WebCoordinator(Coordinator):
 
     ui: WebUI
     sesiones: Sesiones | None = None
+
+    def _fin(self, task: Task, status: str, out: Any, ver: Any) -> None:
+        # Pie de la respuesta: solo tokens, tokens por segundo y estado; «Reintentar» si falla o queda a medias.
+        self.ui.event("fin", {"tarea": task.id, "estado": status, "tokens": out.tokens_in + out.tokens_out,
+                              # En respuestas muy cortas casi todo es leer el prompt: los tok/s engañarían.
+                              "tok_s": round(out.tokens_out / out.segundos, 1)
+                              if out.segundos > 0 and out.tokens_out >= 50 else 0,
+                              "verificador": None if ver is None else ver.ok})
     sesion_id: int | None = None
 
     def _recent(self) -> str | None:
@@ -436,7 +444,7 @@ def snapshot(s: Session) -> dict[str, Any]:
         "version": __version__,
         "build": BUILD,
         "repo": c.repo_name,
-        "modelo": c.force_model or "auto",
+        "modelo": c.force_model or "local",
         "privado": c.private,
         "internet": c.internet and not internet_blocked(s),
         "internet_bloqueado": internet_blocked(s),
@@ -449,7 +457,6 @@ def snapshot(s: Session) -> dict[str, Any]:
                    "privacidad": r.privacidad, "existe": r.ruta.exists()} for r in rt.settings.repos.values()],
         "modelos": models_info(rt, engines),
         "motores": engines,
-        "reglas": rt.settings.rules,
         "presupuesto_eur": rt.settings.budget_eur,
         "mes": month,
         "pendiente": task_dict(pending) if pending else None,
@@ -847,9 +854,7 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             session.ui.info(f"{name}: {'sin preguntar (Control total de verdad)' if on else 'vuelve a preguntar lo delicado'}.")
         if "modelo" in b:
             m = b["modelo"]
-            if m in (None, "", "auto"):
-                c.force_model = None
-            elif m in rt.settings.models:
+            if m in rt.settings.models:
                 if not acc.nube_ok(m):
                     if not confirmed:
                         return cloud_confirm(m)
@@ -858,7 +863,7 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
                 c.force_model = m
             else:
                 return bad(f"Modelo desconocido: {m}")
-            session.ui.info(f"Modelo: {c.force_model or 'automático (router)'}")
+            session.ui.info(f"Modelo: {c.force_model}")
         if "privado" in b:
             c.private = bool(b["privado"])
             if c.private:
@@ -915,25 +920,6 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         else:
             return bad("Acción desconocida", 404)
         session.bus.publish("tareas", {})
-        return ok()
-
-    async def largo(request: Request) -> Response:
-        b = await body(request)
-        goal = str(b.get("objetivo") or "").strip()
-        try:
-            hours = float(str(b.get("horas")).replace(",", "."))
-        except ValueError:
-            return bad("Horas no válidas")
-        if not goal or not (0 < hours <= rt.settings.long.max_horas):
-            return bad(f"Indica un objetivo y entre 0 y {rt.settings.long.max_horas} horas")
-        repo = b.get("repo") or session.coord.repo_name
-        if repo not in rt.settings.repos:
-            return bad("Elige un repo autorizado")
-        if session.busy:
-            return bad(f"Skynet está trabajando en «{session.label}». Espera o pulsa Detener.", 409)
-        session.coord.repo_name = repo
-        session.bus.publish("usuario", {"texto": f"Tarea larga ({hours:g} h) en {repo}: {goal}"})
-        session.start(f"tarea larga: {goal[:50]}", lambda: session.coord._long([f"{hours:g}", *goal.split()]))
         return ok()
 
     async def log(request: Request) -> Response:
@@ -1177,7 +1163,6 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         Route("/api/tareas", tareas),
         Route("/api/tareas/{id:int}", tarea),
         Route("/api/tareas/{id:int}/{accion}", tarea_accion, methods=["POST"]),
-        Route("/api/largo", largo, methods=["POST"]),
         Route("/api/log", log),
         Route("/api/doctor", doctor),
         Mount("/static", FreshStaticFiles(directory=STATIC), name="static"),

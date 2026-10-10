@@ -115,7 +115,7 @@ async def test_mcp_tools_only_when_enabled_and_no_repo(make_rt):
     assert events[0]["tool"] == "internet.buscar" and events[0]["decision"] == "permitido"
     await c.handle("/internet off")
     await c.handle("hola")
-    assert not llm.calls[-1].get("tools")
+    assert not herramientas(llm.calls[-1])
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,4 @@
-# Model router: los agentes piden capacidades {privacy, coding, reasoning, cost};
-# las reglas eligen un perfil de modelo. Gana la primera regla que encaja.
+# Perfiles de modelo. El modelo lo eliges tú (no hay modo automático: D21); por defecto, local.
 # Dos cerebros (D19): el bucle de Skynet con el modelo local (por defecto) y Hermes Agent (motor "hermes"),
 # que es la única vía para usar modelos en línea. Coder y las tareas largas van siempre con el bucle de Skynet.
 
@@ -57,18 +56,3 @@ coste_salida_usd_mtok = 0
 max_tokens = 16000
 timeout_seg = 3600
 contexto_tokens = 128000
-
-[[reglas]]
-si = { privacy = "alta" }
-usar = "local"
-motivo = "privacidad alta: siempre local"
-
-[[reglas]]
-si = { cost = "bajo" }
-usar = "local"
-motivo = "tarea larga o barata: local"
-
-[[reglas]]
-si = {}
-usar = "local"
-motivo = "por defecto: local"
