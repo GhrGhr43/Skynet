@@ -1,6 +1,34 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-09 (conversación primero y Coder como interruptor; antes, rediseño web).
+Última actualización: 2026-10-10 (comparativa Skynet contra Hermes y motores locales).
+
+## Skynet contra Hermes y motores locales (2026-10-10)
+- Informe: docs/COMPARATIVA-HERMES.md. Herramienta: `herramientas/bench-hermes/` (Hermes entero en Docker).
+- Mismo modelo: calidad empatada en tareas de código; Skynet ~6-7 veces más rápido; Hermes gana en memoria
+  entre sesiones (Skynet no deja al modelo escribir memoria).
+- Motor elegido: Qwen3.8-27B GSQ-RCO IQ3_S (ISTA-DASLab, con MTP), 64K, caché q4: mismos aciertos y el más
+  rápido. Descargado en `.lmstudio/models/ISTA-DASLab/`. El 35B-A3B a 64K va a 31 tok/s.
+- Hermes instalado en `C:\Users\HACHO\.hermes` (fuera de AppData: la app de Claude virtualiza AppData) e
+  imagen `skynet-bench/hermes` en Docker. Strata y el 27B Q4_K_M borrados por Daniel.
+- OpenCode (3 tareas): 3/3, cerca de Skynet en las cortas y 5 veces más lento en planificador.
+- **Opción A hecha (D19):** cerebros `local` (bucle de Skynet), `hermes` y `hermes-nube`; Gemini, OmniRoute y
+  Anthropic fuera de la config (siguen como perfiles de prueba en tests/conftest.py). Motor `hermes` en Docker
+  (`skynet_tools/hermes_motor.py`, imagen `skynet/hermes`), selector de la web con Local / Hermes / Nube.
+  Tests con LLM guionizado; **falta probar en este PC** encender el motor hermes y chatear con él.
+- Ojo: Docker Desktop hay que abrirlo desde Windows, no desde la app de Claude (virtualiza AppData y rompe
+  su `engine.sock`).
+- **Memoria automática (D20):** herramienta interna `memoria` (guardar, reemplazar, quitar en memoria/USER.md
+  y MEMORY.md), sin preguntar, auditada, fuera de tareas largas. Probada con el modelo real: prueba de memoria
+  OK en 27 s (Hermes 144 s).
+- **Motor local por defecto:** GSQ-RCO IQ3_S con MTP, 64K, caché q4 (skynet.toml, modelos_locales y la
+  selección de Ajustes). Comprobado en este PC: arranca con n_ctx 65536 y MTP.
+- gpt-oss-20b probado y descartado: 3/10 y errores de formato harmony en llama-server (COMPARATIVA).
+- Strata fuera del código (motor, carpeta de modelos y `razonamiento_por_tokens`). `vendor\omniroute` enviado a
+  la Papelera (2,2 GB; Daniel la vacía). Queda `data\omniroute`.
+- Móvil: `movil/www` con el selector Local / Hermes / Nube y versión 0.4 en el manifiesto. **Falta compilar la
+  APK** donde estén las herramientas de Android y la clave de firma (no está en el repo).
+- Siguiente: probar en este PC el motor hermes de punta a punta (necesita Docker abierto), compilar la APK 0.4
+  y arreglar `tests/test_steam.py` (falla con «Edición» en Windows).
 
 ## Conversación primero y Coder aparte (2026-10-09, D17)
 - Daniel: el modo por defecto debe ser rápido y listo como OpenClaw; lo pesado, en interruptores como Internet.

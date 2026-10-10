@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import FakeUI, ScriptedLLM, tool_call
+from conftest import FakeUI, ScriptedLLM, tool_call, herramientas
 
 from skynet.audit import Audit
 from skynet.coordinator import Coordinator
@@ -168,7 +168,7 @@ async def test_sin_modo_el_chat_no_tiene_herramientas(make_rt):
     coord = Coordinator(rt, FakeUI())
     await coord.handle("/repo ninguno")
     await coord.handle("hola")
-    assert not llm.calls[0].get("tools")
+    assert not herramientas(llm.calls[0])
 
 
 # --- web ----------------------------------------------------------------------

@@ -1,0 +1,26 @@
+[
+  {
+    "agente": "hermes",
+    "motor": "27b-q4",
+    "tarea": "cli_json",
+    "ok": true,
+    "verificador": "8 passed in 0.13s",
+    "segundos": 533.5,
+    "tokens_prompt": 29585,
+    "tokens_salida": 15318,
+    "seg_prompt": 53.0,
+    "seg_generar": 302.6,
+    "estado": "exit_1",
+    "turnos": 430,
+    "herramientas": 48,
+    "error": "exit_1",
+    "respuesta": "Done with the code; here's where things stand.\n\n## Changes made (all verified on disk)\n\n**`informes/modelo.py`** — added `a_dict()` to `Resumen`:\n```python\ndef a_dict(self):\n    return {\n        'filas': self.filas,\n        'total': round(self.total, 2),\n        'por_categoria': {k: round(v, 2) for k, v in self.por_categoria.items()},\n    }\n```\n\n**`informes/cli.py`** — added `--formato` to the `resumen` subcommand with `choices=['texto', 'json']`, `default='texto'`. `texto` keeps the exact original output; `json` prints `json.dumps(r.a_dict(), ensure_ascii=False)`.\n\n**`tests/test_cli.py`** — kept `test_texto`, added:\n- `test_json` — asserts the object has exactly `filas`/`total`/`por_categoria`, `filas==3`, `total==34.75`, `por_categoria=={'comida':14.75,'ocio':20.0}`\n- `test_formato_inval",
+    "tokens_hermes": {
+      "input": 27875,
+      "output": 12571,
+      "total": 832932,
+      "cache_read": 792486,
+      "cache_write": 0
+    }
+  }
+]

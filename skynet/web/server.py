@@ -408,8 +408,9 @@ def models_info(rt: Runtime, engines: list[dict[str, Any]]) -> list[dict[str, An
     on = {e["nombre"]: e for e in engines}
     for name, m in rt.settings.models.items():
         free = (m.coste_entrada_usd_mtok or 0) == 0 and (m.coste_salida_usd_mtok or 0) == 0
-        if name in on:
-            ok, why = on[name]["encendido"], "" if on[name]["encendido"] else "motor apagado"
+        motor = m.motor or name  # hermes y hermes-nube comparten el motor «hermes»
+        if motor in on:
+            ok, why = on[motor]["encendido"], "" if on[motor]["encendido"] else "motor apagado"
         else:
             ok, why = (True, "") if name == "local" else rt.router._usable(m)
             if why.startswith("modelo en la nube sin activar"):  # se explica con «activado»
@@ -418,6 +419,7 @@ def models_info(rt: Runtime, engines: list[dict[str, Any]]) -> list[dict[str, An
         if ok and not nube_on:
             ok, why = False, "desactivado (modelo en la nube)"
         out.append({"nombre": name, "litellm": m.litellm, "privado": m.privado, "gratis": free,
+                    "agente": m.agente, "motor": motor,
                     "disponible": ok, "motivo": why, "activado": nube_on, "modo": rt.access.modo(name),
                     "sin_preguntar": rt.access.sin_preguntar(name),
                     "coste": [m.coste_entrada_usd_mtok, m.coste_salida_usd_mtok]})

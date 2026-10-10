@@ -1,7 +1,8 @@
-"""Modelos locales (GGUF de LM Studio y Strata): listarlos y elegir cuál usa el motor «local».
+"""Modelos locales (GGUF de la carpeta de LM Studio): listarlos y elegir cuál usa el motor «local».
 
 La elección se guarda en data/modelo_local.json y se aplica encima de [motores.local] de skynet.toml.
-Cada modelo lleva los ajustes del benchmark para una GPU de 16 GB: FA, KV q8_0, MTP en los densos
+Cada modelo lleva los ajustes del benchmark para una GPU de 16 GB: FA, KV q4_0 (a 64K rinde igual que q8_0 y
+cabe el IQ3_S con MTP; ver docs/COMPARATIVA-HERMES.md), MTP en los densos
 Qwen3.5+ (si el GGUF no lo trae, el motor reintenta sin él), expertos en RAM en los MoE y mmproj si hay visión.
 """
 from __future__ import annotations
@@ -13,9 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 HOME = Path(os.environ.get("USERPROFILE") or Path.home())
-CARPETAS = [HOME / ".lmstudio" / "models", Path(r"C:\Strata\Strata-data\models")]
+CARPETAS = [HOME / ".lmstudio" / "models"]
 NO_CHAT = ("embed", "mmproj", "mtp-", "reranker", "whisper")
-BASE = ["-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "-np", "1", "--no-webui"]
+BASE = ["-fa", "on", "-ctk", "q4_0", "-ctv", "q4_0", "-np", "1", "--no-webui"]
 
 
 @dataclass

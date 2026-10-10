@@ -354,7 +354,7 @@ export class Panels {
 
     html += '<div class="section-k">Modelos</div>';
     for (const m of s.modelos || []) {
-      const e = motores[m.nombre];
+      const e = motores[m.motor || m.nombre];
       const busy = !!e?.ocupado;
       const on = m.privado ? (e ? !!e.encendido : true) : !!(m.activado && (!e || e.encendido));
       let estado;
@@ -391,7 +391,7 @@ export class Panels {
     html += `<div class="card-sub" style="margin-top:8px">${esc(s.siempre || '')}</div>`;
     html += `<div class="card-sub" style="margin-top:8px">${esc(s.sin_preguntar_texto || '')}</div></div>`;
     html += `<div class="section-k">Modelo local</div><div class="card"><select class="select" id="localSel" aria-label="Modelo local" disabled><option>Buscando modelos…</option></select>
-      <div class="card-sub" id="localInfo" style="margin-top:8px">Los GGUF de LM Studio y Strata. Si el motor está encendido, se reinicia con el elegido.</div></div>`;
+      <div class="card-sub" id="localInfo" style="margin-top:8px">Los GGUF de la carpeta de modelos de LM Studio. Si el motor está encendido, se reinicia con el elegido.</div></div>`;
     const notif = 'Notification' in window ? Notification.permission : 'unsupported';
     html += `<div class="section-k">Interfaz</div><div class="card solo-pc"><div class="card-row">${icon('warn')}<div class="grow"><div class="card-title">Avisos de Windows</div>
       <div class="card-sub">${notif === 'granted' ? 'Activados.'
@@ -683,11 +683,11 @@ export class Panels {
   }
 
   // Un solo interruptor por modelo. En los online, encender activa el modelo (con confirmación) y
-  // arranca su motor si lo tiene (OmniRoute); apagar hace lo contrario.
+  // arranca su motor si lo tiene (Hermes); apagar hace lo contrario.
   async toggleModel(name, on) {
     const s = this.app.snap;
     const m = s.modelos.find((x) => x.nombre === name);
-    const e = (s.motores || []).find((x) => x.nombre === name);
+    const e = (s.motores || []).find((x) => x.nombre === (m.motor || name));
     try {
       if (m.privado) {
         if (e) this.app.applySnap(await api.motor(name, on));
@@ -793,7 +793,7 @@ export class Panels {
       ['check', 'No se da la razón a sí mismo', 'Al terminar, un verificador objetivo (por ejemplo, los tests del repo) decide si la tarea queda hecha o fallida.', null, null],
       ['resume', 'Continúa donde lo dejó', 'Si cierras Skynet, lo detienes o falla, la tarea queda pausada. Pulsa «Continuar» (o escribe «continúa») y la retoma.', 'Ver tareas', () => this.open('tareas')],
       ['orbit', 'Trabaja solo durante horas', 'Las tareas largas avanzan en pasos verificados con commits y PROGRESO.md, con el modelo local. Cada una aparece como una luz en órbita alrededor de la nebulosa.', 'Lanzar una', () => this.open('largo')],
-      ['route', 'Elige el modelo por ti', 'Local (Qwen3.8-27B en tu PC, privado y gratis), Gemini Flash (gratis) o Anthropic. El router decide según privacidad y coste, o lo eliges tú.', 'Modelos', () => this.open('ajustes')],
+      ['route', 'Elige el modelo por ti', 'Desde el móvil, el modelo local de tu PC (Qwen3.8-27B: privado y gratis). Hermes y los modelos en línea se eligen desde el PC.', 'Modelos', () => this.open('ajustes')],
       ['log', 'Todo queda registrado', 'Herramientas usadas, permisos, modelo, tokens y coste de cada tarea.', 'Ver registro', () => this.open('registro')],
     ];
     let html = '<p class="lead">La nebulosa del centro es Skynet: su color te dice qué está haciendo.</p>';

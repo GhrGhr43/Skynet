@@ -1,0 +1,19 @@
+[
+  {
+    "agente": "skynet",
+    "motor": "gsq-iq3s",
+    "tarea": "memoria",
+    "ok": true,
+    "verificador": "pruebas/ sí, tests/ no, docstring sí · 7 passed in 0.03s",
+    "segundos": 27.4,
+    "tokens_prompt": 2969,
+    "tokens_salida": 927,
+    "seg_prompt": 4.7,
+    "seg_generar": 15.6,
+    "estado": "completado",
+    "turnos": 3,
+    "herramientas": 3,
+    "error": null,
+    "respuesta": "Listo. Creé:\n\n- **`utilidades.py`** — función `calcular_mediana(numeros)` con docstring: ordena, devuelve el valor central (impar) o la media de los dos centrales (par), y lanza `ValueError` si la lista está vacía.\n- **`pruebas/test_utilidades.py`** — 6 tests (impar, par, un elemento, dos iguales, floats y lista vacía).\n\nVerificado con `python -m pytest -q`: **6 passed**."
+  }
+]

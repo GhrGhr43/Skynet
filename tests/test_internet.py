@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from conftest import FakeUI, ScriptedLLM, tool_call
+from conftest import FakeUI, ScriptedLLM, tool_call, herramientas
 from skynet.coordinator import Coordinator
 from skynet.gate import Decision, PermissionGate
 from skynet.store import PAUSADA
@@ -106,10 +106,10 @@ async def test_mcp_tools_only_when_enabled_and_no_repo(make_rt):
     c = Coordinator(rt, FakeUI())
     c.repo_name = None
     await c.handle("hola")
-    assert not llm.calls[0].get("tools")
+    assert not herramientas(llm.calls[0])
     await c.handle("/internet on")
     await c.handle("busca Steam")
-    assert {t["function"]["name"] for t in llm.calls[1]["tools"]} == {"internet__buscar", "internet__leer"}
+    assert herramientas(llm.calls[1]) == {"internet__buscar", "internet__leer"}
     assert "ERROR:" in llm.calls[2]["messages"][-2]["content"]
     events = rt.store.events(types=("tool",))
     assert events[0]["tool"] == "internet.buscar" and events[0]["decision"] == "permitido"
@@ -129,7 +129,7 @@ async def test_privacy_and_long_tasks_have_no_web(make_rt):
     await c.handle("/internet on")
     assert c.internet is False
     await c.handle("hola")
-    assert not llm.calls[0].get("tools")
+    assert not herramientas(llm.calls[0])
     task = rt.store.create_task("larga", "hola", agent="scheduler", max_hours=1,
                                 capabilities={"capacidades": {"internet": True}})
     await rt.agent_step(task, "larga")
@@ -144,5 +144,5 @@ async def test_resume_honors_switch_off(make_rt):
                                 capabilities={"capacidades": {"internet": True}})
     c = Coordinator(rt, FakeUI())
     await c.resume(None, task.id)
-    assert not llm.calls[0].get("tools")
+    assert not herramientas(llm.calls[0])
     assert rt.store.get_task(task.id).capabilities["capacidades"]["internet"] is False

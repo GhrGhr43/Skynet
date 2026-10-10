@@ -71,7 +71,7 @@ _SYSTEM_DEFAULTS = ["C:/Windows", "C:/Program Files", "C:/Program Files (x86)", 
 _SECRET_PARTS = ("/.ssh/", "/.gnupg/", "/.aws/", "/.azure/", "/.kube/", "/.docker/config.json", "/microsoft/credentials",
                  "/microsoft/protect", "/microsoft/vault", "login data", "/cookies", "/network/cookies", "web data",
                  "key4.db", "logins.json", "id_rsa", "id_ed25519", "password", "contraseña", "credentials",
-                 "/data/omniroute", ".kdbx", "wallet", "secrets")
+                 "/data/omniroute", "/.hermes-skynet/.env", "/data/hermes/api_key", ".kdbx", "wallet", "secrets")
 _SECRET_EXT = (".pem", ".pfx", ".p12", ".key", ".ppk")
 _ADMIN_RE = re.compile(
     r"\b(runas|sudo|gsudo|bcdedit|diskpart|takeown|icacls|netsh|reg\s+(add|delete|import)|sc(\.exe)?\s+(config|create|delete|stop)"

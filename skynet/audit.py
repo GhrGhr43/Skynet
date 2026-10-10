@@ -30,7 +30,7 @@ def describe_event(e: dict[str, Any]) -> str:
     """Una línea legible con lo esencial del detalle de un evento."""
     d = e.get("detail") or {}
     t = e["type"]
-    if t == "tool":
+    if t in ("tool", "memoria"):
         args = d.get("args_resumen") or ""
         res = d.get("resultado") or d.get("motivo") or ""
         args = args if len(args) <= 80 else args[:77] + "..."

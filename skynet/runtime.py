@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import memoria
 from .agent import Agent, AgentOutcome, EventFn, system_prompt_for
 from .audit import Audit
 from .config import RepoConfig, ServerSpec, Settings, load_settings
@@ -108,6 +109,12 @@ class Runtime:
                                             on_event=on_event)
         turns = max_turns or self.settings.agent.max_turnos
         caps = self.capabilities_for(task, repo)
+        if self.router.choose(caps).profile.agente:
+            # Agente externo (Hermes): trae sus herramientas, su prompt y sus permisos. Skynet solo le pasa la
+            # conversación; el gate y los modos de Skynet no se aplican (ver D19).
+            agent = Agent(self.router, None, None, audit, **agent_kwargs)
+            outcome = await agent.run("", context, caps, 1, history=history)
+            return StepRun(step, outcome)
         mode = self.mode_for(task, caps)
         internet = caps.internet is True and caps.privacy != "alta" and not task.is_long
         free = mode == "total" and self.access.sin_preguntar(self.router.choose(caps).profile.nombre)
@@ -124,6 +131,9 @@ class Runtime:
         if mode != "repo":
             specs.append(self.sistema_spec())
             system += "\n\n" + mode_prompt(mode, repo is not None, free)
+        if not task.is_long:  # sin nadie delante, un repo o una web podrían colarle recuerdos falsos (D20)
+            agent_kwargs["memoria_home"] = self.settings.home
+            system += "\n\n" + memoria.PROMPT
         if specs:
             async with ToolHub(specs, self.settings.logs_dir, only=visible_tools(mode)) as hub:
                 agent = Agent(self.router, gate, hub, audit, **agent_kwargs)

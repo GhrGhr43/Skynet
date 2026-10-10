@@ -254,3 +254,39 @@ funciona igual.
 - Si no empieza (p. ej. juego gratis sin licencia en la cuenta), borra el manifiesto y usa el plan B de
   antes: `steam://install` + Intro en el diálogo. Descartado steamcmd: pide usuario, contraseña y Steam Guard.
 - Sin probar aún en Windows real; tests con una biblioteca de Steam simulada.
+
+## D19. Dos cerebros: el bucle de Skynet y Hermes Agent (2026-10-10)
+- Tras la comparativa (docs/COMPARATIVA-HERMES.md): con el modelo local el bucle de Skynet empata en calidad y
+  es ~6-7 veces más rápido; Hermes aprende (memoria y skills) y trae herramientas que Skynet no tiene. Daniel
+  elige la opción A: Skynet sigue siendo el cerebro por defecto y Hermes un cerebro elegible.
+- **Hermes es la única vía a modelos en línea.** Fuera de la config Gemini, OmniRoute y Anthropic directo
+  (perfiles, regla de razonamiento alto y motor). Quedan `local` (igual que antes), `hermes` (Hermes con el modelo
+  local, privado) y `hermes-nube` (Hermes con el proveedor de [motores.hermes].env; no privado: se activa con
+  confirmación). Un solo Hermes con dos alias de modelo (`model_routes`): misma memoria y skills.
+- **Perfil `agente = true`:** Skynet le pasa la conversación (historial como turnos) sin herramientas, sin su
+  prompt y sin gate; Hermes usa las suyas. Coder y `/largo` van siempre con el bucle de Skynet (el router cae a
+  `local`). `motor` enlaza un perfil con su motor; `api_key_archivo` lee la clave que crea el motor.
+- **Motor `hermes`** (tipo proceso + nuevo campo `parar`; `{python}` en la config): `skynet_tools/hermes_motor.py`
+  arranca la imagen `skynet/hermes` (contenedor `skynet-hermes`, solo 127.0.0.1:8642) y mezcla en su config.yaml
+  solo nuestras claves (modelo, rutas, terminal, aprobaciones). Datos de Hermes en `%USERPROFILE%\.hermes-skynet`.
+- **Política (cara de cambiar):** por decisión de Daniel, Hermes ve toda su carpeta de usuario y C:\Git y ejecuta
+  sin preguntar dentro del contenedor. Se tapan con carpetas vacías AppData, .ssh, credenciales de nube y Docker,
+  .gnupg y los datos de Hermes (una web podría inyectarle órdenes de leerlos). Los permisos de Skynet (modos,
+  gate) no se aplican a lo que haga Hermes: la barrera es el contenedor.
+- **Cara de cambiar:** el campo `agente` del perfil (contrato con el router y la web) y la política de carpetas.
+  Barato: imagen, puerto y alias.
+
+## D20. Memoria que escribe el modelo, al estilo Hermes (2026-10-10)
+- La comparativa mostró que Skynet no recordaba nada entre sesiones (la memoria solo cambiaba con /aprobar tras
+  tareas verificadas largas). Ahora el modelo tiene la herramienta `memoria` (guardar, reemplazar, quitar) sobre
+  `memoria/USER.md` (preferencias) y `memoria/MEMORY.md` (entorno), que ya entran siempre en el contexto.
+- **Sin preguntar, como Hermes**; cada cambio queda en el registro (evento `memoria`). Tope de 2 KB por archivo
+  (al llenarse, el modelo debe fusionar o quitar), rechaza lo que parece un secreto y solo toca líneas «- texto»
+  (lo escrito a mano se conserva). No se ofrece en tareas largas (nadie delante: riesgo de recuerdos inyectados
+  por un repo o una web) ni a agentes externos. /propuestas y /aprobar siguen igual.
+- **Desviación de D2:** es una herramienta interna del Core, no un servidor MCP: escribe el estado del propio
+  Skynet (como propuestas.py) y un servidor MCP añadiría ~1 s de arranque a cada mensaje del chat.
+- **Cara de cambiar:** que escriba sin preguntar (política). Barato: tope, nombres de archivo y prompt.
+- Ese mismo día: motor local por defecto Qwen3.8-27B GSQ-RCO IQ3_S con MTP a 64K y caché q4 (lo mínimo que pide
+  Hermes; mismos aciertos y más rápido en la comparativa) y fuera del código el motor Strata y
+  `razonamiento_por_tokens` (solo lo usaba Strata).

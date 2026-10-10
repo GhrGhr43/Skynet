@@ -1,0 +1,71 @@
+[
+  {
+    "agente": "opencode",
+    "motor": "gsq-iq3s",
+    "tarea": "planificador",
+    "ok": true,
+    "verificador": "22 passed in 0.03s",
+    "segundos": 427.3,
+    "tokens_prompt": 19047,
+    "tokens_salida": 12472,
+    "seg_prompt": 34.7,
+    "seg_generar": 384.9,
+    "estado": "completado",
+    "turnos": 10,
+    "herramientas": 14,
+    "error": null,
+    "respuesta": "Listo. Cambios:\n\n- `planificador.py:7` — reescrito con Kahn + min-heap: determinista (empates alfabéticos), incluye dependencias implícitas, y si sobran tareas lanza `CicloError` con `ciclo` extraído siguiendo dependencias (normalizado para empezar por la tarea más pequeña, p. ej. `['a','b','a']`).\n- `tests/test_plan.py` — 16 tests: orden básico, implícitas, empates, determinismo, no-mutación, y ciclos (self, triple, con cola, determinismo, formato).\n\nVerificado: `pytest` pasa con 3 `PYTHONHASHSEED` distintos, y un fuzz de 2500 grafos aleatorios (DAGs vs orden topológico lexicográfico mínimo; con ciclos vs `CicloError` sin cuelgues).",
+    "eventos": {
+      "step_start": 10,
+      "tool_use": 14,
+      "step_finish": 10,
+      "text": 5
+    }
+  },
+  {
+    "agente": "opencode",
+    "motor": "gsq-iq3s",
+    "tarea": "proyecto",
+    "ok": true,
+    "verificador": "3 passed in 0.98s",
+    "segundos": 93.1,
+    "tokens_prompt": 1679,
+    "tokens_salida": 2793,
+    "seg_prompt": 3.8,
+    "seg_generar": 81.6,
+    "estado": "completado",
+    "turnos": 6,
+    "herramientas": 5,
+    "error": null,
+    "respuesta": "Listo. Creados `tareas.py` y `test_tareas.py`; los 6 tests pasan y el smoke test manual funciona.\n\n- `tareas.py`: argparse + SQLite stdlib; tabla `tareas(id, texto, hecha)`; ruta de BD vía `TAREAS_DB` (defecto `tareas.db`).\n- `test_tareas.py`: unittest que lanza la CLI por subprocess con `TAREAS_DB` temporal, cubriendo add (solo id), list, list --todas, done, done inexistente (stderr + exit 1) y el default `tareas.db`.\n\nEjecutar los tests: `python3 -m unittest -v test_tareas`",
+    "eventos": {
+      "step_start": 6,
+      "tool_use": 5,
+      "step_finish": 6,
+      "text": 1
+    }
+  },
+  {
+    "agente": "opencode",
+    "motor": "gsq-iq3s",
+    "tarea": "appids",
+    "ok": true,
+    "verificador": "4/4 AppID, 4 enlaces",
+    "segundos": 61.0,
+    "tokens_prompt": 11207,
+    "tokens_salida": 1246,
+    "seg_prompt": 18.8,
+    "seg_generar": 34.3,
+    "estado": "completado",
+    "turnos": 4,
+    "herramientas": 8,
+    "error": null,
+    "respuesta": "Listo. AppIDs verificados en las URLs de la tienda de Steam:\n\n| Juego | AppID |\n|---|---|\n| The Farmer Was Replaced | 2060160 |\n| Factorio | 427520 |\n| Stardew Valley | 413150 |\n| Hollow Knight | 367520 |\n\nCreados `appids.json` y `fuentes.md` en la raíz del repo.",
+    "eventos": {
+      "step_start": 4,
+      "tool_use": 8,
+      "step_finish": 4,
+      "text": 1
+    }
+  }
+]

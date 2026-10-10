@@ -1,0 +1,53 @@
+[
+  {
+    "agente": "skynet",
+    "motor": "27b-q4",
+    "tarea": "factura",
+    "ok": true,
+    "verificador": "5 passed in 0.02s",
+    "segundos": 33.7,
+    "tokens_prompt": 2655,
+    "tokens_salida": 1072,
+    "seg_prompt": 7.9,
+    "seg_generar": 19.3,
+    "estado": "completado",
+    "turnos": 4,
+    "herramientas": 7,
+    "error": null,
+    "respuesta": "Listo. Los tests pasan (2/2).\n\n**Causas y arreglo:**\n- `tienda/precios.py`: el descuento se restaba como un importe fijo (`precio - descuento_pct`), no como porcentaje → ahora `precio * (1 - descuento_pct / 100)`.\n- `tienda/impuestos.py`: `int(...)` truncaba los céntimos en vez de redondear → ahora `round(base * (1 + IVA), 2)`.\n\nLa interfaz pública (`total`, `aplicar_descuento`, `con_iva`) no cambió."
+  },
+  {
+    "agente": "skynet",
+    "motor": "27b-q4",
+    "tarea": "planificador",
+    "ok": true,
+    "verificador": "14 passed in 0.02s",
+    "segundos": 70.3,
+    "tokens_prompt": 1816,
+    "tokens_salida": 3359,
+    "seg_prompt": 5.4,
+    "seg_generar": 62.8,
+    "estado": "completado",
+    "turnos": 5,
+    "herramientas": 7,
+    "error": null,
+    "respuesta": "Hecho. Resumen:\n\n**`planificador.py`**\n- **No cuelga**: ahora, en cada vuelta, si ninguna tarea pendiente tiene todas sus dependencias hechas (`listas` vacío), se lanza `CicloError` en vez de buclar para siempre.\n- **Determinismo / alfabético**: se elige `min(listas)` entre las tareas listas (en vez de recorrer un `set`), así a igualdad gana la alfabética.\n- **Ciclo**: `_ciclo` reconstruye el ciclo dentro de las tareas bloqueadas siguiendo una dependencia pendiente por nodo (todos tienen grado de salida ≥1, por lo que siempre se llega a un repetido) y devuelve la lista empezando y terminando por la misma tarea (p. ej. `['a','b','a']`).\n\n**`tests/test_plan.py`**: añadí casos de dependencias no-clave, alfabético a igualdad, determinismo (50 llamadas), ciclo de dos (con comprobación del atrib"
+  },
+  {
+    "agente": "skynet",
+    "motor": "27b-q4",
+    "tarea": "appids",
+    "ok": true,
+    "verificador": "4/4 AppID, 4 enlaces",
+    "segundos": 72.1,
+    "tokens_prompt": 11876,
+    "tokens_salida": 1926,
+    "seg_prompt": 19.9,
+    "seg_generar": 32.0,
+    "estado": "completado",
+    "turnos": 14,
+    "herramientas": 19,
+    "error": null,
+    "respuesta": "Listo. Busqué cada juego en la tienda de Steam y verifiqué el AppID leyendo la propia página de cada uno:\n\n- **The Farmer Was Replaced** → `2060160` ([store](https://store.steampowered.com/app/2060160/The_Farmer_Was_Replaced/))\n- **Factorio** → `427520` ([store](https://store.steampowered.com/app/427520/Factorio/))\n- **Stardew Valley** → `413150` ([store](https://store.steampowered.com/app/413150/Stardew_Valley/))\n- **Hollow Knight** → `367520` ([store](https://store.steampowered.com/app/367520/Hollow_Knight/))\n\nArchivos creados:\n- `appids.json` con `{nombre: AppID}` (números), usando exactamente los nombres pedidos.\n- `fuentes.md` con el enlace de la tienda de Steam de cada juego.\n\nComprobación: cada URL aparece en los resultados de búsqueda y la leí directamente (el título de la página c"
+  }
+]

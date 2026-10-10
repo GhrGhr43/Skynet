@@ -42,7 +42,7 @@ const LEVEL_TEXT = {
   READ: ['Quiere leer', ''],
 };
 
-const WHERE = { auto: 'Automático', local: 'Local', nube: 'Nube' };
+const WHERE = { auto: 'Automático', local: 'Local', hermes: 'Hermes', nube: 'Nube' };
 const EFFORT = { auto: 'Auto', low: 'Rápido', medium: 'Equilibrado', high: 'Pensar más' };
 
 const fmtN = (n) => Number(n || 0).toLocaleString('es-ES');
@@ -226,6 +226,7 @@ export class App {
   where(s) {
     if (s.modelo === 'auto') return 'auto';
     const m = (s.modelos || []).find((x) => x.nombre === s.modelo);
+    if (m && m.agente) return 'hermes';
     return m && !m.privado ? 'nube' : 'local';
   }
 
@@ -352,12 +353,12 @@ export class App {
     const w = this.where(s);
     this.openMenu(anchor, [{ items: [
       { value: 'auto', label: 'Automático', sub: 'Skynet elige según la tarea', ico: 'route', on: w === 'auto' },
-      { value: 'local', label: 'Local', sub: 'En tu PC: nada sale de él', ico: 'cpu', on: w === 'local' },
-      { value: 'nube', label: 'Nube', sub: 'Gemini, OmniRoute, Anthropic… (pide confirmación)', ico: 'cloud', on: w === 'nube' },
+      { value: 'local', label: 'Local', sub: 'En tu PC: nada sale de él', ico: 'cpu', on: w !== 'auto' },
     ] }], (v) => {
       const ms = s.modelos || [];
       if (v === 'auto') return this.ajustes({ modelo: 'auto' });
-      if (v === 'local') return this.ajustes({ modelo: (ms.find((m) => m.privado) || { nombre: 'local' }).nombre });
+      if (v === 'local') return this.ajustes({ modelo: (ms.find((m) => m.privado && !m.agente) || { nombre: 'local' }).nombre });
+      if (v === 'hermes') return this.ajustes({ modelo: (ms.find((m) => m.agente && m.privado) || { nombre: 'hermes' }).nombre });
       const cloud = ms.find((m) => !m.privado && m.activado && m.disponible) || ms.find((m) => !m.privado && m.activado) || ms.find((m) => !m.privado);
       if (cloud) this.ajustes({ modelo: cloud.nombre });
     });
@@ -425,6 +426,8 @@ export class App {
 
   applySnap(s) {
     if (!s) return;
+    // En el móvil solo el modelo local (para simplificar): ni Hermes ni modelos en línea.
+    if (s.modelos) s.modelos = s.modelos.filter((m) => m.privado && !m.agente);
     this.snap = s;
     this.setBusy(!!s.ocupado);
     this.renderComposer(s);

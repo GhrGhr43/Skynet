@@ -1,8 +1,8 @@
 // Controlador de la interfaz: conversación, estados, diálogos, paleta y avisos.
 // Los paneles (tareas, registro, ajustes...) viven en panels.js.
-import { api, connect } from './api.js?v=version-20261009b';
+import { api, connect } from './api.js?v=version-20261010a';
 import { md, esc } from './md.js';
-import { icon, paintIcons } from './icons.js?v=version-20261009b';
+import { icon, paintIcons } from './icons.js?v=version-20261010a';
 import { STATES } from './scene/engine.js';
 import { Panels } from './panels.js';
 
@@ -42,7 +42,7 @@ const LEVEL_TEXT = {
   READ: ['Quiere leer', ''],
 };
 
-const WHERE = { auto: 'Automático', local: 'Local', nube: 'Nube' };
+const WHERE = { auto: 'Automático', local: 'Local', hermes: 'Hermes', nube: 'Nube' };
 const EFFORT = { auto: 'Auto', low: 'Rápido', medium: 'Equilibrado', high: 'Pensar más' };
 
 const fmtN = (n) => Number(n || 0).toLocaleString('es-ES');
@@ -226,6 +226,7 @@ export class App {
   where(s) {
     if (s.modelo === 'auto') return 'auto';
     const m = (s.modelos || []).find((x) => x.nombre === s.modelo);
+    if (m && m.agente) return 'hermes';
     return m && !m.privado ? 'nube' : 'local';
   }
 
@@ -353,11 +354,13 @@ export class App {
     this.openMenu(anchor, [{ items: [
       { value: 'auto', label: 'Automático', sub: 'Skynet elige según la tarea', ico: 'route', on: w === 'auto' },
       { value: 'local', label: 'Local', sub: 'En tu PC: nada sale de él', ico: 'cpu', on: w === 'local' },
-      { value: 'nube', label: 'Nube', sub: 'Gemini, OmniRoute, Anthropic… (pide confirmación)', ico: 'cloud', on: w === 'nube' },
+      { value: 'hermes', label: 'Hermes', sub: 'Agente que aprende (memoria y skills) con el modelo local; más lento', ico: 'route', on: w === 'hermes' },
+      { value: 'nube', label: 'Nube', sub: 'Hermes con un modelo en línea (pide confirmación)', ico: 'cloud', on: w === 'nube' },
     ] }], (v) => {
       const ms = s.modelos || [];
       if (v === 'auto') return this.ajustes({ modelo: 'auto' });
-      if (v === 'local') return this.ajustes({ modelo: (ms.find((m) => m.privado) || { nombre: 'local' }).nombre });
+      if (v === 'local') return this.ajustes({ modelo: (ms.find((m) => m.privado && !m.agente) || { nombre: 'local' }).nombre });
+      if (v === 'hermes') return this.ajustes({ modelo: (ms.find((m) => m.agente && m.privado) || { nombre: 'hermes' }).nombre });
       const cloud = ms.find((m) => !m.privado && m.activado && m.disponible) || ms.find((m) => !m.privado && m.activado) || ms.find((m) => !m.privado);
       if (cloud) this.ajustes({ modelo: cloud.nombre });
     });

@@ -43,7 +43,7 @@ def test_vdf_and_libraries(tmp_path):
     steam, other = _steam(tmp_path)
     assert libraries(steam) == [steam / "steamapps", other / "steamapps"]
     f = write_manifest(steam / "steamapps", 1942280, "Brotato: «Edición» ™")
-    st = parse_vdf(f.read_text())["AppState"]
+    st = parse_vdf(f.read_text(encoding="utf-8"))["AppState"]  # Steam usa UTF-8; sin esto Windows lee en cp1252
     assert st["appid"] == "1942280" and st["StateFlags"] == str(PENDIENTE) and st["installdir"] == "Brotato «Edición»"
     assert state(steam, 1942280)[0] == f
 

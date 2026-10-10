@@ -45,7 +45,6 @@ class ModelProfile:
     max_tokens: int = 8192
     timeout_seg: float = 600
     reasoning_effort: str | None = None  # low | medium | high (si el modelo lo admite)
-    razonamiento_por_tokens: bool = False  # Strata: el nivel se manda como reasoning_budget_tokens
     contexto_tokens: int = 0  # ventana del modelo; 0 = la del motor de skynet.toml con el mismo nombre o 128K
     # Muestreo (None = lo del servidor). Para los locales importa: llama-server usa temperatura 0.8 por defecto.
     temperatura: float | None = None
@@ -53,10 +52,19 @@ class ModelProfile:
     top_k: int | None = None
     min_p: float | None = None
     presence_penalty: float | None = None
+    # Perfil que es un agente entero (Hermes): Skynet le pasa la conversación y él usa sus propias herramientas.
+    agente: bool = False
+    motor: str | None = None            # motor de skynet.toml que lo sirve (por defecto, el del mismo nombre)
+    api_key_archivo: str | None = None  # clave leída de un archivo (la genera el motor al arrancar)
 
     def resolved_api_key(self) -> str | None:
         if self.api_key_env:
             return os.environ.get(self.api_key_env) or None
+        if self.api_key_archivo:
+            try:
+                return Path(self.api_key_archivo).read_text(encoding="utf-8").strip() or None
+            except OSError:
+                return None  # el motor aún no ha arrancado nunca
         return self.api_key
 
     def available(self) -> tuple[bool, str]:
@@ -191,6 +199,8 @@ def load_settings(home: Path | str | None = None) -> Settings:
     models = {}
     for nombre, m in router.get("modelos", {}).items():
         models[nombre] = ModelProfile(nombre=nombre, **m)
+        if models[nombre].api_key_archivo:
+            models[nombre].api_key_archivo = str(_resolve(home, models[nombre].api_key_archivo))
     if "local" not in models:
         raise ConfigError("router.toml debe definir [modelos.local] (el modelo de reserva)")
     for nombre, prof in models.items():

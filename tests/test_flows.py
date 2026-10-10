@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from conftest import ORIGINAL_MOD, FakeUI, ScriptedLLM, coder, tool_call
+from conftest import ORIGINAL_MOD, FakeUI, ScriptedLLM, coder, tool_call, herramientas
 
 from skynet import gitops
 from skynet.coordinator import Coordinator
@@ -113,7 +113,7 @@ async def test_chat_without_repo_uses_local_model(make_rt, monkeypatch):
     await coord.handle("/repo ninguno")
     await coord.handle("hola")
     assert llm.calls[0]["model"] == "openai/local"
-    assert "tools" not in llm.calls[0]
+    assert not herramientas(llm.calls[0])
     assert ui.answers_given == ["¡Hola, Daniel!"]
 
 

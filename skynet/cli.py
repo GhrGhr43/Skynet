@@ -179,7 +179,7 @@ def doctor_checks(rt: Runtime) -> list[dict[str, Any]]:
         out.append({"nombre": f"modelo {name}", "estado": "ok" if avail else "off",
                     "detalle": f"{m.litellm} · {why or 'clave presente'} · presupuesto {s.budget_eur} €/mes"})
     for name, e in s.engines.items():
-        # motores opcionales (p. ej. OmniRoute): apagado no es un fallo
+        # motores opcionales (p. ej. Hermes): apagado no es un fallo
         if e.get("tipo") == "proceso" and e.get("salud"):
             try:
                 with urllib.request.urlopen(e["salud"], timeout=5) as r:

@@ -60,10 +60,49 @@ class ScriptedLLM:
         return make_response(content, calls)
 
 
+def herramientas(call: dict[str, Any]) -> set[str]:
+    """Herramientas que vio el modelo en una llamada, sin la interna de memoria (va siempre en el chat, D20)."""
+    return {t["function"]["name"] for t in call.get("tools") or []} - {"memoria"}
+
+
 def coder(c):
     """Coordinator con el modo Coder activado (el repo elegido entra en las tareas)."""
     c.coder = True
     return c
+
+
+# Perfiles de prueba en la nube: la config real solo trae local y Hermes (D19), pero el router, el presupuesto y
+# la activación de modelos en línea son genéricos y se siguen probando con estos.
+PERFILES_PRUEBA = '''
+[modelos.gemini]
+litellm = "gemini/gemini-flash-latest"
+api_key_env = "GEMINI_API_KEY"
+privado = false
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+
+[modelos.omniroute]
+litellm = "openai/skynet"
+api_base = "http://127.0.0.1:20128/v1"
+api_key = "omniroute"
+privado = false
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+
+[modelos.cloud]
+litellm = "anthropic/claude-opus-5-5"
+api_key_env = "ANTHROPIC_API_KEY"
+privado = false
+coste_entrada_usd_mtok = 4.0
+coste_salida_usd_mtok = 20.0
+max_tokens = 16000
+
+[[reglas]]
+si = { reasoning = "alto" }
+usar = "gemini"
+motivo = "razonamiento alto: Gemini (gratis)"
+
+'''
 
 
 @pytest.fixture
@@ -72,6 +111,9 @@ def home(tmp_path: Path) -> Path:
     (h / "config").mkdir(parents=True)
     for f in ("skynet.toml", "permisos.toml", "router.toml"):
         shutil.copy(ROOT / "config" / f, h / "config" / f)
+    router = (h / "config" / "router.toml").read_text(encoding="utf-8")
+    i = router.index("[[reglas]]\nsi = {}")  # antes de la regla por defecto, que siempre encaja
+    (h / "config" / "router.toml").write_text(router[:i] + PERFILES_PRUEBA + router[i:], encoding="utf-8")
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "pytest.ini").write_text("[pytest]\ntestpaths = tests\n", encoding="utf-8")

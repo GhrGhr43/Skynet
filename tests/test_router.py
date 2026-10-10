@@ -92,10 +92,6 @@ async def test_reasoning_level_is_sent(router):
     r._completion = llm
     await r.complete(r.choose(Capabilities()), [{"role": "user", "content": "x"}], None, Audit(store), effort="high")
     assert llm.calls[0]["reasoning_effort"] == "high"
-    # perfiles con razonamiento por tokens (p. ej. Strata) mandan un presupuesto en vez del nivel
-    tokens = dataclasses.replace(s.models["local"], razonamiento_por_tokens=True)
-    await r.complete(RouteDecision(tokens, "x"), [{"role": "user", "content": "x"}], None, Audit(store), effort="low")
-    assert llm.calls[1]["extra_body"]["reasoning_budget_tokens"] == 1024 and "reasoning_effort" not in llm.calls[1]
 
 
 async def test_sampling_and_max_tokens_are_sent(router):

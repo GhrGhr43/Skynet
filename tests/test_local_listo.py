@@ -5,7 +5,7 @@ import dataclasses
 import json
 from types import SimpleNamespace
 
-from conftest import FakeUI, ScriptedLLM, coder, make_response, tool_call
+from conftest import FakeUI, ScriptedLLM, coder, make_response, tool_call, herramientas
 
 from skynet.coordinator import Coordinator
 from skynet.llamadas import calls_in_text, parse_args
@@ -207,7 +207,7 @@ async def test_hola_is_a_conversation_not_a_repo_task(make_rt, home):
     assert c.repo_name == "prueba" and not c.coder        # hay repo elegido, pero Coder apagado
     await c.handle("hola")
     call = sent[0]
-    assert "tools" not in call                            # sin herramientas ni servidores MCP
+    assert not herramientas(call)                         # sin herramientas ni MCP (solo memoria)
     assert call["messages"][-1] == {"role": "user", "content": "hola"}   # el mensaje tal cual
     assert "PROGRESO" not in json.dumps(call["messages"]) and "git status" not in json.dumps(call["messages"])
     assert "respuestas cortas" in call["messages"][0]["content"]          # la memoria va al system

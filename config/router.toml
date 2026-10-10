@@ -1,13 +1,15 @@
 # Model router: los agentes piden capacidades {privacy, coding, reasoning, cost};
 # las reglas eligen un perfil de modelo. Gana la primera regla que encaja.
+# Dos cerebros (D19): el bucle de Skynet con el modelo local (por defecto) y Hermes Agent (motor "hermes"),
+# que es la única vía para usar modelos en línea. Coder y las tareas largas van siempre con el bucle de Skynet.
 
 moneda_usd_eur = 0.86      # para convertir el coste que da LiteLLM (USD) a euros
 
 [presupuesto]
-mensual_eur = 0            # 0 = cloud desactivado. Ponlo > 0 cuando tengas la clave.
+mensual_eur = 0            # solo cuenta modelos de pago con precio aquí; los de Hermes los paga Hermes
 
 [modelos.local]
-# Modelo local por defecto: Qwen3.6-35B-A3B UD-Q4_K_M en llama-server (motor "local" de skynet.toml); se cambia en Ajustes.
+# Modelo local: el que elijas en Ajustes (motor "local" de skynet.toml, llama-server).
 litellm = "openai/local"
 api_base = "http://127.0.0.1:8090/v1"
 api_key = "local"
@@ -25,40 +27,36 @@ top_k = 20
 min_p = 0.0
 # contexto_tokens = 32768  # sin poner = el "contexto" de [motores.local] en skynet.toml
 
-[modelos.gemini]
-# Gratis (plan gratuito de Google AI Studio). Clave en la variable de entorno GEMINI_API_KEY.
-# Ojo: en el plan gratuito Google puede usar los datos; los repos privados van siempre al local.
-litellm = "gemini/gemini-flash-latest"
-api_key_env = "GEMINI_API_KEY"
+[modelos.hermes]
+# Hermes Agent con el modelo local (alias "local" de Hermes = el llama-server de arriba): privado.
+# Hermes usa sus propias herramientas, memoria y skills; Skynet solo le pasa la conversación.
+# Necesita encendidos los motores "local" y "hermes" (Ajustes).
+litellm = "openai/local"
+api_base = "http://127.0.0.1:8642/v1"
+api_key_archivo = "data/hermes/api_key"   # la crea el motor "hermes" al arrancar
+agente = true
+privado = true
+coste_entrada_usd_mtok = 0
+coste_salida_usd_mtok = 0
+max_tokens = 16000
+timeout_seg = 3600         # una tarea de Hermes puede durar muchos minutos
+contexto_tokens = 128000   # Hermes gestiona su propio contexto
+
+[modelos.hermes-nube]
+# Hermes con un modelo en línea (alias "nube"): proveedor y modelo en [motores.hermes].env de skynet.toml y
+# la clave del proveedor en el .env de Hermes (C:\Users\HACHO\.hermes-skynet\.env). NO privado: se activa
+# con confirmación, como cualquier modelo en línea. El gasto lo cobra el proveedor; Skynet no lo cuenta.
+litellm = "openai/nube"
+api_base = "http://127.0.0.1:8642/v1"
+api_key_archivo = "data/hermes/api_key"
+agente = true
+motor = "hermes"
 privado = false
 coste_entrada_usd_mtok = 0
 coste_salida_usd_mtok = 0
 max_tokens = 16000
-timeout_seg = 600
-
-[modelos.omniroute]
-# OmniRoute (motor "omniroute" de skynet.toml): un endpoint para varios proveedores cloud. NO privado:
-# el router nunca le manda tareas con privacidad alta. Solo se usa si lo eliges en Ajustes. Coste 0
-# porque solo lleva proveedores gratis; si le añades claves de pago, el gasto no se contabiliza aquí.
-# Combo "skynet" de OmniRoute: solo los proveedores que apruebe Daniel. No se usa "auto" porque
-# trae precableado OpenCode Free (sus términos solo permiten usarlo desde OpenCode).
-litellm = "openai/skynet"
-api_base = "http://127.0.0.1:20128/v1"
-api_key = "omniroute"
-privado = false
-coste_entrada_usd_mtok = 0
-coste_salida_usd_mtok = 0
-max_tokens = 8192
-timeout_seg = 600
-
-[modelos.cloud]
-litellm = "anthropic/claude-opus-5-5"
-api_key_env = "ANTHROPIC_API_KEY"
-privado = false
-coste_entrada_usd_mtok = 4.0
-coste_salida_usd_mtok = 20.0
-max_tokens = 16000
-timeout_seg = 600
+timeout_seg = 3600
+contexto_tokens = 128000
 
 [[reglas]]
 si = { privacy = "alta" }
@@ -69,11 +67,6 @@ motivo = "privacidad alta: siempre local"
 si = { cost = "bajo" }
 usar = "local"
 motivo = "tarea larga o barata: local"
-
-[[reglas]]
-si = { reasoning = "alto" }
-usar = "gemini"
-motivo = "razonamiento alto: Gemini (gratis)"
 
 [[reglas]]
 si = {}

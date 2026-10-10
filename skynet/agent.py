@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
+from . import memoria
 from .audit import Audit
 from .config import RepoConfig
 from .gate import PermissionGate
@@ -84,6 +86,7 @@ class Agent:
         audit: Audit,
         max_tool_output: int = 6000,
         on_event: EventFn | None = None,
+        memoria_home: Path | None = None,
     ):
         self.router = router
         self.gate = gate
@@ -91,6 +94,7 @@ class Agent:
         self.audit = audit
         self.max_tool_output = max_tool_output
         self.on_event = on_event or (lambda kind, data: None)
+        self.memoria_home = memoria_home  # con valor, el modelo tiene la herramienta interna `memoria` (D20)
 
     def _clip(self, text: str) -> str:
         n = self.max_tool_output
@@ -111,11 +115,14 @@ class Agent:
                        detail={"motivo": decision.reason, "capacidades": caps.to_dict()})
         self.on_event("route", {"model": decision.profile.litellm, "reason": decision.reason})
 
-        messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
+        # Sin system: un agente externo usa el suyo (Skynet no le mezcla el propio).
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system}] if system else []
         for q, a in history or []:  # la conversación de verdad, como turnos (no un resumen dentro del mensaje)
             messages += [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
         messages.append({"role": "user", "content": user_content})
         tools = self.hub.openai_tools() if self.hub else None
+        if self.memoria_home is not None:
+            tools = (tools or []) + [memoria.ESQUEMA]
         known = {t["function"]["name"] for t in tools or []}
         p = decision.profile
         ventana = Ventana(p.contexto_tokens, p.max_tokens)
@@ -184,6 +191,16 @@ class Agent:
             self.audit.log("tool", tool=name, decision="error", detail={"motivo": f"argumentos inválidos: {e}"})
             return f"ERROR: argumentos JSON inválidos ({e}). Repite la llamada con JSON válido."
 
+        if name == memoria.NOMBRE and self.memoria_home is not None:
+            # Interna y sin gate, como en Hermes: solo toca memoria/ de Skynet y queda en el registro.
+            out.tool_calls += 1
+            self.on_event("tool", {"key": "skynet.memoria", "args": summarize_args(args)})
+            cambio, text = memoria.aplicar(self.memoria_home, args)
+            self.audit.log("memoria", tool="skynet.memoria", decision="cambiada" if cambio else "sin_cambios",
+                           detail={"args_resumen": summarize_args(args), "resultado": text[:150]})
+            self.on_event("tool_result", {"key": "skynet.memoria", "ok": not text.startswith("ERROR"),
+                                          "first_line": text.splitlines()[0][:150]})
+            return text
         spec = self.hub.resolve(name) if self.hub else None
         if spec is None or self.gate is None:
             return f"ERROR: la herramienta '{name}' no existe."

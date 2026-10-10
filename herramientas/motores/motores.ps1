@@ -2,7 +2,7 @@
 # Opcional: pararlos todos. Lanzar con motores.cmd (doble clic).
 $puertos = @{ 8090 = "Skynet (motor local)"; 8091 = "Comparador"; 1234 = "LM Studio (servidor)"; 20128 = "OmniRoute" }
 Write-Host "`n=== Motores de IA encendidos ===`n" -ForegroundColor Cyan
-$procs = Get-Process llama-server, lms, "LM Studio", *strata* -ErrorAction SilentlyContinue
+$procs = Get-Process llama-server, lms, "LM Studio" -ErrorAction SilentlyContinue
 if ($procs) {
     $procs | Select-Object Name, Id, @{n = 'RAM GB'; e = { [math]::Round($_.WorkingSet64 / 1GB, 1) } } | Format-Table -AutoSize
 } else { Write-Host "Ningun motor encendido." -ForegroundColor Green }

@@ -31,7 +31,8 @@ En el chat:
 | `/estado 3`, `/parar 3`, `/tareas` | Seguir o parar tareas. |
 | `/log` o `/log 3` | Herramientas usadas, decisión de permisos, modelo, tokens y coste. |
 | `/permisos local total` | Modo de permisos de un modelo: `repo`, `lectura`, `editar` o `total`. Sin argumentos, los lista. |
-| `/nube gemini on` | Activa un modelo en la nube para esta sesión (pide confirmación). |
+| `/modelo hermes` | Usa Hermes Agent como cerebro (aprende y recuerda; más lento). `/modelo local` vuelve al bucle de Skynet. |
+| `/nube hermes-nube on` | Activa Hermes con un modelo en línea para esta sesión (pide confirmación). |
 | `/internet on`, `/internet off` | Activa o desactiva la búsqueda web. Apagada al arrancar; también se cambia con el globo junto al chat. |
 | `/repo demo`, `/repos` | Elegir repo autorizado. `/repo ninguno` = conversación sin herramientas. |
 | `/modelo local\|cloud\|auto`, `/privado` | Forzar modelo o exigir privacidad (solo local). |
@@ -57,9 +58,14 @@ usado cada una y cuántas pasó el verificador.
 Cuando una tarea pasa el verificador tras 3 o más pasos, Skynet **propone** una skill nueva y
 datos para su memoria en `skills\_propuestas\`. Nada se activa sin ti: `/propuestas`,
 `/aprobar <nombre>` (te pide confirmación) o `/rechazar <nombre>` (`memoria` = los añadidos de
-memoria). La memoria curada son `memoria\MEMORY.md` (hechos del entorno) y `memoria\USER.md`
+memoria). La memoria son `memoria\MEMORY.md` (hechos del entorno) y `memoria\USER.md`
 (tus preferencias), de 2 KB como mucho cada una; siempre van en el contexto y puedes editarlas
-a mano. Las herramientas del agente no pueden escribir en `skills\` ni en `memoria\`.
+a mano.
+
+**Memoria automática (como Hermes):** si le dices una preferencia, le corriges o le cuentas algo
+estable de tu PC, Skynet lo guarda por su cuenta con su herramienta `memoria` y lo recuerda en las
+conversaciones siguientes. Cada cambio sale en `/log`; no guarda secretos y no se usa en tareas
+largas. Las demás herramientas del agente no pueden escribir en `skills\` ni en `memoria\`.
 
 ## Interfaz web
 
@@ -86,8 +92,9 @@ con todo visible sin saberse comandos:
 - **Modos de permisos por modelo** (junto al cuadro de texto y en Modelos y repos): Solo repo,
   Ver mi PC, Ver y editar y Control total (ejecuta comandos y abre programas, p. ej. instalar un
   juego de Steam). Administrador, carpetas del sistema, borrar y secretos se preguntan siempre.
-- **Nube:** al arrancar solo se usa el modelo local; los modelos en la nube se activan con una
-  confirmación y un modo fuerte en ellos muestra un aviso.
+- **Cerebros:** Local (el bucle rápido de Skynet, por defecto), Hermes (agente que aprende, con el
+  modelo local) y Nube (Hermes con un modelo en línea, con confirmación). Coder y las tareas largas
+  van siempre con Skynet. Ver [Hermes como segundo cerebro](#hermes-como-segundo-cerebro).
 - `Ctrl+K` abre todas las acciones con buscador. Los comandos `/` siguen funcionando.
 
 Solo escucha en `127.0.0.1` y rechaza peticiones de otras webs (comprueba Host y Origin).
@@ -111,14 +118,27 @@ según la GPU; se puede forzar con `?calidad=baja|media|alta|ultra` o en Modelos
 |---|---|
 | `repos.toml` | Repos autorizados (fuera de ellos no se lee ni escribe nada), su verificador, privacidad y agente. |
 | `permisos.toml` | Nivel de cada herramienta y lista blanca de comandos. |
-| `router.toml` | Perfiles de modelo (local llama-server, cloud Anthropic), reglas por capacidades y presupuesto mensual. |
+| `router.toml` | Perfiles de modelo (local llama-server, Hermes local y Hermes en la nube) y reglas por capacidades. |
 | `skynet.toml` | Rutas, límites del agente y de las tareas largas, y servidores MCP. |
 
 Para cambios personales sin tocar los archivos versionados, crea `config/<nombre>.local.toml`
 (se mezcla encima y git lo ignora).
 
-**Activar el modelo cloud:** define `ANTHROPIC_API_KEY` en tu entorno y pon
-`mensual_eur` > 0 en `router.toml`. Sin eso, todo va al modelo local.
+### Hermes como segundo cerebro
+
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) corre en Docker y Skynet le pasa la
+conversación; él usa sus herramientas, su memoria y sus skills (ver D19 en docs/DECISIONES.md).
+
+1. Docker Desktop abierto y la imagen construida:
+   `docker build -t skynet/hermes herramientas\bench-hermes\docker`.
+2. En Ajustes, enciende el motor **local** y el motor **hermes**; elige **Hermes** en el selector de modelo.
+3. Para usar un modelo en línea: en `config/skynet.toml` ([motores.hermes].env) pon
+   `HERMES_NUBE_PROVEEDOR` y `HERMES_NUBE_MODELO` (p. ej. `openrouter` y `anthropic/claude-sonnet-5.5`),
+   la clave del proveedor en `%USERPROFILE%\.hermes-skynet\.env` (p. ej. `OPENROUTER_API_KEY=...`),
+   reinicia el motor hermes y elige **Nube**.
+
+Hermes ve tu carpeta de usuario y `C:\Git` (salvo AppData, .ssh y credenciales) y, dentro del
+contenedor, ejecuta sin preguntar. Su memoria y sus skills quedan en `%USERPROFILE%\.hermes-skynet`.
 
 **Añadir un repo tuyo:**
 

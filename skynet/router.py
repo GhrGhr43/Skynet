@@ -65,8 +65,6 @@ class RouterError(Exception):
     pass
 
 
-REASONING_TOKENS = {"low": 1024, "medium": 4096, "high": 16384}
-
 THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
 
@@ -129,6 +127,9 @@ class ModelRouter:
         profile = models.get(target)
         if profile is None:
             return RouteDecision(local, f"{why}; el perfil '{target}' no existe, uso local")
+        # Coder y las tareas largas son el bucle de Skynet (repo, verificador, commits): un agente externo no encaja.
+        if profile.agente and (caps.coding == "alto" or caps.cost == "bajo"):
+            return RouteDecision(local, f"{why}; pero Coder y las tareas largas van con el bucle de Skynet: uso local")
         if target != "local":
             ok, problem = self._usable(profile)
             if not ok:
@@ -207,10 +208,7 @@ class ModelRouter:
             extra["min_p"] = p.min_p
         level = effort or p.reasoning_effort
         if level:
-            if p.razonamiento_por_tokens:
-                extra["reasoning_budget_tokens"] = REASONING_TOKENS.get(level, 4096)
-            else:
-                kwargs["reasoning_effort"] = level
+            kwargs["reasoning_effort"] = level
         if extra:
             kwargs["extra_body"] = extra
         key = p.resolved_api_key()
