@@ -1,8 +1,8 @@
 // Controlador de la interfaz: conversación, estados, diálogos, paleta y avisos.
 // Los paneles (tareas, registro, ajustes...) viven en panels.js.
-import { api, connect } from './api.js?v=version-20261010b';
+import { api, connect } from './api.js?v=version-20261010vision';
 import { md, esc } from './md.js';
-import { icon, paintIcons } from './icons.js?v=version-20261010b';
+import { icon, paintIcons } from './icons.js?v=version-20261010vision';
 import { STATES } from './scene/engine.js';
 import { Panels } from './panels.js';
 
@@ -12,6 +12,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const TOOL_WORDS = {
   'internet.buscar': ['Buscando en internet', 'globe'],
   'internet.leer': ['Leyendo una página', 'globe'],
+  'vision.leer_imagen': ['Mirando una imagen', 'eye'],
+  'vision.capturar_pantalla': ['Comprobando la pantalla', 'eye'],
   'workspace.read_file': ['Leyendo', 'file'],
   'workspace.list_dir': ['Explorando', 'folder'],
   'workspace.search': ['Buscando', 'search'],
@@ -65,6 +67,9 @@ export class App {
     this.convo = $('#convoInner');
     this.scroll = $('#convoScroll');
     this.input = $('#input');
+    this.attachments = [];
+    this.sending = false;
+    this.loadingImages = false;
     this.panels = new Panels(this);
     this.sessions = [];
     this.sessionQuery = '';
@@ -79,12 +84,25 @@ export class App {
       onStatus: (ok) => this.onConnection(ok),
     });
     setInterval(() => this.poll(), 5000);
+    setInterval(() => { if (!this.connected || Date.now() - (this.lastSpeed || 0) > 2200) this.liveSpeed(0); }, 1000);
   }
 
   // --- entrada ---------------------------------------------------------
   bind() {
     const form = $('#prompt');
     form.addEventListener('submit', (e) => { e.preventDefault(); this.send(); });
+    $('#imageInput').addEventListener('change', async (e) => {
+      await this.attachImages([...e.target.files]);
+      e.target.value = '';
+    });
+    this.input.addEventListener('paste', (e) => {
+      const files = [...(e.clipboardData?.items || [])].filter((x) => x.kind === 'file').map((x) => x.getAsFile()).filter(Boolean);
+      if (files.length) { e.preventDefault(); this.attachImages(files); }
+    });
+    form.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); });
+    form.addEventListener('drop', (e) => {
+      if (e.dataTransfer?.files.length) { e.preventDefault(); this.attachImages([...e.dataTransfer.files]); }
+    });
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.send(); }
     });
@@ -131,7 +149,43 @@ export class App {
     const el = this.input;
     el.style.height = 'auto';
     el.style.height = Math.min(180, el.scrollHeight) + 'px';
-    $('#sendBtn').disabled = !el.value.trim();
+    $('#sendBtn').disabled = this.sending || this.loadingImages || (!el.value.trim() && !this.attachments.length);
+  }
+
+  async attachImages(files) {
+    if (this.busy || this.sending || this.loadingImages) return;
+    if (!this.snap?.vision) { this.toast('Enciende el motor local con visión y selecciona Local para adjuntar imágenes.'); return; }
+    this.loadingImages = true;
+    this.autosize();
+    try {
+      for (const file of files) {
+        if (this.attachments.length >= 4) { this.toast('Máximo 4 imágenes por mensaje.'); break; }
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { this.toast('Usa PNG, JPEG o WebP.'); continue; }
+        if (file.size > 5_000_000) { this.toast('Cada imagen puede ocupar como máximo 5 MB.'); continue; }
+        const bitmap = await createImageBitmap(file);
+        try {
+          const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+          canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          this.attachments.push({ nombre: file.name || 'Imagen pegada', data_url: canvas.toDataURL('image/jpeg', 0.88) });
+        } finally { bitmap.close(); }
+      }
+    } catch { this.toast('No se pudo abrir la imagen.', 'bad'); }
+    finally { this.loadingImages = false; this.renderAttachments(); this.autosize(); }
+  }
+
+  renderAttachments() {
+    const box = $('#attachments');
+    box.hidden = !this.attachments.length;
+    box.innerHTML = this.attachments.map((im, i) => `<div class="attachment"><img src="${im.data_url}" alt="${esc(im.nombre)}"><button type="button" data-remove="${i}" aria-label="Quitar ${esc(im.nombre)}">×</button></div>`).join('');
+    for (const btn of box.querySelectorAll('[data-remove]')) btn.addEventListener('click', () => {
+      if (this.sending) return;
+      this.attachments.splice(Number(btn.dataset.remove), 1); this.renderAttachments(); this.autosize();
+    });
   }
 
   onKey(e) {
@@ -162,15 +216,16 @@ export class App {
 
   async send(text) {
     const value = (text ?? this.input.value).trim();
-    if (!value) return;
+    const images = text === undefined ? [...this.attachments] : [];
+    if (this.sending || this.loadingImages || (!value && !images.length)) return;
     if (this.busy) { this.toast(`Skynet está trabajando en «${this.snap?.etiqueta || 'algo'}». Espera o pulsa Detener.`); return; }
-    if (text === undefined) { this.input.value = ''; this.autosize(); }
+    this.sending = true; this.autosize();
     try {
-      await api.mensaje(value);
+      await api.mensaje(value, images);
+      if (text === undefined) { this.input.value = ''; this.attachments = []; this.renderAttachments(); }
     } catch (e) {
       this.toast(e.message, 'bad');
-      if (text === undefined) { this.input.value = value; this.autosize(); }
-    }
+    } finally { this.sending = false; this.autosize(); }
   }
 
   fill(text) {
@@ -247,7 +302,7 @@ export class App {
     // Interruptores activos (lo que se enciende desde «+»): visibles y se apagan con un clic.
     const on = [];
     if (s.internet) on.push(['internet', 'globe', 'Internet']);
-    if (s.coder) on.push(['coder', 'terminal', 'Coder']);
+    if (s.coder) on.push(['coder', 'terminal', s.coder_motor === 'pi' ? 'Coder · Pi' : 'Coder']);
     const key = on.map((x) => x[0]).join('|') + (s.ocupado ? '!' : '');
     if (key !== this.modesKey) {
       this.modesKey = key;
@@ -261,11 +316,24 @@ export class App {
     const s = this.snap || {};
     const coderOk = typeof s.coder === 'boolean';
     this.openMenu(anchor, [{ title: 'Activar', items: [
+      { value: 'imagen', label: 'Adjuntar imágenes', ico: 'eye', sub: s.vision ? 'También puedes pegarlas o arrastrarlas' : 'Necesita el motor local con visión' },
       { value: 'internet', label: 'Internet', ico: 'globe', on: !!s.internet,
         sub: s.internet_bloqueado ? 'Bloqueado por privacidad alta' : 'Busca en la web cuando lo necesita' },
       { value: 'coder', label: 'Modo coder', ico: 'terminal', on: !!s.coder,
         sub: !coderOk ? 'Próximamente' : s.repo ? 'Programa en el repo. Más lento' : 'Elige antes un repo (abajo)' },
-    ] }], (v) => this.toggleMode(v));
+    ] }, { title: 'Agente para programar', items: [
+      { value: 'motor-skynet', label: 'Skynet', ico: 'terminal', on: s.coder_motor !== 'pi', sub: 'Bucle actual' },
+      { value: 'motor-pi', label: 'Pi', ico: 'terminal', on: s.coder_motor === 'pi', sub: 'Prueba con el mismo modelo local' },
+    ] }], async (v) => {
+      if (v.startsWith('motor-')) {
+        if (s.ocupado) { this.toast('Espera a que termine para cambiar el agente.'); return; }
+        if (!s.repo) { this.toast('Elige un repo antes de activar Coder.'); return; }
+        if (await this.ajustes({ coder_motor: v.slice(6), coder: true, modelo: 'local' })) {
+          this.toast(v === 'motor-pi' ? 'Coder con Pi activado.' : 'Coder con Skynet activado.');
+        }
+      } else if (v === 'imagen') $('#imageInput').click();
+      else this.toggleMode(v);
+    });
   }
 
   async toggleMode(k) {
@@ -400,6 +468,7 @@ export class App {
 
   // --- servidor -> interfaz -------------------------------------------
   onConnection(ok) {
+    if (!ok) this.liveSpeed(0);
     if (ok === this.connected) return;
     this.connected = ok;
     if (!ok) this.toast('Se perdió la conexión con Skynet. Reintentando…', 'bad');
@@ -444,7 +513,7 @@ export class App {
   onMessage(m) {
     const live = !m.replay;
     switch (m.tipo) {
-      case 'usuario': this.addUser(m.texto); break;
+      case 'usuario': this.addUser(m.texto, m.imagenes); break;
       case 'respuesta': this.addAnswer(m.texto, live); break;
       case 'info': this.addInfo(m.texto, live); break;
       case 'evento': this.addEvent(m.kind, m.datos || {}, live); break;
@@ -464,6 +533,7 @@ export class App {
   setBusy(on, label) {
     const was = this.busy;
     this.busy = !!on;
+    if (!this.busy && was) this.liveSpeed(0);
     if (this.snap) { this.snap.ocupado = this.busy; this.renderComposer(this.snap); }
     document.body.classList.toggle('busy', this.busy);
     if (this.snap && label !== undefined) this.snap.etiqueta = label;
@@ -551,9 +621,19 @@ export class App {
     return d;
   }
 
-  addUser(text) {
+  addUser(text, images = []) {
     this.finishTurn();
-    this.append(this.node(`<div class="msg-k">Tú</div><div class="bubble">${esc(text)}</div>`, 'msg msg-user'));
+    const el = this.node(`<div class="msg-k">Tú</div><div class="bubble">${esc(text)}</div>`, 'msg msg-user');
+    if (images.length) {
+      const box = document.createElement('div'); box.className = 'message-images';
+      for (const ref of images) {
+        const img = document.createElement('img'); img.alt = ref.nombre || 'Imagen adjunta';
+        box.append(img);
+        api.imagen(ref.id).then((d) => { img.src = d.data_url; }).catch(() => { img.alt = 'Imagen no disponible'; });
+      }
+      el.querySelector('.bubble').append(box);
+    }
+    this.append(el);
     this.newTurn();
   }
 
@@ -586,6 +666,7 @@ export class App {
   }
 
   addEvent(kind, d, live) {
+    if (kind === 'speed') { if (live) this.liveSpeed(d.tok_s); return; }
     if (kind === 'usage') { if (live) this.liveUsage(d); return; }
     if (kind === 'fin') { this.addFin(d, live); return; }
     const t = this.ensureTurn();
@@ -1087,7 +1168,12 @@ export class App {
     ses.consumo.llamadas += 1;
     ses.consumo.tokens_in += +d.tokens_in || 0;
     ses.consumo.tokens_out += +d.tokens_out || 0;
-    if (+d.segundos > 0 && +d.tokens_out > 0) ses.tps = +d.tokens_out / +d.segundos;
+    this.renderMeter();
+  }
+
+  liveSpeed(value) {
+    if (this.snap?.sesion) this.snap.sesion.tps = Number.isFinite(+value) ? Math.max(0, +value) : 0;
+    this.lastSpeed = Date.now();
     this.renderMeter();
   }
 
@@ -1095,7 +1181,7 @@ export class App {
     const ses = this.snap?.sesion;
     const m = $('#meter');
     const tps = $('#tps');
-    tps.textContent = ses?.tps ? `${Math.round(ses.tps)} tok/s` : '';
+    tps.textContent = `${Math.round(Math.max(0, +ses?.tps || 0))} tok/s`;
     if (!ses) { m.hidden = true; return; }
     m.hidden = false;
     const used = ses.contexto || 0;

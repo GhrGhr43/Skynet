@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from contextlib import AsyncExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -48,6 +48,7 @@ class ToolSpec:
 class ToolResult:
     ok: bool
     text: str
+    images: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ToolHub:
@@ -123,9 +124,17 @@ class ToolHub:
             res = await session.call_tool(spec.name, args, read_timeout_seconds=timeout)
         except Exception as e:  # el servidor murió o no respondió a tiempo
             return ToolResult(False, f"Error llamando a {spec.key}: {type(e).__name__}: {e}")
-        parts = []
+        parts, images = [], []
         for c in res.content or []:
+            if getattr(c, "type", "") == "image":
+                # Los píxeles van como contenido multimodal: recortar base64 destruye la imagen.
+                mime = getattr(c, "mime_type", None) or getattr(c, "mimeType", "")
+                if mime in ("image/png", "image/jpeg", "image/webp") and len(c.data) <= 7_000_000:
+                    images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{c.data}"}})
+                else:
+                    parts.append("ERROR: formato o tamaño de imagen MCP no admitido")
+                continue
             text = getattr(c, "text", None)
             parts.append(text if text is not None else json.dumps(c.model_dump(), ensure_ascii=False)[:2000])
         is_error = bool(getattr(res, "is_error", None) or getattr(res, "isError", False))
-        return ToolResult(not is_error, "\n".join(parts))
+        return ToolResult(not is_error, "\n".join(parts), images[:4])

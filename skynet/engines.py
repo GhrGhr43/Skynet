@@ -32,6 +32,7 @@ class EngineSpec:
     firma: str = ""          # proceso: texto de su línea de comandos para apagarlo
     parar: list[str] = field(default_factory=list)  # proceso: comando para apagarlo (p. ej. un contenedor Docker)
     gpu: bool = True         # False = no compite por la GPU (no apaga ni es apagado por otros)
+    vision_gpu: bool = True  # False = proyector de imágenes en CPU para dejar VRAM al modelo
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -92,6 +93,8 @@ class Engines:
         """Cambia el GGUF del motor `name` (objeto modelos_locales.Local); no lo reinicia."""
         s = self.specs[name]
         s.modelo, s.args = str(local.ruta), local.args()
+        if local.mmproj and not s.vision_gpu:
+            s.args += ["--no-mmproj-offload"]
 
     # --- encender / apagar ----------------------------------------------
     def start(self, name: str, wait_s: float = 360) -> str:
@@ -202,7 +205,7 @@ def load_engines(raw: dict[str, Any], logs_dir: Path, home: Path | None = None) 
     specs = {}
     for n, e in (raw or {}).items():
         known = {k: sub(e[k]) for k in ("tipo", "url", "modelo", "contexto", "exe", "args", "env", "salud",
-                                            "firma", "gpu", "parar") if k in e}
+                                            "firma", "gpu", "parar", "vision_gpu") if k in e}
         specs[n] = EngineSpec(nombre=n, **known)
     eng = Engines(specs, logs_dir)
     if "local" in specs and specs["local"].tipo == "llamacpp":  # modelo elegido en Ajustes

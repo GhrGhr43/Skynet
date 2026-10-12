@@ -138,6 +138,7 @@ def make_rt(home: Path) -> Callable[[ScriptedLLM | None], Runtime]:
 
     def _make(llm: ScriptedLLM | None = None) -> Runtime:
         rt = Runtime(load_settings(home), completion_fn=llm)
+        rt.vision_disponible = lambda: False  # tests sin red ni dependencia del motor real del PC
         created.append(rt)
         return rt
 

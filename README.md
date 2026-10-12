@@ -47,6 +47,22 @@ Fuera del chat: `skynet log [--tarea N]`, `skynet tareas`, `skynet estado N`,
 Cuando una acción es de riesgo (comando fuera de la lista blanca, acción privilegiada o
 destructiva), Skynet pregunta: `s` (sí), `n` (no) o `t` (sí a esa herramienta durante la tarea).
 
+### Probar Pi con tu modelo local
+
+Pi es una alternativa al bucle Coder; utiliza el mismo modelo local y las herramientas y permisos de Skynet.
+Está instalado dentro del proyecto. No hace falta LM Studio abierto ni descargar otra copia del modelo.
+
+1. Ejecuta [Probar Pi.cmd](Probar%20Pi.cmd). Prepara el modelo, el proyecto y la web, y abre el chat.
+2. Verás `Coder · Pi` y el repo `prueba-pi`. Escribe una petición completa; los archivos quedan en
+   `proyectos/prueba-pi`. Ya contiene una web de ejemplo creada por Pi, que puedes abrir con doble clic en `index.html`.
+3. Para comparar, usa `+ > Agente para programar > Skynet` o `Pi`, con el mismo repo y modelo.
+   Haz una tarea nueva: `continúa` conserva el motor elegido al crear la tarea original.
+
+En terminal: `/repo prueba-pi`, `/coder pi` y tu petición. `/coder skynet` vuelve al motor habitual.
+El proyecto de ejemplo incluye comprobaciones de carga, JavaScript y desbordamiento; las funciones de una
+web compleja necesitan además sus propios tests. La guía de instalación y los detalles están en
+[herramientas/pi/README.md](herramientas/pi/README.md).
+
 ### Skills
 
 Una skill es una carpeta `skills/<nombre>/SKILL.md` en el formato de
@@ -68,12 +84,37 @@ a mano.
 personal); va siempre en el contexto. En cada repo, Skynet lee también su `AGENTS.md` o `CLAUDE.md`.
 Las skills las carga el modelo solo cuando encajan (`/skill` sigue sirviendo para forzar una).
 
+**Peticiones grandes en Coder:** puedes enviar el objetivo completo en un mensaje. Skynet recibe instrucciones
+para construir una versión ejecutable y ampliarla con pequeñas ediciones, aunque pidas un único archivo.
+El plan de cada tarea se guarda en `.skynet/tarea-N/PLAN.md` y se recupera al continuar. Una respuesta cortada
+o una llamada con JSON inválido se descarta y se reintenta con un paso pequeño (hasta tres fallos consecutivos).
+Si acumula lecturas sin actuar, recibe un recordatorio para hacer un cambio concreto y comprobarlo.
+Una edición permite repetir una lectura o verificación; sin cambios se mantiene el límite de llamadas repetidas.
+Si agota los 30 turnos de un paso y ha modificado código, continúa automáticamente hasta cuatro bloques más;
+si falla el verificador del repo, puede intentar corregirlo dos veces. Son límites configurables en `[agente]`.
+Los avances se conservan y Detener sigue pausando la tarea. Un plan con casillas pendientes impide darla
+por terminada; la calidad final depende de las comprobaciones reales que tenga el proyecto.
+
+Si pides explícitamente un mínimo de trabajo en una tarea larga, `minutos_minimos` impide completarla
+antes de acumular ese tiempo de modelo y verificación. El máximo sigue siendo un límite distinto.
+Los avances y el tiempo acumulado sobreviven a una reanudación; no se rellena la duración esperando.
+
+Para objetivos de páginas HTML, Skynet dispone de `navegador.comprobar_html`: abre el archivo del proyecto,
+prueba botones y entradas, detecta errores JavaScript y desbordamiento móvil. Con visión puede pedir una
+captura para revisar el aspecto. Usa un perfil efímero de Chrome sin red; requiere Node.js y Playwright
+(también busca el runtime local de Codex si existe). Las pruebas de lógica del proyecto siguen siendo necesarias.
+
 **Memoria automática (como Hermes):** si le dices una preferencia, le corriges o le cuentas algo
 estable de tu PC, Skynet lo guarda por su cuenta con su herramienta `memoria` y lo recuerda en las
 conversaciones siguientes. Cada cambio sale en `/log`; no guarda secretos y no se usa en tareas
 largas. Las demás herramientas del agente no pueden escribir en `skills\` ni en `memoria\`.
 
 ## Interfaz web
+
+El indicador `tok/s` se actualiza cada segundo con tokens de generación contados por llama.cpp,
+incluido el razonamiento y las tareas largas del motor seleccionado. Muestra `0 tok/s` cuando no genera y si se pierde
+la conexión. No conserva la media anterior ni estima tokens por caracteres. Otros motores sin contador
+compatible muestran cero; el pie de cada respuesta mantiene su media histórica.
 
 ```powershell
 cd C:\Skynet
@@ -104,6 +145,20 @@ con todo visible sin saberse comandos:
 - `Ctrl+K` abre todas las acciones con buscador. Los comandos `/` siguen funcionando como atajos.
 
 Solo escucha en `127.0.0.1` y rechaza peticiones de otras webs (comprueba Host y Origin).
+
+**Imágenes y capturas (Local):** con el motor encendido con visión, usa **+ > Adjuntar imágenes**, pega una
+imagen o arrástrala al chat. PNG, JPEG o WebP; hasta 4 por mensaje y 5 MB cada una. Se reducen a 1280 px,
+se quitan metadatos y se guardan localmente en `data/imagenes/`; el historial y Reintentar conservan los adjuntos.
+El modelo elegido en Ajustes necesita su `mmproj` compatible en la misma carpeta. Con IQ3_S y 64K, el
+proyector va en CPU (`vision_gpu = false`) para reducir la presión sobre los 16 GB de VRAM.
+
+En Coder o peticiones visuales, Skynet dispone del MCP `vision`: lee imágenes del repo y, con **Ver mi PC**
+o más, puede capturar una ventana por su título o la ventana activa. Para abrir el juego o ejecutar pruebas
+fuera del repo necesita **Control total**. Se le indica revisar capturas después de cambios relevantes en
+juegos e interfaces, junto con tests y errores. Es una decisión del modelo, no un verificador visual infalible.
+Las tareas largas conservan **Solo repo**: pueden mirar imágenes guardadas dentro del proyecto, pero no
+capturar el escritorio. Hermes y Nube no reciben adjuntos por esta integración. En el móvil hace falta
+recompilar e instalar un APK nuevo para ver estos controles.
 
 **Internet opcional:** pulsa el globo junto al cuadro de texto. Se ilumina cuando está activado;
 Skynet puede buscar datos que le falten y leer fuentes públicas, con enlaces en la respuesta.

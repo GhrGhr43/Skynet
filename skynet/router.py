@@ -62,7 +62,11 @@ class LLMResult:
 
 
 class RouterError(Exception):
-    pass
+    def __init__(self, message: str, tool_format: bool = False, transient: bool = False, retry_after: float = 0):
+        super().__init__(message)
+        self.tool_format = tool_format
+        self.transient = transient
+        self.retry_after = retry_after
 
 
 THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
@@ -214,6 +218,16 @@ class ModelRouter:
         except Exception as e:
             audit.log("error", model=p.litellm, detail={"mensaje": f"{type(e).__name__}: {e}"[:2000],
                                                          "motivo_ruta": decision.reason})
+            if "failed to parse tool call arguments" in str(e).lower():
+                # llama.cpp puede rechazar el JSON antes de entregar una respuesta OpenAI utilizable.
+                raise RouterError("El motor devolvió una llamada a herramienta incompleta o inválida.",
+                                  tool_format=True) from e
+            if "loading model" in str(e).lower():
+                raise RouterError("El motor está cargando el modelo.", transient=True, retry_after=30) from e
+            transient = any(kind in str(e).lower() for kind in
+                            ("apiconnectionerror", "connectionreseterror", "response payload is not completed"))
+            if transient:
+                raise RouterError("Se interrumpió la conexión con el modelo.", transient=True) from e
             raise RouterError(f"El modelo {p.litellm} falló: {type(e).__name__}: {e}") from e
 
         choice = response.choices[0]

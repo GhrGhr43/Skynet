@@ -13,7 +13,7 @@ import re
 import shlex
 from typing import Any, Protocol
 
-from . import gitops, modos, propuestas, skills
+from . import gitops, imagenes, modos, propuestas, skills
 from .agent import comando_completo, summarize_args
 from .gate import Level, PermissionGate
 from .router import Capabilities
@@ -34,7 +34,7 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   /permisos [modelo modo]   modos: repo | lectura | editar | total                /privado  privacidad alta on/off
   /nube <modelo> on|off     activar o desactivar un modelo en la nube en esta sesión
   /internet on|off         búsqueda web opcional (apagada al arrancar; sin navegador)
-  /coder on|off             modo programador sobre el repo elegido (verificador y commits; apagado al arrancar)
+  /coder on|off|pi|skynet    programar con Skynet o Pi sobre el repo elegido (verificador y commits)
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
   /parar <id>               parar una tarea larga      /log [id]               audit log
   /buscar <texto>           buscar en el historial     /skills                 skills disponibles
@@ -64,27 +64,30 @@ class Coordinator:
         # Modo Coder: el repo elegido entra en el contexto, con sus herramientas, verificador y commits. Apagado,
         # cada mensaje es un turno de conversación (rápido, como OpenClaw) aunque haya repo elegido.
         self.coder = False
+        self.coder_motor = "skynet"  # el modelo sigue siendo local; cambia solo el bucle de programación
         self.effort: str | None = None  # razonamiento elegido en el chat (None = automático)
-        self.history: list[tuple[str, str]] = []  # (petición, respuesta) recientes de esta sesión
+        self.history: list[tuple[Any, str]] = []  # (petición con adjuntos, respuesta) recientes de esta sesión
 
     # --- entrada ---------------------------------------------------------
-    async def handle(self, text: str) -> bool:
+    async def handle(self, text: str, images: list[dict[str, Any]] | None = None) -> bool:
         """Procesa un mensaje. Devuelve False si hay que salir."""
         text = text.strip()
         if not text:
             return True
+        if images and text.startswith("/"):
+            raise ValueError("Envía las imágenes con un mensaje, sin comandos /.")
         if text.startswith("/"):
             return await self._command(text)
         word = text.lower().strip(" .!")
-        if word in ("exit", "quit", "salir", "adiós", "adios"):
+        if not images and word in ("exit", "quit", "salir", "adiós", "adios"):
             return False
-        if word in ("doctor", "ayuda", "help", "tareas", "log", "repos"):
+        if not images and word in ("doctor", "ayuda", "help", "tareas", "log", "repos"):
             return await self._command("/" + word)
         m = RESUME_RE.match(text)
         if m:
-            await self.resume(m.group(2).strip() or None)
+            await self.resume(m.group(2).strip() or None, images=images)
             return True
-        await self.new_task(text)
+        await self.new_task(text, images=images)
         return True
 
     @property
@@ -104,20 +107,25 @@ class Coordinator:
             setattr(caps, k, v)
         return caps.to_dict()
 
-    def _pairs(self, n: int = 6) -> list[tuple[str, str]]:
+    def _pairs(self, n: int = 6) -> list[tuple[Any, str]]:
         """Últimos intercambios de la conversación, para dárselos al modelo como turnos."""
         return self.history[-n:]
 
     def _recent(self) -> str | None:
         if not self.history:
             return None
-        lines = [f"- Pedido: {q[:300]}\n  Respuesta: {a[:500]}" for q, a in self.history[-3:]]
+        lines = [f"- Pedido: {imagenes.texto_de(q)[:300]}\n  Respuesta: {a[:500]}" for q, a in self.history[-3:]]
         return "Conversación reciente (por si la petición se refiere a ella):\n" + "\n".join(lines)
 
     # --- tareas ----------------------------------------------------------
-    async def new_task(self, text: str, skill: str | None = None, skill_version: str | None = None) -> Task:
+    async def new_task(self, text: str, skill: str | None = None, skill_version: str | None = None,
+                       images: list[dict[str, Any]] | None = None) -> Task:
         title = text.splitlines()[0][:70]
         caps: dict[str, Any] = {"capacidades": self._caps()}
+        if self.active_repo:
+            caps["harness"] = self.coder_motor
+        if images:
+            caps["imagenes"] = images
         if skill:
             caps["skill"] = skill  # el Context builder mete su cuerpo en cada paso, también al retomar
         task = self.rt.store.create_task(
@@ -130,10 +138,11 @@ class Coordinator:
             self.rt.store.add_skill_use(skill, skill_version, task.id)
         if self.active_repo:
             return await self._run(task, kind="chat", extra=self._recent())
-        pairs = [(q[:CHARS_TURNO], a[:CHARS_TURNO]) for q, a in self._pairs()]
+        pairs = [(q[:CHARS_TURNO] if isinstance(q, str) else q, a[:CHARS_TURNO]) for q, a in self._pairs()]
         return await self._run(task, kind="chat", extra=None, history=pairs)
 
-    async def resume(self, extra: str | None, task_id: int | None = None) -> None:
+    async def resume(self, extra: str | None, task_id: int | None = None,
+                     images: list[dict[str, Any]] | None = None) -> None:
         """Retoma la última tarea sin terminar, o la tarea `task_id` si se indica (lo usa la web)."""
         task = self.rt.store.get_task(task_id) if task_id else self.rt.store.last_resumable_task()
         if task is None:
@@ -155,11 +164,13 @@ class Coordinator:
             return
         if task.repo:  # retomar una tarea de código vuelve a Coder sobre su repo
             self.repo_name, self.coder = task.repo, True
+            self.coder_motor = task.capabilities.get("harness", "skynet")
         saved = dict(task.capabilities.get("capacidades", {}))
         saved["internet"] = self.internet and not self.private
         if self.private:
             saved["privacy"] = "alta"
-        task = self.rt.store.update_task(task.id, capabilities={**task.capabilities, "capacidades": saved})
+        task = self.rt.store.update_task(task.id, capabilities={**task.capabilities, "capacidades": saved,
+                                                              **({"imagenes": images} if images else {})})
         self.ui.info(f"Retomo la tarea {task.id} «{task.title}» (estado: {task.status}).")
         await self._run(task, kind="reanudar",
                         extra=(extra or "Continúa la tarea donde se quedó. Revisa los pasos anteriores y el "
@@ -179,26 +190,59 @@ class Coordinator:
         return ask
 
     async def _run(self, task: Task, kind: str, extra: str | None,
-                   history: list[tuple[str, str]] | None = None) -> Task:
+                   history: list[tuple[Any, str]] | None = None) -> Task:
         store = self.rt.store
         repo = self.rt.repo_for(task)
         task = store.update_task(task.id, status=EN_CURSO)
         store.heartbeat(task.id)
         status, summary = PAUSADA, "interrumpida"
         ver: VerifierResult | None = None
+        user = task.goal if kind == "chat" else (extra or "continúa")
         try:
-            run = await self.rt.agent_step(task, kind, extra, asker=self._make_asker(task), on_event=self.ui.event,
-                                           history=history)
-            out = run.outcome
-            if (repo and repo.verificador and out.status == "completado" and gitops.is_repo(repo.ruta)
-                    and (out.files_touched or gitops.is_dirty(repo.ruta))):
-                self.ui.event("verifying", {"command": repo.verificador})
-                # En un hilo: el verificador puede tardar minutos y no debe congelar la interfaz web.
-                ver = await asyncio.to_thread(run_verifier, repo.verificador, repo.ruta,
-                                              self.rt.settings.long.timeout_verificador_seg)
-                self.rt.audit.log("verifier", task_id=task.id, step_id=run.step.id,
-                                  detail={"ok": ver.ok, "exit": ver.exit_code, "comando": ver.command,
-                                          "segundos": round(ver.seconds, 1), "salida": ver.output_tail[-1500:]})
+            continuations = repairs = 0
+            total = None
+            while True:
+                run = await self.rt.agent_step(task, kind, extra, asker=self._make_asker(task), on_event=self.ui.event,
+                                               history=history)
+                out = run.outcome
+                ver = None
+                if (repo and repo.verificador and out.status == "completado"
+                        and (out.files_touched or (total is not None and total.files_touched)
+                             or (gitops.is_repo(repo.ruta) and gitops.is_dirty(repo.ruta)))):
+                    self.ui.event("verifying", {"command": repo.verificador})
+                    # En un hilo: el verificador puede tardar minutos y no debe congelar la interfaz web.
+                    ver = await asyncio.to_thread(run_verifier, repo.verificador, repo.ruta,
+                                                  self.rt.settings.long.timeout_verificador_seg)
+                    self.rt.audit.log("verifier", task_id=task.id, step_id=run.step.id,
+                                      detail={"ok": ver.ok, "exit": ver.exit_code, "comando": ver.command,
+                                              "segundos": round(ver.seconds, 1), "salida": ver.output_tail[-1500:]})
+                store.finish_step(run.step.id, out.status, out.final_text[:2000], ver.summary() if ver else None)
+                # Un archivo de plan por sí solo no justifica seguir gastando bloques de trabajo.
+                advanced = any(not p.replace("\\", "/").startswith(".skynet/") for p in out.files_touched)
+                if total is not None:
+                    for name in ("turns", "tool_calls", "denied", "tokens_in", "tokens_out", "cost_eur", "segundos"):
+                        setattr(out, name, getattr(out, name) + getattr(total, name))
+                    out.files_touched = sorted(set(out.files_touched) | set(total.files_touched))
+                total = out
+                if (repo and advanced and out.status == "limite_turnos"
+                        and continuations < self.rt.settings.agent.max_continuaciones):
+                    continuations += 1
+                    kind, extra, history = "continuacion", (
+                        "Continúa automáticamente hacia el objetivo completo. Lee PLAN.md y los archivos actuales; "
+                        "conserva lo terminado. Realiza los pasos pendientes con pequeñas ediciones y compruébalos."), None
+                    self.ui.info("Sigo con el siguiente bloque de trabajo; los cambios anteriores están guardados.")
+                elif (repo and (advanced or (repairs == 0 and out.files_touched)) and ver is not None and not ver.ok
+                      and repairs < self.rt.settings.agent.reparaciones_verificador):
+                    repairs += 1
+                    kind, extra, history = "reparacion", (
+                        "La comprobación real ha fallado. Corrige la implementación y vuelve a comprobar; no elimines "
+                        "ni debilites los tests para ocultar el fallo.\n" + ver.output_tail[-4000:]), None
+                    self.ui.info("La comprobación ha fallado. Intento corregirla antes de terminar.")
+                else:
+                    break
+                self.rt.audit.log("continuacion", task_id=task.id, step_id=run.step.id, decision=kind,
+                                  detail={"bloques": continuations, "reparaciones": repairs})
+                store.heartbeat(task.id)
             if out.status == "error":
                 status = FALLIDA
             elif out.status == "limite_turnos":
@@ -208,8 +252,8 @@ class Coordinator:
             else:
                 status = HECHA
             summary = out.final_text[:2000]
-            store.finish_step(run.step.id, out.status, summary, ver.summary() if ver else None)
-            self.history.append((task.goal if kind == "chat" else (extra or "continúa"), out.final_text))
+            self.history.append((imagenes.contenido(user, task.capabilities.get("imagenes", []),
+                                                    self.rt.settings.db_path.parent), out.final_text))
             self.ui.answer(out.final_text)
             self._fin(task, status, out, ver)
         finally:
@@ -316,15 +360,24 @@ class Coordinator:
             self.ui.info(f"Internet {'activado: puede buscar cuando lo necesite' if self.internet else 'desactivado'}.")
         elif cmd == "/coder":
             choice = (args[0] if args else "estado").lower()
-            if choice not in ("on", "off", "estado"):
-                self.ui.info("Uso: /coder on|off")
+            if choice not in ("on", "off", "estado", "pi", "skynet"):
+                self.ui.info("Uso: /coder on|off|pi|skynet")
                 return True
-            if choice == "on" and not self.repo_name:
+            if choice in ("on", "pi", "skynet") and not self.repo_name:
                 self.ui.info("Elige antes un repo con /repo <nombre> (mira /repos).")
                 return True
-            if choice != "estado":
+            if choice in ("pi", "skynet"):
+                if choice == "pi":
+                    from skynet_tools.pi_agent import installation
+                    try:
+                        installation(self.rt.settings.home)
+                    except RuntimeError as e:
+                        self.ui.info(str(e))
+                        return True
+                self.coder_motor, self.coder = choice, True
+            elif choice != "estado":
                 self.coder = choice == "on"
-            self.ui.info(f"Coder activado sobre {self.repo_name}: verificador y commits." if self.coder
+            self.ui.info(f"Coder ({self.coder_motor}) activado sobre {self.repo_name}: verificador y commits." if self.coder
                          else "Coder desactivado: conversación rápida.")
         elif cmd == "/privado":
             self.private = not self.private

@@ -56,6 +56,18 @@ def test_estado_basico(web):
     assert c.get("/static/cursors/arrow.svg").status_code == 200
 
 
+def test_pi_selector_changes_harness_without_changing_model(web, monkeypatch):
+    from skynet_tools import pi_agent
+    c, rt, app = web()
+    monkeypatch.setattr(pi_agent, "installation", lambda home: ("node", home / "pi.js", home / "puente.ts"))
+    assert c.get("/api/estado").json()["coder_motor"] == "skynet"
+    snap = c.post("/api/ajustes", json={"coder_motor": "pi", "coder": True, "modelo": "local"}).json()
+    assert snap["coder_motor"] == "pi" and snap["coder"] is True and snap["modelo"] == "local"
+    assert c.post("/api/ajustes", json={"coder_motor": "desconocido"}).status_code == 400
+    assert c.get("/api/estado").json()["coder_motor"] == "pi"
+    assert c.post("/api/ajustes", json={"coder_motor": "skynet"}).json()["coder_motor"] == "skynet"
+
+
 def test_solo_local_host_origen_y_json(web):
     c, _, _ = web(port=8765)
     assert c.get("/api/estado").status_code == 200
@@ -195,3 +207,41 @@ async def test_bus_reparte_y_guarda_historial():
     bus.unsubscribe(q)
     bus.publish("info", {"texto": "x"})
     assert q.empty()
+
+
+def test_imagen_web_historial_y_retoma(web):
+    from test_vision import adjunto
+    llm = ScriptedLLM([("Veo rojo.", None), ("Sigue siendo rojo.", None), ("Retomada con imagen.", None)])
+    c, rt, app = web(llm)
+    rt.vision_disponible = lambda: True
+    assert c.post("/api/mensaje", json={"texto": "mira", "imagenes": [adjunto()]}).json()["ok"]
+    wait_until(c, lambda s: not s["ocupado"])
+    task = rt.store.list_tasks(1)[0]
+    ref = task.capabilities["imagenes"][0]
+    assert c.get(f"/api/imagenes/{ref['id']}").json()["data_url"].startswith("data:image/jpeg;base64,")
+    assert c.get("/api/imagenes/no-valida").status_code == 404
+    saved = app.state.session.sesiones.mensajes(app.state.session.sid)
+    assert any(m.get("imagenes") for m in saved)
+    assert "base64" not in str(saved)
+    assert llm.calls[0]["messages"][1]["content"][1]["type"] == "image_url"
+    assert c.post("/api/mensaje", json={"texto": "¿y qué color?"}).json()["ok"]
+    wait_until(c, lambda s: not s["ocupado"])
+    assert llm.calls[1]["messages"][1]["content"][1]["type"] == "image_url"
+    rt.store.update_task(task.id, status=PAUSADA)
+    assert c.post(f"/api/tareas/{task.id}/continuar", json={}).json()["ok"]
+    wait_until(c, lambda s: not s["ocupado"])
+    assert any(isinstance(m.get("content"), list) for m in llm.calls[2]["messages"])
+
+
+def test_imagen_web_limites_y_motor(web):
+    from test_vision import adjunto
+    c, rt, _ = web()
+    assert c.post("/api/mensaje", json={"imagenes": [adjunto()]}).status_code == 400
+    rt.vision_disponible = lambda: True
+    for images in ([adjunto()] * 5, "cadena", [{"data_url": "https://example.org/im.png"}]):
+        assert c.post("/api/mensaje", json={"texto": "mira", "imagenes": images}).status_code == 400
+    assert c.post("/api/mensaje", json={"texto": "/doctor", "imagenes": [adjunto()]}).status_code == 400
+    r = c.post("/api/mensaje", json={"imagenes": [adjunto()]})
+    assert r.status_code == 200
+    wait_until(c, lambda s: not s["ocupado"])
+    assert rt.store.list_tasks(1)[0].goal == "Describe la imagen adjunta."

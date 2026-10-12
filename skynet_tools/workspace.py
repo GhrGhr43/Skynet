@@ -81,7 +81,7 @@ def read_file(path: str, offset: int = 1, limit: int = 400) -> str:
 
 @mcp.tool()
 def write_file(path: str, content: str) -> str:
-    """Crea o sobrescribe un archivo del repo con `content` (crea las carpetas que falten)."""
+    """Crea o sobrescribe un archivo del repo (crea carpetas). Para código grande, crea primero un esqueleto pequeño y complétalo con edit_file por secciones de unos 4.000 caracteres."""
     target = _resolve(path)
     if target.is_dir():
         raise ToolError(f"{path} es una carpeta")

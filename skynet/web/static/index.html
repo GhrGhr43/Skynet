@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/css/app.css?v=version-20261010b">
+<link rel="stylesheet" href="/static/css/app.css?v=version-20261010vision">
 <script type="importmap">
 { "imports": {
     "three": "/static/vendor/three/three.module.min.js",
@@ -74,6 +74,8 @@
     <div class="suggest" id="suggest"></div>
     <form class="prompt" id="prompt" autocomplete="off">
       <span class="prompt-glow" aria-hidden="true"></span>
+      <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp" multiple hidden>
+      <div id="attachments" class="attachments" aria-label="Imágenes adjuntas" hidden></div>
       <textarea id="input" rows="1" placeholder="Pídele algo a Skynet…" aria-label="Mensaje para Skynet"></textarea>
       <div class="prompt-bar">
         <button type="button" class="prompt-plus" id="plusBtn" data-icon="plus" aria-label="Más: internet, modo coder…" title="Internet, modo coder…"></button>
@@ -127,6 +129,6 @@
 <div class="build" id="build" aria-hidden="true"></div>
 
 <script src="/static/vendor/qrcode/qrcode.js" defer></script>
-<script type="module" src="/static/js/main.js?v=version-20261010b"></script>
+<script type="module" src="/static/js/main.js?v=version-20261011pi"></script>
 </body>
 </html>

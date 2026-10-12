@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 data/
+proyectos/
 config/*.local.toml
 .env
 skynet.egg-info/
@@ -14,3 +15,4 @@ firma/
 
 # Dependencias de terceros instaladas en el PC (OmniRoute: npm)
 vendor/
+herramientas/pi/node_modules/

@@ -11,6 +11,9 @@ nivel_por_defecto = "PRIVILEGED"
 [herramientas]
 "internet.buscar" = "READ"          # además exige Internet activado en el chat
 "internet.leer" = "READ"
+"vision.leer_imagen" = "READ"
+"vision.capturar_pantalla" = "READ"  # solo local y con acceso al PC; nunca en tareas largas
+"navegador.comprobar_html" = "READ" # solo páginas del repo, perfil efímero y sin red
 "workspace.read_file" = "READ"
 "workspace.list_dir" = "READ"
 "workspace.search" = "READ"

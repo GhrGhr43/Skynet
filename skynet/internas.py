@@ -98,17 +98,18 @@ def construir(rt: "Runtime", task: "Task", asker: Asker | None) -> dict[str, Int
         objetivo = " ".join(str(args.get("objetivo", "")).split())
         try:
             minutos = int(float(args.get("minutos", 0)))
+            minimo = int(float(args.get("minutos_minimos", 0)))
         except (TypeError, ValueError):
-            minutos = 0
+            minutos, minimo = 0, 0
         tope = int(rt.settings.long.max_horas * 60)
-        if not objetivo or not 5 <= minutos <= tope:
+        if not objetivo or not 5 <= minutos <= tope or not 0 <= minimo <= minutos:
             return f"ERROR: indica el objetivo y los minutos (entre 5 y {tope})."
         if not await _confirmar("skynet.tarea_larga", {"comando": f"{minutos} min en {repo.nombre}: {objetivo}"},
                                 f"trabajar solo {minutos} minutos en «{repo.nombre}» en segundo plano: pasos pequeños, "
                                 f"verificador `{repo.verificador or 'ninguno'}`, commit si avanza y deshacer si empeora"):
             return "El usuario no lo ha aprobado: no se ha lanzado nada."
         caps = dict(task.capabilities.get("capacidades", {}), cost="bajo")
-        larga, pid = lanzar_larga(rt, repo, objetivo, minutos / 60, caps)
+        larga, pid = lanzar_larga(rt, repo, objetivo, minutos / 60, caps, minimo_minutos=minimo)
         return (f"Tarea larga {larga.id} lanzada en segundo plano (pid {pid}) para {minutos} min en «{repo.nombre}». "
                 f"Su avance queda en {repo.ruta / 'PROGRESO.md'}. Díselo a Daniel en una frase.")
 
@@ -127,7 +128,8 @@ def construir(rt: "Runtime", task: "Task", asker: Asker | None) -> dict[str, Int
             f"Deja trabajando a Skynet solo, en segundo plano, durante los minutos que pida Daniel (5 a {largo}), "
             "sobre un repo con tests. Úsala cuando pida que trabajes un rato largo o «toda la noche». La herramienta "
             "ya le pide confirmación: llámala directamente, sin preguntarle tú antes.",
-            {"objetivo": {"type": "string"}, "minutos": {"type": "integer"},
+            {"objetivo": {"type": "string"}, "minutos": {"type": "integer", "description": "Tiempo máximo."},
+             "minutos_minimos": {"type": "integer", "description": "Solo si Daniel pide un mínimo explícito; entre 0 y minutos. Cuenta trabajo del modelo y verificaciones, sin esperas vacías."},
              "repo": {"type": "string", "description": "repo autorizado; por defecto, el de esta conversación"}},
             ["objetivo", "minutos"]), _tarea_larga),
     }

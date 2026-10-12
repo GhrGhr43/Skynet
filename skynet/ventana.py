@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .imagenes import texto_de
+
 CHARS_PER_TOKEN = 3.5     # conservador para español y código con el tokenizador de Qwen
 MARGEN = 512              # tokens de holgura por el formato del chat y los esquemas
 MIN_SALIDA = 1024         # nunca se piden menos tokens de salida que esto
@@ -33,6 +35,12 @@ def estimate(obj: Any) -> int:
     """Tokens aproximados de un mensaje, una lista de mensajes o un esquema de herramientas."""
     if obj is None:
         return 0
+    if isinstance(obj, dict):
+        if obj.get("type") == "image_url":
+            return 1536  # el motor limita cada imagen a 1024 tokens; margen sin contar el base64 como texto
+        return sum(estimate(v) for v in obj.values()) + len(obj) * 2
+    if isinstance(obj, list):
+        return sum(estimate(v) for v in obj)
     text = obj if isinstance(obj, str) else json.dumps(obj, ensure_ascii=False)
     return int(len(text) / CHARS_PER_TOKEN) + 1
 
@@ -76,11 +84,12 @@ def _summary(messages: list[dict[str, Any]]) -> str:
                 text = text.split("] ", 1)[-1]
             lines.append(f"- {call} -> {_first_line(text, 120)}")
         elif role == "user":
-            text = m.get("content") or ""
+            text = texto_de(m.get("content"))
             if text.startswith(RESUMEN):  # resumen de un recorte anterior: se conserva tal cual
                 lines.extend(l for l in text.splitlines()[1:] if l.startswith("- "))
             else:
-                lines.append(f"- Usuario: {_first_line(text, 200)}")
+                image_note = " [imagen omitida del contexto]" if isinstance(m.get("content"), list) else ""
+                lines.append(f"- Usuario: {_first_line(text, 200)}{image_note}")
     if len(lines) > PRIMERAS + ULTIMAS:  # el principio (cómo empezó) y lo último (dónde está)
         lines = lines[:PRIMERAS] + [f"- (... {len(lines) - PRIMERAS - ULTIMAS} acciones omitidas ...)"] + lines[-ULTIMAS:]
     return (RESUMEN + "\n"

@@ -15,6 +15,7 @@ dependencies = [
     "uvicorn>=0.30",
     "ddgs>=9.16,<10",    # búsqueda web sin navegador ni clave API
     "httpx>=0.28,<1",    # lectura de páginas públicas
+    "Pillow>=11.2.1,<13",  # imágenes y captura de una ventana de Windows
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ packages = ["skynet", "skynet.web", "skynet_tools"]
 
 [tool.setuptools.package-data]
 "skynet.web" = ["static/**/*"]
+"skynet_tools" = ["*.cjs"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

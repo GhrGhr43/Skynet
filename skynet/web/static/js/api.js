@@ -27,7 +27,8 @@ async function request(method, url, body) {
 
 export const api = {
   estado: () => request('GET', '/api/estado'),
-  mensaje: (texto) => request('POST', '/api/mensaje', { texto }),
+  mensaje: (texto, imagenes = []) => request('POST', '/api/mensaje', { texto, imagenes }),
+  imagen: (id) => request('GET', `/api/imagenes/${encodeURIComponent(id)}`),
   responder: (id, respuesta) => request('POST', '/api/responder', { id, respuesta }),
   cancelar: () => request('POST', '/api/cancelar', {}),
   ajustes: (cambios) => request('POST', '/api/ajustes', cambios),

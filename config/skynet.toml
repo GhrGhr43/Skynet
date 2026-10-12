@@ -6,6 +6,8 @@ logs = "data/logs"
 
 [agente]
 max_turnos = 30                 # llamadas al modelo por paso como máximo
+max_continuaciones = 4          # bloques adicionales de Coder si hubo cambios, sin pedir «continúa»
+reparaciones_verificador = 2    # intentos automáticos de corregir una comprobación fallida
 max_salida_herramienta = 6000   # caracteres de cada resultado de herramienta que ve el modelo
 contexto_max_tokens = 6000      # tope del contexto inicial que arma el Context builder
 
@@ -14,7 +16,7 @@ max_horas = 8
 max_iteraciones = 200
 max_errores_iguales = 3         # para si el mismo fallo se repite N veces seguidas
 max_sin_avance = 3              # para si N iteraciones seguidas no cambian nada
-turnos_por_iteracion = 20
+turnos_por_iteracion = 40       # margen para diagnosticar, editar y verificar sin releer todo en cada bloque
 timeout_verificador_seg = 900
 
 # Servidores MCP. {python} = Python de Skynet, {repo} = ruta del repo de la tarea,
@@ -27,6 +29,16 @@ args = ["-m", "skynet_tools.workspace", "--root", "{repo}"]
 [mcp.internet]
 comando = "{python}"
 args = ["-m", "skynet_tools.internet"]
+
+# Solo se ofrece cuando el motor local declara visión disponible.
+[mcp.vision]
+comando = "{python}"
+args = ["-m", "skynet_tools.vision", "--root", "{repo}"]
+
+# Páginas HTML locales: navegador aislado, sin red ni perfil personal.
+[mcp.navegador]
+comando = "{python}"
+args = ["-m", "skynet_tools.navegador", "--root", "{repo}"]
 
 [mcp.coding_agent]
 comando = "{python}"
@@ -42,6 +54,8 @@ url = "http://127.0.0.1:8090/v1"
 exe = "%USERPROFILE%/.lmstudio/extensions/backends/llama.cpp-win-x86_64-vulkan-avx2-2.54.0/llama-server.exe"
 modelo = "%USERPROFILE%/.lmstudio/models/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf"
 contexto = 65536
+# Medido con IQ3_S + 64K: visión en GPU presiona la VRAM y frena el texto. CPU conserva ambos.
+vision_gpu = false
 args = ["-fa", "on", "-ctk", "q4_0", "-ctv", "q4_0", "-np", "1", "--no-webui", "--spec-type", "draft-mtp"]
 
 # Hermes Agent como segundo cerebro (D19), en Docker (contenedor skynet-hermes, solo en 127.0.0.1:8642).

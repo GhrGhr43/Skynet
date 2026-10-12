@@ -114,11 +114,11 @@ class ContextBuilder:
                     out.append(Section(f"Instrucciones del repo ({name})", text[:INSTRUCCIONES_MAX], 1))
                     break
             td = task_dir(repo, task.id)
-            for name, prio, chars in (("PROGRESO.md", 1, 3000), ("ERRORES.md", 1, 2500)):
+            for name, prio, chars in (("PLAN.md", 1, 4000), ("PROGRESO.md", 1, 3000), ("ERRORES.md", 1, 2500)):
                 f = td / name
                 if name == "PROGRESO.md" and not f.exists():
                     f = repo.ruta / "PROGRESO.md"
-                if f.exists():
+                if f.exists() and f.resolve().is_relative_to(repo.ruta.resolve()):
                     out.append(Section(name, _tail(f.read_text(encoding="utf-8", errors="replace"), chars), prio))
             if gitops.is_repo(repo.ruta):
                 st = gitops.git(repo.ruta, "status", "--short", check=False).strip()

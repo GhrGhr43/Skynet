@@ -316,3 +316,118 @@ Pedido por Daniel: que lo que le pide a Claude lo pueda pedir igual a Skynet, si
   con **Reintentar** si falla o queda a medias (evento `fin`; retoma la misma tarea). Cursores nuevos (flecha de
   navegación; la de enlaces en azul de acento). Arreglado el salto de scroll en Configuración: al redibujar se
   cerraba «Avanzado».
+
+## D22. Visión local, adjuntos y capturas puntuales (2026-10-10)
+Pedido por Daniel al continuar el plan de Claude: activar visión, adjuntar/pegar imágenes y mirar capturas;
+evaluar después la comprobación autónoma de juegos y tareas visuales.
+- **Modelo:** mismo GSQ-RCO IQ3_S con MTP y 64K. Descargado `mmproj-Qwen3.8-27B-BF16.gguf` del
+  [repositorio GSQ-RCO](https://huggingface.co/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/tree/main): 931.146.528 bytes,
+  SHA256 `13cb7bebccbd04afc8f4090cb949ecf8937cdf7377c5799b1a0c594e7c0d3e16`. El de lmstudio-community
+  tiene otra huella y tamaño; se conserva y no se asume intercambiable. `/props` confirma `vision=true`.
+- **Memoria/rendimiento:** visión en GPU + 64K cargó, pero la memoria gráfica total observada de Windows fue
+  ~16,4 GB dedicada y ~1,6 GB compartida (no son solo el modelo). Dos respuestas de 128 tokens generaron
+  ~13 tok/s. Con el proyector en CPU: ~23–33 tok/s en esas respuestas y 6,28 s para la petición completa de
+  una imagen nueva de 800×500 con 428 tokens de entrada; GPU dio 3,74 s en la primera prueba sin caché.
+  No son un benchmark exhaustivo ni tiempos universales. `vision_gpu = false` conserva el modelo y el
+  contexto; se aplica también al elegir otro modelo en Ajustes. Proyector en RAM, modelo de texto en GPU.
+- **Transporte:** OpenAI/LiteLLM multimodal; `ToolHub` conserva `ImageContent` MCP y el agente coloca las
+  imágenes en un mensaje de usuario después de todos los resultados de herramientas. Base64 nunca se recorta
+  como texto ni se audita. Ventana estima tokens de imagen, con límite del motor de 1024 tokens por imagen.
+- **Adjuntos:** hasta 4 PNG/JPEG/WebP y 5 MB por archivo; servidor valida píxeles, limita a 20 MP de entrada y
+  1280 px de salida, convierte a JPEG sin metadatos. Archivos en `data/imagenes/<sha256>.jpg`. Historial y
+  capabilities guardan referencias en sus JSON existentes: **sin migración SQLite**. Mismo acceso
+  Host/Origin/Tailscale/llave en la lectura de imágenes; el móvil las pide con Authorization, fuera de /static.
+- **MCP y política (cara de cambiar):** `skynet_tools/vision.py`, declarado en config. `leer_imagen(path)`
+  queda en el repo en Solo repo; fuera sigue las reglas de lectura/secretos del gate. `capturar_pantalla`
+  requiere Ver mi PC o superior, solo con el bucle local; ventana activa por defecto, título opcional para
+  seleccionar una ventana sin cambiar el foco, escritorio completo con `ventana=false`. Como las demás
+  lecturas del PC, no vuelve a preguntar. Las tareas largas mantienen Solo repo y no capturan el escritorio.
+  Las capturas no se guardan automáticamente; los adjuntos sí, hasta que se eliminen sus archivos locales.
+- **Revisión autónoma:** se ofrecen herramientas en Coder y peticiones visuales, no en saludos. El prompt pide
+  inspeccionar después de cambios relevantes y al terminar, junto con tests y registros. Máximo 6 capturas
+  con los mismos argumentos por paso. No es grabación ni un criterio automático de aprobación: una imagen
+  no verifica jugabilidad ni garantiza que el modelo detecte todos los fallos. Abrir el juego necesita los
+  permisos de ejecución correspondientes. Capturar una ventana minimizada o protegida puede fallar.
+- **Fuera de alcance:** Hermes/Nube con adjuntos, permitir capturas de escritorio en tareas largas, controles
+  de entrada para jugar automáticamente y cambios a agente-godot. Móvil actualizado en `movil/www`; APK pendiente.
+
+## D23. Peticiones grandes mediante pequeñas ediciones y recuperación (2026-10-11)
+- Daniel pide enviar un objetivo complejo completo y que Skynet avance por partes. El simulador agotaba
+  los 8.192 tokens intentando escribir un HTML entero; sus argumentos incompletos quedaban en el historial
+  y la recuperación terminaba en HTTP 500, incluso con Coder activado.
+- **Antes de ejecutar o guardar en el historial:** descartar respuestas con `finish_reason=length`, validar
+  todo el lote de llamadas y normalizar JSON reparable. Si el motor rechaza los argumentos antes de entregar
+  una respuesta, tratar ese error concreto de formato como recuperable. Tres fallos consecutivos detienen
+  el paso, conservando los cambios previos; no se completan cadenas de código truncadas artificialmente.
+  Los cortes de conexión durante la respuesta siguen esa misma recuperación acotada; Detener no se reintenta.
+- **Construcción:** esqueleto ejecutable y pequeñas sustituciones con workspace.edit_file; instrucciones
+  de unos 4.000 caracteres de código por llamada. Plan en `.skynet/tarea-N/PLAN.md`, leído al reanudar; casillas
+  pendientes impiden aceptar una respuesta final sin continuar. Es un plan del modelo, no una prueba de calidad.
+  Tras varias lecturas seguidas sin editar ni comprobar, recuerda realizar un cambio concreto. No bloquea
+  la inspección necesaria: evita consumir todo el paso recorriendo repetidamente un archivo largo.
+  La detección de llamadas repetidas distingue versiones del repo: una edición permite releer y ejecutar
+  otra vez el mismo verificador. Sin cambios conserva el límite de repeticiones; no cambia los permisos.
+- **Continuación en Coder:** cada paso se persiste con las tablas existentes. Si agota sus turnos y ha escrito
+  archivos fuera del estado `.skynet/`, hasta cuatro bloques más con contexto fresco y el mismo objetivo.
+  Un verificador fallido devuelve el error al agente para hasta dos reparaciones; si no vuelve a editar,
+  se detiene. Detener conserva su efecto y los cambios. Tokens y tiempo se suman entre los bloques.
+- **Verificación:** también en repos sin Git cuando hubo escritura. Para HTML/JS se pide comprobar ejecución,
+  interacciones y aspecto; el verificador debe medir la aplicación y no un test vacío.
+- **Cara de cambiar:** ninguna migración SQLite. Límites
+  `max_continuaciones` y `reparaciones_verificador` en `[agente]`; misma ruta de planes y estado de tareas.
+- **Comprobación de webs:** nuevo MCP `navegador.comprobar_html`, permiso READ. Chrome efímero, sin red,
+  WebSocket, WebRTC ni archivos fuera del repo. Hasta ocho clics/entradas y captura opcional por llamada.
+  Se ofrece para objetivos HTML/web; requiere Node, Playwright y Chrome (en este PC están disponibles).
+  Devuelve errores de ejecución, controles, desbordamiento y, con visión, imagen; no certifica lógica.
+  Identifica elementos que exceden el ancho (excluye contenido recortado intencionadamente). Las capturas
+  se envían al modelo aunque la comprobación encuentre errores: también sirven para diagnosticar el fallo.
+
+## D24. Tokens por segundo en vivo (2026-10-11)
+- El medidor del chat usa diferencias de `n_decoded` en `/slots` del motor llama.cpp seleccionado,
+  con muestras cada segundo. Incluye razonamiento y argumentos generados; no estima tokens por caracteres
+  ni conserva la media de la última respuesta. La lectura del prompt muestra cero tokens de generación.
+- Sin generación, al perder conexión o sin contador compatible muestra cero. También observa las tareas
+  largas del motor seleccionado: terminar el mensaje de lanzamiento no deja oculto su trabajo en segundo plano.
+  Un endpoint no disponible nunca sustituye el dato con una velocidad inventada. El pie de una respuesta
+  conserva su media histórica. Eventos efímeros: no se escriben cada segundo en SQLite.
+- Web y fuentes del móvil sincronizadas; la APK instalada requiere recompilar para incorporar el cambio.
+
+## D25. Duración mínima solo a petición explícita (2026-10-11)
+- Daniel pide una prueba real de al menos una hora con un único objetivo, sin esperas vacías. Las tareas
+  largas aceptan `minutos_minimos` opcional, validado contra el máximo. En capabilities JSON existentes
+  se guardan `min_trabajo_seg` y `trabajo_seg`; no cambia SQLite ni se añade un permiso.
+- Se acumula el tiempo del modelo y verificación por paso, incluso de intentos fallidos. No cuentan
+  pausas entre pasos ni tiempo con la tarea parada. Completar exige además alcanzar el mínimo; los límites
+  de errores, falta de avance, máximo y Detener siguen vigentes. No se falsea una hora mediante sleep.
+- En tareas largas una fase puede acabar con pendientes en PLAN.md: el scheduler controla el objetivo
+  completo y su verificador. La protección contra cierres con plan incompleto sigue activa en Coder normal.
+  Configuración de tarea larga: 40 turnos por iteración, porque 20 consumían el bloque en releer/diagnosticar
+  antes de poder aplicar varias correcciones. El contexto se recorta y los demás límites permanecen.
+
+## D26. Pi oficial como alternativa al bucle Coder (2026-10-11)
+- Daniel autoriza preparar Pi y el modelo local para probarlo dentro del proyecto. Se instala la versión
+  1.1.0 de `@earendil-works/pi-coding-agent` en `herramientas/pi`, con lockfile y sin instalación global.
+  [RPC](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/docs/rpc.md) y
+  [extensiones](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/docs/extensions.md)
+  oficiales; no se copia su bucle ni se añade un segundo agente dentro de Agent.run.
+- Adaptador en `skynet_tools/pi_agent.py`, extensión en `herramientas/pi/puente.ts`. Pi decide y llama
+  al endpoint local directamente; el adaptador reutiliza la ejecución MCP, gate, auditoría y verificador.
+  Los comandos y herramientas de archivo incorporados en Pi se desactivan. La extensión recibe únicamente
+  las herramientas que Skynet ofrece para esa tarea. Sin descubrimiento de proveedores, claves, extensiones,
+  MCP o instrucciones externas del usuario; Skynet aporta contexto, memoria y skills existentes.
+- **Contrato y permisos (caros de cambiar):** puente HTTP efímero ligado a 127.0.0.1, token aleatorio por
+  ejecución y rechazo de Origin. Manifest y ejecución llevan autenticación; las imágenes viajan como bloques
+  Pi y pasan por las restricciones actuales del gate. No hay un permiso nuevo ni cambios a SQLite.
+- **Sesiones:** `capabilities.harness` en el JSON existente selecciona `pi` o `skynet`, conservado al
+  reanudar. UUID estable por tarea enlaza las sesiones oficiales JSONL en `data/pi/sessions`; Pi lleva su
+  historial y compactación. El adaptador espera `agent_settled`, registra uso incluyendo caché y, al parar,
+  cierra el proceso Pi y sus conexiones. Se conserva la protección contra planes pendientes.
+- **Modelo:** `data/pi/agent/models.json` y settings reproducen endpoint, contexto, salida, muestreo,
+  razonamiento y visión del perfil local. Sin duplicar pesos ni lanzar otro servidor llama.cpp. LiteLLM
+  sigue siendo útil para las llamadas habituales de Skynet; Pi usa su propio cliente de proveedor.
+- **Interfaz:** selector Coder en web y `/coder pi|skynet` en terminal; `Probar Pi.cmd` prepara el repo
+  aislado `prueba-pi` y reutiliza la web si ya está activa. El arranque general sigue usando Skynet.
+  Alcance inicial: tareas Coder con repo y modelo local; móvil, nube y migración general quedan fuera.
+- **Validación:** Pi y Qwen reales completan una función con ocho tests y una web con revisión de captura.
+  Pruebas independientes comprueban controles, persistencia, tres anchos y cambio de motor. La comparación
+  de calidad/latencia contra Skynet queda pendiente; estas pruebas demuestran funcionamiento, no superioridad.

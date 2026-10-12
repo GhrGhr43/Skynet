@@ -141,20 +141,23 @@ class Sesiones:
     def max_seq(self) -> int:
         return self.db.execute("SELECT COALESCE(MAX(seq), 0) FROM sesion_mensajes").fetchone()[0]
 
-    def recientes(self, sid: int, n: int = 3) -> list[tuple[str, str]]:
+    def recientes(self, sid: int, n: int = 3, con_imagenes: bool = False) -> list[tuple[Any, str]]:
         """Últimos pares (petición, respuesta) de la sesión, para darle al modelo el hilo de la conversación."""
         rows = self.db.execute(
             """SELECT tipo, datos_json FROM sesion_mensajes WHERE sesion_id = ? AND tipo IN ('usuario', 'respuesta')
                ORDER BY id DESC LIMIT ?""", (sid, n * 4)).fetchall()
-        pares: list[tuple[str, str]] = []
+        pares: list[tuple[Any, str]] = []
         respuesta: str | None = None
         for r in rows:  # del más nuevo al más viejo
-            texto = str(json.loads(r["datos_json"]).get("texto") or "")
+            datos = json.loads(r["datos_json"])
+            texto = str(datos.get("texto") or "")
             if r["tipo"] == "respuesta":
                 respuesta = texto
             elif respuesta is not None:
                 if not texto.startswith("/"):
-                    pares.append((texto, respuesta))
+                    from .imagenes import contenido
+                    user = contenido(texto, datos.get("imagenes", []), self.store.path.parent) if con_imagenes else texto
+                    pares.append((user, respuesta))
                 respuesta = None
             if len(pares) >= n:
                 break

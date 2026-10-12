@@ -35,7 +35,7 @@ class Local:
         if self.mtp and con_mtp:
             a += ["--spec-type", "draft-mtp"]
         if self.mmproj:
-            a += ["--mmproj", str(self.mmproj)]
+            a += ["--mmproj", str(self.mmproj), "--image-max-tokens", "1024"]
         return a
 
     def info(self) -> dict:

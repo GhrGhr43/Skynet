@@ -77,6 +77,8 @@
     <div class="suggest" id="suggest"></div>
     <form class="prompt" id="prompt" autocomplete="off">
       <span class="prompt-glow" aria-hidden="true"></span>
+      <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp" multiple hidden>
+      <div id="attachments" class="attachments" aria-label="Imágenes adjuntas" hidden></div>
       <textarea id="input" rows="1" placeholder="Pídele algo a Skynet…" aria-label="Mensaje para Skynet"></textarea>
       <div class="prompt-bar">
         <button type="button" class="prompt-plus" id="plusBtn" data-icon="plus" aria-label="Más: internet, modo coder…" title="Internet, modo coder…"></button>

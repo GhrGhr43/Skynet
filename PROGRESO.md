@@ -1,6 +1,183 @@
 # PROGRESO del proyecto Skynet
 
-Última actualización: 2026-10-10 (todo hablando, Control total sin preguntas de más, interfaz simplificada).
+## Auditoría del contexto Pi y propuesta de simplificación (2026-10-11)
+- Sesiones reales comparadas: Pi consola ofrece read/bash/edit/write (4 herramientas, esquemas ~3.092
+  caracteres); tarea 196 integrada ofrece 27 (workspace, sistema/Steam, navegador, visión e internas;
+  esquemas ~11.479 caracteres). No son solo diferencias de interfaz o transporte.
+- Pi genera reglas específicas al reconocer sus herramientas originales. En integrado esas reglas quedan
+  reducidas a brevedad y rutas, más GUIDE propio; se pierden instrucciones de edición agrupada. workspace
+  edit_file hace una sustitución por llamada frente al contrato original de Pi con varias ediciones.
+- Primera llamada real del agua: 3.086 entrada en consola y 5.139 integrada. Contexto inicial integrado
+  3.413 caracteres con objetivo, verificador, memoria/preferencias, catálogo skills y plan solicitado;
+  segunda petición 4.974 caracteres suma instrucciones, resumen del paso y PLAN a la sesión Pi ya conservada.
+  Once imágenes en historial integrado. No se añade el SYSTEM_CODER completo: PiAgent ignora ese parámetro.
+- Propuesta, sin implementar: adoptar Pi oficial como motor; preservar herramientas/contratos originales,
+  permisos compatibles en su frontera y cargar extras por tarea. Una autoridad de sesión/compactación;
+  evaluación funcional externa por objetivo, sin exigir tests Python estructurales a toda web ni reescritura
+  del prompt/bucle por defecto. Comparar batería de tareas y medir éxito/tiempo, no prometer superioridad universal.
+
+## Comparación Pi consola frente a Pi dentro de Skynet (2026-10-11)
+- Resultado Pi nativo en `C:/Git/PiLocal/proyectos/prueba/index.html`: sesión 16:22:35.380–16:34:40.039 UTC,
+  724,659 s (12 min 5 s), 31 llamadas, 39 herramientas, 680.384 entrada + 25.652 salida.
+- Resultado Pi integrado, tarea 196 (no confundir con 195, bucle Skynet): 18:54:50–19:26:12 UTC,
+  1.882 s (31 min 22 s), 56 llamadas, 77 herramientas, 1.673.474 entrada + 38.108 salida. Dos bloques.
+  13 comprobaciones de navegador, plan y verificador Python con siete tests básicos de estructura/sintaxis.
+- Comprobación externa con misma versión Three.js, navegador y viewport: ambos cargan sin errores, clic,
+  reinicio, toque sintético y resize 390/768/1440. Las superficies del agua se renderizan en ambos resultados.
+  Ambos pierden el rastro del cursor si los eventos tienen desplazamientos pequeños: actualizan la referencia
+  de movimiento aunque no alcancen el umbral. Pi nativo no acota la amplitud tras clics repetidos; integrado
+  limita a 32 ondas, pero omite el factor de decaimiento temporal en la altura y su derivada analítica es inexacta.
+- Valoración visual de las capturas: ondas más suaves en Pi nativo; integrado muestra crestas más picudas.
+  Comparación concreta, sin afirmar superioridad general. Entornos no idénticos: integrado reutiliza carpeta
+  con restos del intento 195 y herramientas/verificación distintas. No es una medida aislada del coste del puente.
+- Evidencias: `data/pruebas/agua/tiempos.json` y `comparacion-pi/resultado.json`, capturas y copias de originales.
+  No se modificaron los HTML ni configuración/runtime de los agentes. Las pruebas usan instrumentación efímera
+  solo en respuestas del navegador y una dependencia pública servida desde caché controlada para ambos.
+
+## Comparación del agua: diagnóstico de tarea 195 (2026-10-11)
+- Coder con bucle Skynet y modelo local; repo `pi-smoke` (verificador Python, no específico para esta web).
+  Dos bloques de 30 turnos; 973.884 tokens de entrada acumulados y 25.665 de salida. No son un solo contexto.
+  Primer bloque creó `index.html`; el segundo solo modificó auxiliares en `.skynet/`, sin avance del HTML.
+- El navegador aislado bloqueó el CDN de Three.js. El agente gastó llamadas creando copias alternativas
+  locales/incrustadas y no llegó a corregir el HTML original. No es un diagnóstico de Coder apagado o falta de RAM.
+- Comprobación externa sin modificar originales: CDN satisfecho con la copia exacta de Three.js ya descargada.
+  Skynet tiene error de compilación GLSL: `vUv` usada pero no declarada en fragment shader; agua no renderizada.
+  Pi independiente carga sin errores, responde al clic, reinicia alturas a cero y no desborda a 390 px.
+  No se ha hecho una evaluación exhaustiva de todos los requisitos de ambos resultados.
+- Evidencias y capturas en `data/pruebas/agua/`; sin cambios de runtime, permisos ni archivos de los resultados.
+  Propuesta: revisión de dependencias públicas mediante caché controlada para el navegador aislado y errores
+  accionables, verificador de WebGL/interacciones y repetición de la comparación; diseño pendiente de aprobación.
+
+## Diagnóstico de conversación y contrato del agente (2026-10-11, diseño pendiente)
+- Informe: `reports/Diagnóstico del agente Skynet.md`; notas en `research_notes/Diagnóstico del agente Skynet/`.
+- Sesión 32, tareas 180–185: tras Detener, el historial excluye el trabajo sin respuesta final; primera llamada
+  posterior con 3.289 tokens de entrada. No se demuestra agotamiento de 64K ni falta de memoria gráfica.
+- Repo elegido `ecosistema-simulador` registrado en el chat, pero esas tareas tienen repo NULL:
+  Coder apagado oculta identidad; crear_proyecto no vincula tarea. Falta reloj vivo en el contexto auditado.
+- Propuesta P0: identidad proyecto/sesión durable, transcript y checkpoint de interrupción, reanudación por chat
+  y fecha/hora/zona por turno. P1: calidad comprobada, permisos efectivos y protección de cambios simultáneos.
+  P2: comparar loop propio y adaptador Pi existente con la misma aceptación; sin migración total por intuición.
+- Al investigar había desfase entre Pi implementado y documentación; D26 se actualizó por otro trabajo durante
+  la auditoría. Este diagnóstico no hizo esa integración ni sus pruebas ni modificó los cambios preexistentes.
+- Comprobaciones de auditoría: Store/Verifier/Memoria 14 pasan y 1 excluido; suite completa y doctor inconclusos
+  por temporales del entorno/esperas sin resultado final. No se da el estado actual por aprobado con ese subconjunto.
+- Solo notas/informe/progreso; sin cambios de runtime, configuración, SQLite ni proyectos externos.
+  Siguiente paso: acordar con Daniel el diseño del contrato P0 y sus pruebas antes de implementar algo grande.
+
+Última actualización: 2026-10-11 (Pi oficial como alternativa Coder, D26).
+
+## Pi preparado para pruebas con el modelo local (2026-10-11, D26)
+- Instalado Pi 1.1.0 (`@earendil-works/pi-coding-agent`) en `herramientas/pi`, sin instalación global.
+  Integración por RPC y extensión oficiales: Pi lleva el bucle; las herramientas pasan por MCP y el gate
+  de Skynet. Herramientas propias de Pi desactivadas para conservar los permisos y la auditoría.
+- Mismo endpoint llama.cpp, pesos Qwen locales, visión y contexto 64K; configuración en `data/pi/agent`.
+  Pi llama directamente al endpoint. LiteLLM se conserva para el motor habitual de Skynet.
+  Sesiones Pi en `data/pi/sessions`, vinculadas al ID de tarea; capabilities JSON recuerda el motor sin migración.
+- Selector web `+ > Agente para programar > Pi/Skynet`; terminal `/coder pi` y `/coder skynet`.
+  `Probar Pi.cmd` reutiliza/enciende el modelo y la web, elige repo `prueba-pi` y abre el navegador.
+  Disponible para Coder local con repo; el arranque habitual sigue usando Skynet. APK sin cambios.
+- Pruebas reales sin corregir manualmente el código generado: tarea 186, función Python y ocho tests;
+  tarea 187, contador HTML con persistencia, botones y revisión de captura. Ambas HECHAS.
+  Resultado visible en `proyectos/prueba-pi/index.html`; evidencias en `data/pruebas/pi/`.
+  Comprobación independiente de botones, recarga, tres anchos y selector Pi/Skynet: todo OK, sin errores JS.
+- Batería completa: 227 pasan, 1 omitido; tras los últimos ajustes, 21 tests Pi/web pasan.
+  Incluye permisos reales, autenticación del puente, cancelación, imágenes y plan pendiente.
+  Doctor conserva el aviso previo por el repo inexistente `age-of-empires-3d`; modelo/MCP disponibles.
+  Falta una comparación de rendimiento y calidad con Skynet en tareas equivalentes; no se afirma superioridad.
+
+## Estudio previo de Pi como motor agéntico (2026-10-11)
+- Revisados código actual de Skynet y documentación oficial actual de Pi (repo redirige a earendil-works/pi).
+  Pi permite SDK TypeScript, RPC y MCP; no incorpora los modos de permisos de Skynet.
+- Tokenizador del Qwen local: plantilla SYSTEM_CHAT 112 tokens, SYSTEM_CODER 340 y SMALL_CALLS 109;
+  no son el prompt completo: faltan sustituciones, memoria, herramientas, contexto e historial.
+  Tarea 179: primera llamada 5.250 tokens de entrada; máximo 38.900, media 17.616 en 278 llamadas.
+- Recomendación aceptada e implementada arriba: probar Pi integrado por RPC como alternativa Coder, conservando
+  interfaz, tareas, verificador y permisos de Skynet; un único bucle agéntico por ejecución. Comparar
+  mismas tareas/modelo/ajustes, caché fría y caliente, éxito sin intervención y tiempo total.
+  LiteLLM sigue siendo el SDK del router habitual.
+
+## Peticiones grandes sin repetir «continúa» (2026-10-11, D23)
+- Implementada recuperación acotada de respuestas cortadas, JSON inválido y cortes de conexión: no ejecuta
+  ni conserva llamadas incompletas en el historial. JSON reparable se normaliza antes de conservarlo.
+- Coder pide construir esqueleto y ampliar con pequeñas ediciones. Plan en `.skynet/tarea-N/PLAN.md`, leído
+  al reanudar; las casillas pendientes impiden aceptar un cierre prematuro del modelo.
+  Tras cinco lecturas seguidas se orienta al siguiente cambio concreto, sin bloquear lecturas necesarias.
+  Lecturas/verificador se pueden repetir después de editar; sin cambios sigue la protección contra bucles.
+- Hasta cuatro bloques adicionales si agotó turnos y modificó código; dos reparaciones de verificador.
+  Cada paso queda guardado, Detener conserva los archivos, consumo acumulado entre bloques. Configurable.
+- Verificación también en repos sin Git cuando hubo escritura. Sin migración SQLite.
+- Nuevo MCP `navegador.comprobar_html`: Chrome aislado, HTML del repo, sin red/perfil personal; acciones,
+  errores JS, desbordamiento y captura opcional. Probado por MCP real, incluidas imágenes y errores.
+  Las capturas de páginas con errores también llegan al modelo; identifica los elementos que desbordan.
+- Batería final: 220 tests pasan y 1 omitido; sintaxis JS de web/móvil/navegador comprobada.
+  Doctor: modelo y MCP OK; registro local antiguo `age-of-empires-3d` apunta a una carpeta inexistente.
+- Capacidad práctica con el modelo real: Gini (20 comprobaciones, 43,5 s) y cruce de órdenes
+  (31 comprobaciones, 90,6 s), ambos hechos con verificador externo fuera del repo. No equivalen a un IQ.
+- Simulador original construido por el propio modelo, HTML de ~37 KB, controles y cuatro canvas;
+  corrigió desbordamiento móvil y lógica económica. Verificador reforzado pasa: conserva dinero/recurso,
+  órdenes repetidas comparten saldo/inventario, ignora agentes eliminados, extinción y 1200 pasos.
+  Pruebas y archivos aislados en `data/pruebas/incremental/`; no se modifica el repo personal `prueba`.
+
+## Velocidad del chat en vivo (2026-10-11, D24)
+- Web y fuentes del móvil actualizan cada segundo con diferencias del contador nativo `/slots` de llama.cpp.
+  Incluye razonamiento/argumentos y tareas largas; cero sin generación o conexión, sin retener la media.
+  La media histórica queda solo en el pie. Motor incompatible muestra cero; eventos sin persistencia SQLite.
+- Contraste con generación real: muestras entre ~15 y 28 tok/s en el primer ensayo; tarea larga en la web
+  activa entre ~24 y 33 tok/s en ocho muestras, sin estimar caracteres.
+  Chrome verifica reposo, cambios, que usage no sobrescriba la velocidad, silencio, desconexión y Detener.
+- APK aún pendiente de recompilar. Servidor activo actualizado en reposo, sesión 30 y opciones restauradas;
+  modelo continuó encendido. Medidor en la versión activa verificado con Chrome.
+
+## Prueba de una hora con una petición (2026-10-11, terminada, D25)
+- Daniel pide una web compleja con al menos una hora de trabajo, guardada en el PC, y apagar al terminar.
+- Tarea 179: Colonia Atlas, ocho pantallas, mapa, construcciones, población, tecnología, misiones, mercado,
+  persistencia y análisis. Única petición en `data/pruebas/hora/prompt.txt`; proyecto en `proyectos/colonia-atlas`.
+- Terminada como HECHA a las 09:27:44: 5.019,71 segundos de trabajo medido (83,66 minutos), 12 iteraciones.
+  El modelo local escribió y corrigió el HTML; Codex reparó Skynet y mantuvo el verificador externo.
+  Mismo objetivo inicial en todas las reanudaciones, sin añadir peticiones humanas al proyecto.
+  Comprobación independiente final: 120 casos pasan, cero fallan. Capturas finales de escritorio/móvil
+  revisadas, sin errores JS ni desbordamiento. Resultado y pruebas en `data/pruebas/hora/`.
+  Para verla después del apagado: doble clic en `proyectos/colonia-atlas/index.html`, sin Internet.
+- Verificador externo progresivo ampliado de 57 a 120 casos: lógica, botones reales, restauración,
+  investigación/misiones y las ocho pantallas a 390/768/1440 px. El modelo no puede cambiar los tests.
+  Al ampliar se reanuda la misma tarea para tomar una nueva referencia; conserva objetivo y tiempo acumulado.
+  Bloques de tarea larga ampliados a 40 turnos: con 20 el diagnóstico consumía casi todo el bloque
+  y provocaba volver a leer el contexto. Límites de tiempo/errores y verificaciones siguen activos.
+- Duración mínima explícita en capabilities JSON, sin migración: `min_trabajo_seg`, `trabajo_seg` acumulado.
+  Cuenta llamadas al modelo y verificación, no pausas entre pasos; no puede cerrar antes del mínimo.
+  Herramienta interna `tarea_larga` acepta `minutos_minimos` solo cuando Daniel lo pide. El tiempo máximo
+  sigue siendo independiente. En una iteración larga el plan puede tener pendientes; cerrar toda la tarea
+  sigue requiriendo el marcador de final y verificador en verde.
+
+## Diagnóstico del simulador de ecosistema (2026-10-11)
+- Revisadas las tareas 169, 170 y 171: la escritura del HTML agotó los 8.192 tokens de salida
+  (`finish_reason = length`), dejó argumentos JSON incompletos y no llegó a ejecutar write_file.
+  La tarea 171 tenía Coder activado; ese modo tampoco evitó la escritura completa en una llamada.
+- El agente conservaba la llamada incompleta en el historial y pedía repetirla; la recuperación terminaba
+  con HTTP 500 del motor al parsear argumentos. Faltaba manejo específico de salida agotada.
+  El registro de la tarea 171 no muestra agotamiento del contexto de 64K ni error de memoria.
+- Corrección implementada en D23: descartar llamadas truncadas antes de incorporarlas al historial,
+  recuperación acotada y construcción por pequeñas ediciones con comprobaciones intermedias.
+- El repo local `prueba` está vacío, sin Git ni verificador configurado. Para una aplicación HTML,
+  la validación debe comprobar JavaScript y funcionamiento en navegador.
+
+## Visión local, adjuntos y comprobación visual (2026-10-10, D22)
+- Descargado y verificado el mmproj del repo GSQ-RCO (931 MB). Motor IQ3_S con MTP y 64K reconoce
+  correctamente una imagen sintética; `/props` confirma visión. Archivo antiguo conservado (otra huella).
+- Proyector en CPU (`vision_gpu = false`): en la comparación de respuestas de 128 tokens, ~23–33 tok/s
+  frente a ~13 con visión en GPU; una imagen nueva de 800×500 tardó 6,28 s con 428 tokens de entrada.
+  GPU a 64K llegó a ~16,4 GB de memoria dedicada total y ~1,6 GB compartida. Medidas puntuales, no universales.
+- Web y `movil/www`: **+ > Adjuntar imágenes**, pegar o arrastrar, miniaturas, hasta 4 imágenes/5 MB,
+  PNG/JPEG/WebP, resolución limitada a 1280 px y sin metadatos. Historial y Reintentar conservan referencias;
+  archivos en data/imagenes, sin cambiar el esquema SQLite. Lectura remota con llave de dispositivo.
+- MCP `vision`: mirar imágenes del repo y capturar ventana activa/por título o escritorio. Solo bucle local;
+  capturas con Ver mi PC o más, nunca en tareas largas. Herramientas ofrecidas en Coder/peticiones visuales,
+  con instrucciones para comprobar juegos/interfaces tras cambios y junto con tests/errores.
+- Verificado: 185 tests pasan, 1 omitido (integración optativa), doctor OK; MCP → LiteLLM → modelo real
+  identificó cuadrado rojo y círculo azul (1 herramienta, 1.726 tokens, 14,33 s del modelo en 2 llamadas).
+  Interfaz: adjuntar, enviar, recuperar historial tras recargar y 390 px, sin errores JS ni desbordamiento.
+- Pendiente: comprobar capturas con un juego real (pueden fallar ventanas minimizadas/protegidas), recompilar
+  APK y decidir si las tareas largas deben poder capturar una ventana autorizada; hoy conservan Solo repo.
 
 ## Todo hablando y Control total sin preguntas de más (2026-10-10 noche, D21)
 - Se pide hablando: crear proyectos, tareas largas (en minutos), cargar skills, buscar archivos de todo el PC (índice de

@@ -166,6 +166,7 @@ class PermissionGate:
         user_home: Path | str | None = None,
         internet: bool = False,
         sin_preguntar: bool = False,
+        vision: bool = False,
     ):
         self.settings = settings
         self.repo = repo
@@ -177,6 +178,7 @@ class PermissionGate:
         self.reserved = [d.resolve() for d in propuestas.reserved_dirs(settings.home)]
         self.mode = mode
         self.internet = internet
+        self.vision = vision
         self.sin_preguntar = sin_preguntar and mode == "total"
         self.user_home = norm_path(str(user_home or Path.home()), "/")
         self.sysdirs = system_dirs()
@@ -211,6 +213,11 @@ class PermissionGate:
     def evaluate(self, key: str, args: dict[str, Any]) -> GateResult:
         """Decisión pura (sin preguntar ni auditar)."""
         level = self.classify(key)
+        if key.startswith("vision."):
+            if not self.vision or key not in ("vision.leer_imagen", "vision.capturar_pantalla"):
+                return GateResult(Decision.DENY, level, "Visión local no disponible")
+            if key == "vision.capturar_pantalla" or self.mode != "repo":
+                return self._evaluate_sistema(key, level, args)
         if key.startswith("internet."):
             if not self.internet or key not in ("internet.buscar", "internet.leer"):
                 return GateResult(Decision.DENY, level, "Internet está desactivado o la herramienta no está autorizada")

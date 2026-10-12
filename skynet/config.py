@@ -84,6 +84,8 @@ class ServerSpec:
 @dataclass
 class AgentLimits:
     max_turnos: int = 30
+    max_continuaciones: int = 4
+    reparaciones_verificador: int = 2
     max_salida_herramienta: int = 6000
     contexto_max_tokens: int = 6000
 

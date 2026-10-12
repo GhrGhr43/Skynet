@@ -25,6 +25,7 @@ import threading
 import time
 import webbrowser
 from collections import deque
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +39,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .. import __version__, modos, modelos_locales, propuestas, skills
+from .. import __version__, imagenes, modos, modelos_locales, propuestas, skills
 from ..agent import comando_completo, summarize_args
 from ..audit import describe_event
 from ..config import ConfigError, add_repo
@@ -50,6 +51,7 @@ from ..sesiones import Sesiones
 from ..store import EN_CURSO, ESPERANDO_PERMISO, FALLIDA, HECHA, PAUSADA, Task
 from .acceso import (AccesoError, Cliente, ConfigAcceso, Dispositivos, EstadoAcceso, enlace_emparejar,
                      ip_cliente, ip_de_tailscale)
+from .velocidad import ContadorTokens
 
 STATIC = Path(__file__).resolve().parent / "static"
 
@@ -87,7 +89,7 @@ class Bus:
 
     def publish(self, kind: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
         msg = {"seq": next(self._seq), "tipo": kind, **(data or {})}
-        if kind in self.REPLAYABLE and not (kind == "evento" and msg.get("kind") in ("thinking", "usage")):
+        if kind in self.REPLAYABLE and not (kind == "evento" and msg.get("kind") in ("thinking", "usage", "speed")):
             self.history.append(msg)
             if self.sink:
                 try:
@@ -130,6 +132,7 @@ class WebUI:
         self.pending: dict[str, tuple[dict[str, Any], asyncio.Future[str]]] = {}
         self._ids = itertools.count(1)
         self.on_usage: Callable[[dict[str, Any]], None] | None = None
+        self.on_route: Callable[[dict[str, Any]], None] | None = None
 
     def info(self, text: str) -> None:
         self.bus.publish("info", {"texto": text})
@@ -140,6 +143,8 @@ class WebUI:
     def event(self, kind: str, data: dict[str, Any]) -> None:
         if kind == "usage" and self.on_usage:
             self.on_usage(data)
+        if kind == "route" and self.on_route:
+            self.on_route(data)
         self.bus.publish("evento", {"kind": kind, "datos": data})
 
     def show(self, renderable: Any) -> None:
@@ -208,13 +213,13 @@ class WebCoordinator(Coordinator):
         lines = [f"- Pedido: {q[:300]}\n  Respuesta: {a[:500]}" for q, a in pares]
         return "Conversación reciente (por si la petición se refiere a ella):\n" + "\n".join(lines)
 
-    def _pairs(self, n: int = 6) -> list[tuple[str, str]]:
+    def _pairs(self, n: int = 6) -> list[tuple[Any, str]]:
         if not (self.sesiones and self.sesion_id):
             return super()._pairs(n)
-        return self.sesiones.recientes(self.sesion_id, n)
+        return self.sesiones.recientes(self.sesion_id, n, con_imagenes=True)
 
     async def _run(self, task: Task, kind: str, extra: str | None,
-                   history: list[tuple[str, str]] | None = None) -> Task:
+                   history: list[tuple[Any, str]] | None = None) -> Task:
         if self.sesiones and self.sesion_id and not task.is_long:
             self.sesiones.enlazar(self.sesion_id, task.id)
         return await super()._run(task, kind, extra, history=history)
@@ -268,6 +273,9 @@ class Session:
         self.label = ""
         self._abandoned: set[asyncio.Task[Any]] = set()
         self.gen = 0  # cada trabajo tiene su número: uno abandonado al detener no pisa el estado del siguiente
+        self.tps = 0.0
+        self._speed_task: asyncio.Task[Any] | None = None
+        self._speed_url: str | None = None
         from ..engines import load_engines
 
         self.engines = load_engines(rt.settings.engines, rt.settings.logs_dir, rt.settings.home)
@@ -275,6 +283,39 @@ class Session:
         threading.Thread(target=_warm_litellm, daemon=True).start()
 
         self.ui.on_usage = self._usage
+        self.ui.on_route = self._route_speed
+
+    def _route_speed(self, data: dict[str, Any]) -> None:
+        self._speed_url = None
+        for name, profile in self.rt.settings.models.items():
+            engine = self.engines.specs.get(name)
+            if name == data.get("perfil") and engine and engine.tipo == "llamacpp":
+                self._speed_url = engine.url.removesuffix("/").removesuffix("/v1") + "/slots"
+                break
+
+    def _publish_speed(self, value: float) -> None:
+        self.tps = value
+        self.ui.event("speed", {"tok_s": value})
+
+    async def _speed(self) -> None:
+        from ..engines import _get_json
+
+        contador = ContadorTokens()
+        source = None
+        deadline = time.monotonic()
+        while True:
+            url = self._speed_url
+            if not self.running:
+                profile = self.rt.router.choose(Capabilities.from_dict(self.coord._caps())).profile
+                engine = self.engines.specs.get(profile.nombre)
+                url = engine.url.rstrip('/').removesuffix('/v1') + '/slots' if engine and engine.tipo == 'llamacpp' else None
+            if source != url:
+                contador = ContadorTokens()
+                source = url
+            slots = await asyncio.to_thread(_get_json, url, 0.45) if url else None
+            self._publish_speed(contador.medir(slots, time.monotonic()))
+            deadline += 1
+            await asyncio.sleep(max(0, deadline - time.monotonic()))
 
     # --- sesiones -----------------------------------------------------------
     def _guardar(self, msg: dict[str, Any]) -> None:
@@ -283,9 +324,6 @@ class Session:
     def _usage(self, d: dict[str, Any]) -> None:
         self.ctx = {"contexto": int(d.get("tokens_in") or 0) + int(d.get("tokens_out") or 0), "modelo": d.get("model")}
         self.sesiones.tocar(self.sid, **self.ctx)
-        seg, out = float(d.get("segundos") or 0), int(d.get("tokens_out") or 0)
-        if seg > 0 and out > 0:  # velocidad de la última llamada (solo en memoria)
-            self.tps = round(out / seg, 1)
 
     def abrir(self, sid: int) -> None:
         """Cambia de sesión: la conversación de las pestañas se rehace con la de la sesión elegida."""
@@ -314,7 +352,7 @@ class Session:
         ses = self.sesiones.get(self.sid)
         return {"id": self.sid, "titulo": ses["titulo"], "consumo": self.sesiones.consumo(self.sid),
                 "contexto": self.ctx.get("contexto") or 0, "contexto_max": context_window(self, self.ctx.get("modelo")),
-                "tps": getattr(self, "tps", None)}
+                "tps": self.tps}
 
     @property
     def busy(self) -> bool:
@@ -326,6 +364,7 @@ class Session:
         self.label = label
         self.running = True
         self.gen += 1
+        self._speed_url = None
         self.current = asyncio.create_task(self._wrap(work, self.gen))
         self.bus.publish("ocupado", {"ocupado": True, "etiqueta": label})
 
@@ -346,19 +385,20 @@ class Session:
     def _release(self) -> None:
         self.running = False
         self.label = ""
+        self._publish_speed(0)
         self.bus.publish("ocupado", {"ocupado": False})
         self.bus.publish("estado", snapshot(self))
 
-    def message(self, text: str) -> None:
+    def message(self, text: str, images: list[dict[str, Any]] | None = None) -> None:
         text = text.strip()
         if not text:
             return
         if self.busy:
             raise Busy(f"Skynet está trabajando en «{self.label}». Espera o pulsa Detener.")
-        self.bus.publish("usuario", {"texto": text})
+        self.bus.publish("usuario", {"texto": text, **({"imagenes": images} if images else {})})
 
         async def run() -> None:
-            if await self.coord.handle(text) is False:  # «salir», «adiós»...
+            if await self.coord.handle(text, images=images) is False:  # «salir», «adiós»...
                 self.ui.info("La web sigue abierta. Para cerrar Skynet, cierra la ventana donde lanzaste «skynet web».")
 
         self.start(text.splitlines()[0][:70], run)
@@ -449,6 +489,8 @@ def snapshot(s: Session) -> dict[str, Any]:
         "internet": c.internet and not internet_blocked(s),
         "internet_bloqueado": internet_blocked(s),
         "coder": c.coder and c.repo_name is not None,
+        "coder_motor": c.coder_motor,
+        "vision": _current_model(s) == "local" and rt.vision_disponible(),
         "razonamiento": c.effort or "auto",
         "ocupado": s.busy,
         "etiqueta": s.label,
@@ -714,20 +756,58 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         return jresp(snapshot(session))
 
     async def mensaje(request: Request) -> Response:
-        text = str((await body(request)).get("texto") or "").strip()
+        # El límite se aplica mientras llega el cuerpo, también sin Content-Length.
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 28_000_000:
+                return bad("Mensaje con imágenes demasiado grande", 413)
+        try:
+            b = json.loads(raw)
+            if not isinstance(b, dict):
+                return bad("Mensaje inválido")
+        except (ValueError, UnicodeDecodeError):
+            return bad("Mensaje inválido")
+        text = str(b.get("texto") or "").strip()
+        adjuntos = b.get("imagenes", [])
+        if not isinstance(adjuntos, list) or len(adjuntos) > imagenes.MAX_IMAGENES:
+            return bad("Adjunta como máximo 4 imágenes por mensaje.")
+        if adjuntos and not text:
+            text = "Describe la imagen adjunta." if len(adjuntos) == 1 else "Describe las imágenes adjuntas."
         if not text:
             return bad("Mensaje vacío")
         if len(text) > 20000:
             return bad("Mensaje demasiado largo")
         cli = cliente_de(request)
+        if session.busy:
+            return bad("Skynet está trabajando. Espera o pulsa Detener.", 409)
+        refs = []
+        if adjuntos:
+            if text.startswith("/"):
+                return bad("Envía las imágenes con un mensaje, sin comandos /.")
+            if _current_model(session) != "local" or not rt.vision_disponible():
+                return bad("Enciende el motor local con visión y selecciona Local para adjuntar imágenes.")
+            try:
+                refs = await asyncio.to_thread(imagenes.guardar, rt.settings.db_path.parent, adjuntos)
+            except ValueError as e:
+                return bad(str(e))
         try:
-            session.message(text)
+            session.message(text, refs)
         except Busy as e:
             return bad(str(e), 409)
         if cli.remoto and cli.dispositivo:
             rt.audit.log("permission", tool="skynet.remoto", decision="mensaje",
                          detail={"mensaje": f"Desde {cli.dispositivo.nombre}: {text[:120]}"})
         return ok()
+
+    async def imagen(request: Request) -> Response:
+        ident = request.path_params["id"]
+        # Mismo acceso Host/Origin/Tailscale/llave que el chat; los archivos no están en /static.
+        try:
+            url = await asyncio.to_thread(imagenes.data_url, rt.settings.db_path.parent, ident)
+        except (OSError, ValueError):
+            return bad("Imagen no disponible", 404)
+        return JSONResponse({"data_url": url}, headers={"Cache-Control": "no-store"})
 
     async def responder(request: Request) -> Response:
         b = await body(request)
@@ -790,6 +870,18 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             if b["internet"] and target_repo and target_repo.privacidad == "alta":
                 return bad("Este repo tiene privacidad alta: la búsqueda web está desactivada.")
             c.internet = b["internet"]
+        if "coder_motor" in b:
+            if b["coder_motor"] not in ("skynet", "pi"):
+                return bad("Motor Coder desconocido.")
+            if session.busy:
+                return bad("Espera a que termine o pulsa Detener antes de cambiar el motor Coder.", 409)
+            if b["coder_motor"] == "pi":
+                from skynet_tools.pi_agent import installation
+                try:
+                    installation(rt.settings.home)
+                except RuntimeError as e:
+                    return bad(str(e))
+            c.coder_motor = b["coder_motor"]
         if "coder" in b:
             if not isinstance(b["coder"], bool):
                 return bad("Coder debe ser true o false")
@@ -1137,6 +1229,7 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         return ok()
 
     routes = [
+        Route("/api/imagenes/{id}", imagen),
         Route("/api/sesiones", sesiones_lista),
         Route("/api/aprendizaje", aprendizaje_lista),
         Route("/api/aprendizaje/{nombre}", aprendizaje_accion, methods=["POST"]),
@@ -1167,8 +1260,17 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         Route("/api/doctor", doctor),
         Mount("/static", FreshStaticFiles(directory=STATIC), name="static"),
     ]
+    @asynccontextmanager
+    async def lifespan(app):
+        session._speed_task = asyncio.create_task(session._speed())
+        try:
+            yield
+        finally:
+            session._speed_task.cancel()
+            await asyncio.gather(session._speed_task, return_exceptions=True)
+
     app = Starlette(routes=routes, middleware=[Middleware(Acceso, port_ref=port_ref, dispositivos=dispositivos,
-                                                           cfg=cfg, on_rechazo=on_rechazo)])
+                                                           cfg=cfg, on_rechazo=on_rechazo)], lifespan=lifespan)
     app.state.session = session
     app.state.port_ref = port_ref
     app.state.dispositivos = dispositivos

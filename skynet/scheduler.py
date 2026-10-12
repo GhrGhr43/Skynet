@@ -111,6 +111,8 @@ class LongTaskRunner:
         L = self.rt.settings.long
         max_hours = task.max_hours or L.max_horas
         max_iters = task.max_iters or L.max_iteraciones
+        minimo = max(0, min(float(task.capabilities.get("min_trabajo_seg", 0)), max_hours * 3600))
+        trabajo = max(0, float(task.capabilities.get("trabajo_seg", 0)))
         deadline = self.clock() + max_hours * 3600
 
         gitops.ensure_repo(repo.ruta)
@@ -153,9 +155,16 @@ class LongTaskRunner:
                 n = task.iters_done + 1
                 checkpoint = gitops.head(repo.ruta)
                 self.on_event("iteracion", {"n": n})
+                instructions = ITERATION_INSTRUCTIONS.format(n=n)
+                if trabajo < minimo:
+                    instructions += (f"\nDuración mínima pedida: faltan {max(1, round((minimo-trabajo)/60))} minutos "
+                                     "de trabajo efectivo. Continúa requisitos pendientes, pruebas de escenarios, "
+                                     "accesibilidad o rendimiento y guarda resultados concretos. No esperes sin trabajar "
+                                     "ni marques OBJETIVO_CUMPLIDO todavía.")
+                inicio_paso = self.clock()
                 run = await self.rt.agent_step(
                     task, "iteracion", on_event=self.on_event, max_turns=L.turnos_por_iteracion,
-                    instructions=ITERATION_INSTRUCTIONS.format(n=n), protected=["PROGRESO.md"],
+                    instructions=instructions, protected=["PROGRESO.md"],
                 )
                 out = run.outcome
                 ver: VerifierResult | None = None
@@ -173,12 +182,17 @@ class LongTaskRunner:
                     sig, err_text = "sin-verificador", out.final_text
                 self.on_event("verificador", {"ok": strict, "aceptada": accepted,
                                               "resumen": ver.summary() if ver else "sin verificador"})
+                if minimo:
+                    # Solo modelo y verificación: no cuentan pausas ni esperas de recuperación entre pasos.
+                    trabajo += max(0, self.clock() - inicio_paso)
+                    task = self.store.update_task(task.id, capabilities={**task.capabilities, "trabajo_seg": trabajo})
+                terminado = strict and out.claims_done and trabajo >= minimo
 
                 changed = gitops.is_dirty(repo.ruta)
                 if accepted:
                     if ver is not None:
                         baseline = ver
-                    no_progress = 0 if (changed or out.claims_done) else no_progress + 1
+                    no_progress = 0 if (changed or terminado) else no_progress + 1
                     step_status = ("ok" if strict else "avance") if changed else "sin_cambios"
                 else:
                     gitops.rollback(repo.ruta, checkpoint)
@@ -207,7 +221,7 @@ class LongTaskRunner:
                     self.rt.audit.log("commit", task_id=task.id, step_id=run.step.id,
                                       detail={"sha": commit_sha, "mensaje": msg})
 
-                if strict and out.claims_done:
+                if terminado:
                     final_status, reason = HECHA, "objetivo cumplido y verificador en verde"
                     break
                 if streak_n >= L.max_errores_iguales:
@@ -287,12 +301,14 @@ class LongTaskRunner:
         return self.store.get_task(task.id)
 
 
-def lanzar_larga(rt: Runtime, repo: RepoConfig, objetivo: str, horas: float, caps: dict[str, Any]) -> tuple[Task, int]:
+def lanzar_larga(rt: Runtime, repo: RepoConfig, objetivo: str, horas: float, caps: dict[str, Any],
+                 minimo_minutos: int = 0) -> tuple[Task, int]:
     """Crea la tarea larga y la lanza en segundo plano. Devuelve (tarea, pid). La usa la herramienta tarea_larga."""
     agent = "agente-godot" if repo.agente == "agente-godot" else "scheduler"
     grants = ["coding_agent.start_task", "coding_agent.stop_task"] if agent == "agente-godot" else []
     task = rt.store.create_task(title=objetivo[:70], goal=objetivo, agent=agent, repo=repo.nombre, status=PENDIENTE,
-                                max_hours=horas, capabilities={"capacidades": caps, "permisos_preaprobados": grants})
+                                max_hours=horas, capabilities={"capacidades": caps, "permisos_preaprobados": grants,
+                                                             "min_trabajo_seg": minimo_minutos * 60})
     rt.audit.log("task", task_id=task.id, decision="creada",
                  detail={"mensaje": f"tarea larga {round(horas * 60)} min", "preaprobado": grants})
     return task, spawn_background(rt, task.id)

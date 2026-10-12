@@ -62,6 +62,18 @@ def test_local_sigue_igual(web):
     assert c.get("/api/estado", headers={"Host": "evil.example:8765"}).status_code == 403
 
 
+def test_imagen_remota_exige_llave(web):
+    from test_vision import adjunto
+    c, rt, app = web
+    rt.vision_disponible = lambda: True
+    llave = emparejar(c)
+    assert c.post("/api/mensaje", json={"texto": "mira", "imagenes": [adjunto()]}, headers=remoto(llave)).json()["ok"]
+    msg = next(m for m in app.state.session.bus.history if m.get("imagenes"))
+    ident = msg["imagenes"][0]["id"]
+    assert c.get(f"/api/imagenes/{ident}", headers=remoto(llave)).status_code == 200
+    assert c.get(f"/api/imagenes/{ident}", headers=remoto()).status_code == 401
+
+
 def test_emparejar_y_usar_desde_el_movil(web):
     c, rt, _ = web
     llave = emparejar(c)
