@@ -10,7 +10,8 @@ export function opcionesHtml(o) {
     <div class="section-k">Herramientas originales</div>${['read','bash','edit','write'].map(t=>`<label class="card-sub"><input type="checkbox" data-nativa="${t}" ${o.herramientas.includes(t)?'checked':''}> ${t}</label> `).join('')}
     <div class="section-k">Modelo local</div><label>Contexto (tokens) <input class="input" id="contextoNative" type="number" min="2048" max="262144" value="${o.contexto}"></label>
     ${check('mtp','MTP: acelerar generación cuando el modelo lo admita')}${check('vision_gpu','Procesar imágenes en GPU (apagado: CPU)')}
-    <p class="note">Contexto, MTP y visión se aplican al reiniciar el motor. La caché usa la precisión por defecto del backend.</p>
+    <label>Caché KV <select class="select" id="cacheNative">${[['f16','FP16'],['q8_0','Q8'],['q4_0','Q4']].map(([id,label])=>`<option value="${id}" ${(o.cache_kv||'f16')===id?'selected':''}>${label}</option>`).join('')}</select></label>
+    <p class="note">Contexto, caché, MTP y visión se aplican al reiniciar el motor.</p>
     ${check('memoria_activa','Utilizar memoria aprobada')}${check('mcp_activo','Permitir herramientas MCP')}
     <button class="btn primary small" id="guardarNative">Guardar opciones</button></div>
     <div class="section-k">Servidores MCP</div><div class="card"><p class="note">Desactivados: no se conectan ni ofrecen herramientas. Activa solo los que quieras usar.</p>`;
@@ -33,7 +34,7 @@ export function enlazarOpciones(panel,o){
   const q=s=>panel.body.querySelector(s);
   const run=async f=>{try{await f();panel.app.applySnap(await api.estado());panel.render(true);}catch(e){panel.app.toast(e.message,'bad');}};
   q('#guardarNative')?.addEventListener('click',()=>run(async()=>{
-    const body={harness:q('#harnessSelect').value,contexto:Number(q('#contextoNative').value),herramientas:[...panel.body.querySelectorAll('[data-nativa]:checked')].map(e=>e.dataset.nativa)};
+    const body={harness:q('#harnessSelect').value,contexto:Number(q('#contextoNative').value),cache_kv:q('#cacheNative').value,herramientas:[...panel.body.querySelectorAll('[data-nativa]:checked')].map(e=>e.dataset.nativa)};
     for(const e of panel.body.querySelectorAll('[data-opcion]'))body[e.dataset.opcion]=e.checked;
     await api.personalizacion(body);
   }));

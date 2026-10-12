@@ -51,7 +51,7 @@ args = ["-m", "skynet_tools.coding_agent", "--agente-godot", "C:/Users/HACHO/Doc
 
 # Motor local que se enciende y apaga desde la web (Ajustes). El nombre coincide con el perfil de
 # router.toml que sirve. llama-server directo (el que trae LM Studio) con los ajustes de la comparativa
-# El modelo elegido en Ajustes manda sobre este. Contexto configurable; caché sin cuantización.
+# El modelo elegido en Ajustes manda sobre este. Contexto y caché se eligen en Configuración.
 [motores.local]
 tipo = "llamacpp"
 url = "http://127.0.0.1:8090/v1"

@@ -1,5 +1,14 @@
 # Decisiones (ADR) del MVP
 
+## D28. Caché KV configurable y Q4 elegido (2026-10-12)
+- Tras comparar Q8/Q4 en su PC, Daniel pide dejar Q4. Esta petición sustituye la retirada de caché
+  cuantizada de D27; contexto 64K, MTP y proyector de visión en CPU permanecen.
+- `cache_kv` en opciones personales acepta f16/q8_0/q4_0 para K y V; selector en Configuración web
+  y fuentes móviles. Se aplica al cargar motores y al cambiar GGUF, sin duplicar parámetros.
+  El valor personal guardado es q4_0; instalaciones sin elección previa conservan f16.
+- Sin cambios de sesión, prompt, bucle Pi, MCP, permisos o esquema SQLite. Cambiar caché requiere
+  reiniciar el motor. Dos muestras de velocidad no demuestran igualdad de calidad entre formatos.
+
 ## D27. Pi oficial como único motor de producción (2026-10-12)
 - Daniel autoriza sustituir el bucle propio tras comparar tareas reales, retirar Hermes, caché cuantizada,
   propuestas y verificación impuesta; mantener MTP, opciones configurables y aprobar memoria individual.

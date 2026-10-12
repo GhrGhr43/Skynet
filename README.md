@@ -39,8 +39,8 @@ Las opciones personales se guardan localmente en `data/personalizacion.json`:
   opciones de arranque**. Otros protocolos necesitan adaptadores; indicar un nombre de agente
   no lo integra automáticamente. Modelo y harness se eligen por separado.
 - **Herramientas:** activa o desactiva las cuatro originales. Las llamadas pasan por permisos.
-- **Modelo local:** contexto configurable, MTP y visión en GPU/CPU. Apaga y enciende el motor tras
-  cambiar estas opciones. Caché KV sin cuantización: usa la precisión por defecto del backend.
+- **Modelo local:** contexto configurable, caché KV (FP16/Q8/Q4), MTP y visión en GPU/CPU. Apaga y
+  enciende el motor tras cambiar estas opciones. En este PC Daniel ha elegido Q4 para ambas cachés K/V.
   MTP permanece activado; compara el mismo prompt con MTP activado y desactivado.
 - **Otros modelos:** en «Más modelos y harnesses», registra un endpoint compatible con OpenAI:
   `{"otro":{"id":"modelo-servido","api_base":"http://127.0.0.1:1234/v1","privado":true,
@@ -52,8 +52,8 @@ Las opciones personales se guardan localmente en `data/personalizacion.json`:
 La compactación usa los valores de Pi con 64K. Para ventanas inferiores a 36K ajusta su reserva
 proporcionalmente; sigue siendo la compactación de Pi, sin un bucle propio de Skynet.
 En este PC, una prueba corta sin cuantización y con MTP activado dio 7,41 tok/s con 64K y 19,93 con 32K.
-Se dejó 64K restaurado. Prueba 32K/48K si buscas más velocidad; una muestra no garantiza esos valores
-en todos los prompts. La retirada de cuantización tiene un coste de memoria que el harness no elimina.
+Después se comparó Q8/Q4 a 64K: medias de generación 14,11 y 44,26 tok/s respectivamente.
+Daniel eligió Q4, manteniendo 64K y MTP. Son pruebas cortas de velocidad; no certifican calidad de código.
 
 ## MCP opcional
 

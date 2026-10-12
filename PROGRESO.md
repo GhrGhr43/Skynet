@@ -1,5 +1,15 @@
 # PROGRESO del proyecto Skynet
 
+## Q4 permanente por petición de Daniel (2026-10-12, D28)
+- Guardada opción `cache_kv=q4_0` para K y V. Se conserva al reiniciar y al elegir otro GGUF.
+  Selector FP16/Q8/Q4 en Configuración y fuentes móviles. Contexto 64K, MTP y visión CPU conservados.
+- Esta petición sustituye la retirada de cuantización de D27. Nuevo estado personal en el JSON existente,
+  sin migraciones SQLite ni cambios al harness. El motor local se reinicia para aplicar la elección.
+- Regresión específica: elección persistente y cambio de modelo no pierden Q4; FP16 puede elegirse de nuevo.
+- Verificación: 233 tests correctos, 1 excluido. Interfaz a tres anchos sin errores JS. Modelo real
+  reiniciado con `-ctk q4_0 -ctv q4_0`; prueba corta de 64 tokens a 56,69 tok/s. Web confirma la elección.
+  Doctor: Pi/modelo correctos; mantiene los avisos conocidos de carpetas antiguas inexistentes.
+
 ## Comparación rápida de caché Q8/Q4 (2026-10-12)
 - A petición de Daniel, comparación temporal en el mismo Qwen GSQ-RCO IQ3_S, Vulkan, contexto 64K,
   MTP activo, visión CPU, temperatura 0 y semilla 42. Ambas cachés K/V usan el formato probado.

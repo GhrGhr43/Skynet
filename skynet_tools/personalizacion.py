@@ -21,7 +21,7 @@ class Personalizacion:
         self.data = {"harness": "pi", "harnesses": {"pi": {"nombre": "Pi", "protocolo": "pi-rpc"}},
                      "herramientas": list(NATIVAS), "mcp_activo": False, "mcp": {},
                      "memoria_activa": False, "memoria": [], "contexto": 65536,
-                     "mtp": True, "vision_gpu": False, "modelos": {}, "skills": []}
+                     "mtp": True, "vision_gpu": False, "cache_kv": "f16", "modelos": {}, "skills": []}
         if self.path.is_file():
             self.data.update(json.loads(self.path.read_text(encoding="utf-8")))
         else:
@@ -44,7 +44,7 @@ class Personalizacion:
         with self.lock:
             result = dict(self.data)
             allowed = {"harness", "harnesses", "herramientas", "mcp_activo", "mcp",
-                       "memoria_activa", "contexto", "mtp", "vision_gpu", "modelos", "skills"}
+                       "memoria_activa", "contexto", "mtp", "vision_gpu", "cache_kv", "modelos", "skills"}
             if set(changes) - allowed:
                 raise ValueError("Opción desconocida")
             result.update(changes)
@@ -53,6 +53,8 @@ class Personalizacion:
                     raise ValueError(f"{key} debe ser verdadero o falso")
             if type(result["contexto"]) is not int or not 2048 <= result["contexto"] <= 262144:
                 raise ValueError("Contexto: entre 2048 y 262144 tokens")
+            if result["cache_kv"] not in ("f16", "q8_0", "q4_0"):
+                raise ValueError("Caché KV: f16, q8_0 o q4_0")
             if not isinstance(result["herramientas"], list) or not all(isinstance(t, str) and t in NATIVAS for t in result["herramientas"]):
                 raise ValueError("Herramientas nativas: read, bash, edit y write")
             if not isinstance(result["skills"], list) or not all(isinstance(p, str) for p in result["skills"]):

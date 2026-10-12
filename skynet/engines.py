@@ -55,6 +55,18 @@ def _lms() -> str | None:
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 
+def _cache_args(args: list[str], tipo: str) -> list[str]:
+    # La opción persistente manda también al elegir otro GGUF; evita flags duplicados.
+    result = []
+    values = iter(args)
+    for arg in values:
+        if arg in ("-ctk", "-ctv", "--cache-type-k", "--cache-type-v"):
+            next(values, None)
+        else:
+            result.append(arg)
+    return result + ["-ctk", tipo, "-ctv", tipo]
+
+
 class Engines:
     def __init__(self, specs: dict[str, EngineSpec], logs_dir: Path):
         self.specs = specs
@@ -92,7 +104,8 @@ class Engines:
     def set_local_model(self, name: str, local: Any) -> None:
         """Cambia el GGUF del motor `name` (objeto modelos_locales.Local); no lo reinicia."""
         s = self.specs[name]
-        s.modelo, s.args = str(local.ruta), local.args(con_mtp=getattr(self, "mtp", True))
+        s.modelo = str(local.ruta)
+        s.args = _cache_args(local.args(con_mtp=getattr(self, "mtp", True)), getattr(self, "cache_kv", "f16"))
         if local.mmproj and not s.vision_gpu:
             s.args += ["--no-mmproj-offload"]
 
@@ -213,13 +226,12 @@ def load_engines(raw: dict[str, Any], logs_dir: Path, home: Path | None = None) 
         opciones = Personalizacion(home)
         opts = opciones.data
         eng.mtp = opts["mtp"]
+        eng.cache_kv = opts["cache_kv"]
         if "local" in specs:
             if opciones.path.exists():
                 specs["local"].contexto = opts["contexto"]
             specs["local"].vision_gpu = opts["vision_gpu"]
-            # La caché conserva la precisión por defecto del backend.
-            args = specs["local"].args
-            specs["local"].args = [v for i, v in enumerate(args) if v not in ("-ctk", "-ctv", "q4_0", "q8_0")]
+            specs["local"].args = _cache_args(specs["local"].args, eng.cache_kv)
             if not eng.mtp and "--spec-type" in specs["local"].args:
                 i = specs["local"].args.index("--spec-type")
                 del specs["local"].args[i:i + 2]

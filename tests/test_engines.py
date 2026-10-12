@@ -61,3 +61,20 @@ def test_home_en_rutas_de_proceso(tmp_path):
     s = load_engines(raw, tmp_path, Path("C:/Git/Skynet")).specs["omni"]
     assert s.args[0] == str(Path("C:/Git/Skynet")) + "/vendor/omni.mjs"
     assert s.env["DATA_DIR"].endswith("/data") and "{home}" not in s.env["DATA_DIR"]
+
+
+def test_cache_persistente_sobrevive_a_cambiar_modelo(tmp_path):
+    from skynet_tools.personalizacion import Personalizacion
+    from skynet.modelos_locales import Local
+    options = Personalizacion(tmp_path)
+    options.cambiar({"cache_kv": "q4_0"})
+    raw = {"local": {"tipo": "llamacpp", "url": "http://localhost:8090/v1",
+                     "args": ["-fa", "on", "--cache-type-k", "q8_0", "-ctv", "q8_0"]}}
+    engines = load_engines(raw, tmp_path / "data/logs", tmp_path)
+    assert engines.specs["local"].args == ["-fa", "on", "-ctk", "q4_0", "-ctv", "q4_0"]
+    engines.set_local_model("local", Local("otro", tmp_path / "otro.gguf", 10))
+    args = engines.specs["local"].args
+    assert args[args.index("-ctk") + 1] == args[args.index("-ctv") + 1] == "q4_0"
+    options.cambiar({"cache_kv": "f16"})
+    args = load_engines(raw, tmp_path / "data/logs", tmp_path).specs["local"].args
+    assert args[args.index("-ctk") + 1] == "f16" and "q8_0" not in args
