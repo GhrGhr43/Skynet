@@ -1,5 +1,44 @@
 # PROGRESO del proyecto Skynet
 
+## Pi como motor de producción y extras configurables (2026-10-12, D27)
+- Diseño autorizado por Daniel. Backup solo local: rama `SKynet-Old-v0.2`, commit `067ea44`.
+  Estado personal consistente (SQLite incluido) en `data/backups/old-v0.2-20261012`.
+  Rama de trabajo `codex/pi-motor`; no se ha publicado nada a GitHub.
+- Producción usa exclusivamente RPC de Pi 1.1.0: herramientas read/bash/edit/write originales,
+  prompt nativo, transcript JSONL estable por chat/proyecto y compactación oficial. Sin ContextBuilder,
+  GUIDE, historial duplicado, plan obligatorio, verificador externo, checkpoints, propuestas ni scheduler.
+  El ejecutor anterior se conserva solo para fixtures guionizadas de regresión, fuera de producción.
+- Opciones en `data/personalizacion.json`: harness separado del modelo, herramientas nativas,
+  MCP global y por servidor (alta/baja/activación, stdio/HTTP, campos avanzados JSON), skills explícitas,
+  modelos compatibles con OpenAI, contexto, MTP y visión CPU/GPU. Pi RPC es el adaptador implementado;
+  otros protocolos requieren adaptadores, no funcionan por registrar un nombre de ejecutable.
+- MCP oficial de Pi, con `tool_search` y exposición diferida. Apagados no se conectan ni ofrecen esquemas;
+  la sesión conserva historial anterior. Se evita descubrir settings/extensiones/MCP de `.pi` externos.
+  Internet controla búsqueda y navegador; privacidad alta bloquea ambos. Visión/sistema se seleccionan aparte.
+- Memoria opcional, apagada inicialmente: las dos preferencias anteriores se importan pendientes.
+  Solo entra memoria aprobada. Cada entrada se aprueba/descarta por ID; sin lotes ni permiso «todas».
+  La herramienta solicita aprobación incluso con «Sin preguntar». No genera propuestas de skills.
+- Caché KV cuantizada retirada. Modelo real reiniciado con FP16 por defecto, 64K, MTP y proyector CPU.
+  Prueba corta de 192 tokens, mismo texto/MTP: 7,41 tok/s con 64K y 19,93 con 32K.
+  Una muestra por configuración, no benchmark universal. 64K restaurado; opciones personales intactas.
+  Recomendar probar 32K/48K sin cuantización y comparar MTP on/off. Visión CPU configurable/recomendada.
+- Hermes retirado de perfiles, interfaz, adaptador y scripts del proyecto; archivos respaldados localmente.
+  LiteLLM queda solo como dependencia de desarrollo del ejecutor histórico; Pi llama al proveedor directamente.
+  Sin cambios de migraciones SQLite ni modificaciones a agente-godot o PiLocal original del usuario.
+- Interfaz web preparada en 8765 y nuevo `Abrir Skynet.cmd`. Fuentes del móvil actualizadas (harness,
+  configuración, memoria/MCP); APK instalada pendiente de recompilar. El backend móvil ya ejecuta Pi.
+- Validación: suite completa **232 pasan, 1 excluido** (37 avisos de dependencias). Pi + Qwen reales:
+  tarea 202, 4 llamadas, 2 archivos Python, 8 comprobaciones correctas. Archivos en
+  `C:/Git/PiLocal/proyectos/motor-integrado`; evidencia `data/pruebas/agua/motor-nativo.json`.
+- Tests con Pi instalado/proveedor simulado/MCP real: descubrir y ejecutar herramienta, apagar extras,
+  preservar conversación y aprobar solo una memoria. Revisión Playwright de configuración a 1440/768/390,
+  sin errores JS; mutaciones simuladas para no aprobar memoria real. Se corrigió el refresco que borraba
+  cambios aún no guardados. Evidencias UI y velocidad en `data/pruebas/pi`.
+- Doctor: Pi, modelo local, SQLite, git y acceso móvil correctos; referencias antiguas a carpetas inexistentes
+  `age-of-empires-3d`, `colonia-atlas` y `prueba-pi`. El lanzador de pruebas crea esta última cuando se usa.
+- Siguiente: Daniel compara tareas reales en chats nuevos, mismo modelo/razonamiento y extras apagados;
+  probar MTP y contexto. No se promete una mejora universal de calidad por adoptar el harness.
+
 ## Auditoría del contexto Pi y propuesta de simplificación (2026-10-11)
 - Sesiones reales comparadas: Pi consola ofrece read/bash/edit/write (4 herramientas, esquemas ~3.092
   caracteres); tarea 196 integrada ofrece 27 (workspace, sistema/Steam, navegador, visión e internas;

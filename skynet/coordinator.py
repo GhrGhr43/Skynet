@@ -1,10 +1,4 @@
-"""Coordinator: convierte cada mensaje del chat en una tarea y decide cómo ejecutarla.
-
-- Mensaje normal: tarea nueva. Con repo elegido -> agente programador con herramientas MCP;
-  sin repo -> conversación sin herramientas. El modelo lo elige el router por capacidades.
-- "continúa" (o "sigue"): retoma la última tarea sin terminar desde SQLite.
-- Tareas largas: el modelo las lanza hablando con la herramienta tarea_larga (internas.py).
-"""
+"""Chat, permisos y registro; Pi ejecuta cada petición y conserva su sesión."""
 from __future__ import annotations
 
 import asyncio
@@ -30,16 +24,14 @@ HELP = """Escribe lo que quieres que haga. Comandos:
   continúa [indicaciones]   retoma la última tarea sin terminar
   /repos                    repos autorizados          /repo <nombre|ninguno>  elegir repo
   /razonamiento auto|rápido|medio|alto                  cuánto piensa el modelo
-  /modelo local|hermes|...   elegir modelo (local por defecto; los de la nube piden confirmación)
+  /modelo local|...          elegir modelo (los de la nube piden confirmación)
   /permisos [modelo modo]   modos: repo | lectura | editar | total                /privado  privacidad alta on/off
   /nube <modelo> on|off     activar o desactivar un modelo en la nube en esta sesión
-  /internet on|off         búsqueda web opcional (apagada al arrancar; sin navegador)
-  /coder on|off|pi|skynet    programar con Skynet o Pi sobre el repo elegido (verificador y commits)
+  /internet on|off          herramientas opcionales de búsqueda y navegador
   /tareas                   últimas tareas             /estado <id>            detalle de una tarea
-  /parar <id>               parar una tarea larga      /log [id]               audit log
+  /parar <id>               parar una tarea            /log [id]               audit log
   /buscar <texto>           buscar en el historial     /skills                 skills disponibles
-  /skill <nombre> <tarea>   tarea siguiendo una skill  /propuestas             skills y memoria propuestas
-  /aprobar <nombre>         activar una propuesta      /rechazar <nombre>      descartarla
+  Harness, MCP, herramientas, skills y memoria individual: Configuración de la web.
   /doctor                   comprobar instalación      /descartar [id]         dar una tarea por abandonada
   /ayuda                    esta ayuda                 /salir                  salir"""
 
@@ -64,7 +56,7 @@ class Coordinator:
         # Modo Coder: el repo elegido entra en el contexto, con sus herramientas, verificador y commits. Apagado,
         # cada mensaje es un turno de conversación (rápido, como OpenClaw) aunque haya repo elegido.
         self.coder = False
-        self.coder_motor = "skynet"  # el modelo sigue siendo local; cambia solo el bucle de programación
+        self.coder_motor = "pi" if rt.native else "skynet"
         self.effort: str | None = None  # razonamiento elegido en el chat (None = automático)
         self.history: list[tuple[Any, str]] = []  # (petición con adjuntos, respuesta) recientes de esta sesión
 
@@ -92,13 +84,13 @@ class Coordinator:
 
     @property
     def active_repo(self) -> str | None:
-        """Repo con el que trabaja el próximo mensaje: solo con Coder activado."""
-        return self.repo_name if self.coder else None
+        """En Pi la selección de proyecto no depende de un modo Coder."""
+        return self.repo_name if (self.coder or self.rt.native) else None
 
     def _caps(self, **extra: Any) -> dict[str, Any]:
         # Razonamiento automático: en conversación, poco (un saludo no necesita minutos de pensar);
         # con Coder, lo del perfil del modelo.
-        effort = self.effort or (None if self.active_repo else "low")
+        effort = self.effort or (None if self.active_repo or self.rt.native else "low")
         caps = Capabilities(coding="alto" if self.active_repo else "bajo", force=self.force_model, effort=effort,
                             internet=self.internet and not self.private)
         if self.private:
@@ -122,7 +114,10 @@ class Coordinator:
                        images: list[dict[str, Any]] | None = None) -> Task:
         title = text.splitlines()[0][:70]
         caps: dict[str, Any] = {"capacidades": self._caps()}
-        if self.active_repo:
+        if self.rt.native:
+            caps["harness"] = self.rt.personalizacion.data["harness"]
+            caps["session_key"] = f"chat-{getattr(self, 'sesion_id', 'terminal')}:{self.repo_name or 'ninguno'}"
+        if self.active_repo and not self.rt.native:
             caps["harness"] = self.coder_motor
         if images:
             caps["imagenes"] = images
@@ -136,6 +131,8 @@ class Coordinator:
                           detail={"mensaje": title, "repo": self.active_repo, **({"skill": skill} if skill else {})})
         if skill:
             self.rt.store.add_skill_use(skill, skill_version, task.id)
+        if self.rt.native:
+            return await self._run(task, kind="chat", extra=None)
         if self.active_repo:
             return await self._run(task, kind="chat", extra=self._recent())
         pairs = [(q[:CHARS_TURNO] if isinstance(q, str) else q, a[:CHARS_TURNO]) for q, a in self._pairs()]
@@ -151,7 +148,7 @@ class Coordinator:
         if task.repo and task.repo not in self.rt.settings.repos:
             self.ui.info(f"La tarea {task.id} es del repo '{task.repo}', que ya no está autorizado.")
             return
-        if task.is_long:
+        if task.is_long and not self.rt.native:
             if task.runner_alive():
                 self.ui.info(f"La tarea larga {task.id} ya está en marcha (pid {task.pid}). Mira /estado {task.id}.")
                 return
@@ -179,7 +176,7 @@ class Coordinator:
     def _make_asker(self, task: Task):
         async def ask(key: str, level: Level, args: dict[str, Any], reason: str) -> str:
             self.rt.store.update_task(task.id, status=ESPERANDO_PERMISO)
-            options = "[s]í / [n]o" + (" / [t]odas en esta tarea" if level is not Level.DESTRUCTIVE else "")
+            options = "[s]í / [n]o" + (" / [t]odas en esta tarea" if key != "memoria" and level is not Level.DESTRUCTIVE else "")
             cmd = comando_completo(args)
             prompt = (f"{level.name} · {key}({summarize_args(args)})\n" + (f"Ejecutará: {cmd}\n" if cmd else "")
                       + f"Motivo: {reason}\n¿Permitir? {options}")
@@ -199,6 +196,17 @@ class Coordinator:
         ver: VerifierResult | None = None
         user = task.goal if kind == "chat" else (extra or "continúa")
         try:
+            if self.rt.native:
+                run = await self.rt.agent_step(task, kind, extra if kind != "chat" else None,
+                    asker=self._make_asker(task), on_event=self.ui.event)
+                out = run.outcome
+                status = FALLIDA if out.status == "error" else HECHA
+                summary = out.final_text[:2000]
+                store.finish_step(run.step.id, out.status, summary)
+                self.history.append((user, out.final_text))
+                self.ui.answer(out.final_text)
+                self._fin(task, status, out, None)
+                return store.update_task(task.id, status=status, result_summary=summary)
             continuations = repairs = 0
             total = None
             while True:
@@ -357,8 +365,16 @@ class Coordinator:
                 return True
             if choice != "estado":
                 self.internet = choice == "on"
+                if self.rt.native:
+                    self.rt.personalizacion.internet(self.internet)
+            if self.rt.native:
+                o = self.rt.personalizacion.data
+                self.internet = o["mcp_activo"] and o["mcp"].get("internet", {}).get("enabled", False)
             self.ui.info(f"Internet {'activado: puede buscar cuando lo necesite' if self.internet else 'desactivado'}.")
         elif cmd == "/coder":
+            if self.rt.native:
+                self.ui.info("El motor es el harness configurado. Elige un proyecto con /repo; no hay un bucle Coder separado.")
+                return True
             choice = (args[0] if args else "estado").lower()
             if choice not in ("on", "off", "estado", "pi", "skynet"):
                 self.ui.info("Uso: /coder on|off|pi|skynet")
@@ -431,8 +447,14 @@ class Coordinator:
         elif cmd == "/skill":
             await self._skill(text)
         elif cmd == "/propuestas":
+            if self.rt.native:
+                self.ui.info("La generación de propuestas se ha retirado. Revisa cada entrada de memoria en Configuración.")
+                return True
             self._list_proposals()
         elif cmd in ("/aprobar", "/rechazar"):
+            if self.rt.native:
+                self.ui.info("Las propuestas automáticas se han retirado. Cada entrada de memoria se revisa en Configuración.")
+                return True
             await self._review(cmd, args)
         else:
             self.ui.info(f"Comando desconocido: {cmd}. Escribe /ayuda.")

@@ -1,4 +1,4 @@
-// Pi conserva su bucle; las herramientas usan el gate y el MCP de Skynet.
+// Pi conserva bucle y herramientas; esta extensión consulta permisos y memoria opcional.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default async function (pi: ExtensionAPI) {
@@ -9,6 +9,15 @@ export default async function (pi: ExtensionAPI) {
   const response = await fetch(`${url}/manifest`, { headers });
   if (!response.ok) throw new Error("No se pudo conectar Pi con Skynet.");
   const { tools } = await response.json();
+  pi.on("tool_call", async (event) => {
+    const response = await fetch(`${url}/authorize`, {
+      method: "POST", headers,
+      body: JSON.stringify({ name: event.toolName, args: event.input }),
+    });
+    if (!response.ok) return { block: true, reason: "No se pudo comprobar el permiso" };
+    const result = await response.json();
+    if (!result.allowed) return { block: true, reason: result.reason || "Acción no permitida" };
+  });
   for (const tool of tools) {
     pi.registerTool({
       name: tool.name,

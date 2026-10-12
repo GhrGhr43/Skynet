@@ -52,7 +52,7 @@ class ModelProfile:
     top_k: int | None = None
     min_p: float | None = None
     presence_penalty: float | None = None
-    # Perfil que es un agente entero (Hermes): Skynet le pasa la conversación y él usa sus propias herramientas.
+    # Compatibilidad de perfiles históricos que servían agentes externos completos.
     agente: bool = False
     motor: str | None = None            # motor de skynet.toml que lo sirve (por defecto, el del mismo nombre)
     api_key_archivo: str | None = None  # clave leída de un archivo (la genera el motor al arrancar)

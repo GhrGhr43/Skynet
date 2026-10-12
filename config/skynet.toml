@@ -4,14 +4,14 @@
 base_datos = "data/skynet.db"
 logs = "data/logs"
 
-[agente]
+[agente]                       # compatibilidad de pruebas antiguas; Pi usa sus propios límites
 max_turnos = 30                 # llamadas al modelo por paso como máximo
 max_continuaciones = 4          # bloques adicionales de Coder si hubo cambios, sin pedir «continúa»
 reparaciones_verificador = 2    # intentos automáticos de corregir una comprobación fallida
 max_salida_herramienta = 6000   # caracteres de cada resultado de herramienta que ve el modelo
 contexto_max_tokens = 6000      # tope del contexto inicial que arma el Context builder
 
-[largo]                         # tareas largas (Scheduler)
+[largo]                         # histórico; no se usa en la ejecución con Pi
 max_horas = 8
 max_iteraciones = 200
 max_errores_iguales = 3         # para si el mismo fallo se repite N veces seguidas
@@ -35,6 +35,11 @@ args = ["-m", "skynet_tools.internet"]
 comando = "{python}"
 args = ["-m", "skynet_tools.vision", "--root", "{repo}"]
 
+# Índice y herramientas del PC; apagado por defecto, sujeto al modo de permisos.
+[mcp.sistema]
+comando = "{python}"
+args = ["-m", "skynet_tools.sistema", "--home", "%USERPROFILE%", "--indice", "{home}/data/indice.db"]
+
 # Páginas HTML locales: navegador aislado, sin red ni perfil personal.
 [mcp.navegador]
 comando = "{python}"
@@ -46,8 +51,7 @@ args = ["-m", "skynet_tools.coding_agent", "--agente-godot", "C:/Users/HACHO/Doc
 
 # Motor local que se enciende y apaga desde la web (Ajustes). El nombre coincide con el perfil de
 # router.toml que sirve. llama-server directo (el que trae LM Studio) con los ajustes de la comparativa
-# (docs/COMPARATIVA-HERMES.md): Qwen3.8-27B GSQ-RCO IQ3_S con MTP cabe entero en 16 GB con 64K y caché q4
-# (~55 tok/s); 64K es lo mínimo que pide Hermes. El modelo elegido en Ajustes manda sobre este.
+# El modelo elegido en Ajustes manda sobre este. Contexto configurable; caché sin cuantización.
 [motores.local]
 tipo = "llamacpp"
 url = "http://127.0.0.1:8090/v1"
@@ -56,20 +60,4 @@ modelo = "%USERPROFILE%/.lmstudio/models/ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF/Qw
 contexto = 65536
 # Medido con IQ3_S + 64K: visión en GPU presiona la VRAM y frena el texto. CPU conserva ambos.
 vision_gpu = false
-args = ["-fa", "on", "-ctk", "q4_0", "-ctv", "q4_0", "-np", "1", "--no-webui", "--spec-type", "draft-mtp"]
-
-# Hermes Agent como segundo cerebro (D19), en Docker (contenedor skynet-hermes, solo en 127.0.0.1:8642).
-# Imagen: docker build -t skynet/hermes herramientas\bench-hermes\docker. Memoria y skills de Hermes en
-# HERMES_DATOS. Ve las carpetas de HERMES_CARPETAS (separadas por ;) salvo las de HERMES_OCULTAR, y
-# dentro del contenedor ejecuta sin preguntar. Modelo: alias "local" = el motor local (enciéndelo también);
-# para "nube" rellena HERMES_NUBE_PROVEEDOR y HERMES_NUBE_MODELO (p. ej. "openrouter" y
-# "anthropic/claude-sonnet-5.5") y pon la clave del proveedor en HERMES_DATOS\.env. No usa la GPU.
-[motores.hermes]
-tipo = "proceso"
-url = "http://127.0.0.1:8642/v1"
-exe = "{python}"
-args = ["-m", "skynet_tools.hermes_motor", "serve"]
-parar = ["{python}", "-m", "skynet_tools.hermes_motor", "stop"]
-salud = "http://127.0.0.1:8642/health"
-gpu = false
-env = { HERMES_IMAGEN = "skynet/hermes:latest", HERMES_DATOS = "%USERPROFILE%/.hermes-skynet", HERMES_CLAVE = "{home}/data/hermes/api_key", HERMES_CARPETAS = "%USERPROFILE%;C:/Git", HERMES_OCULTAR = "AppData;.ssh;.aws;.azure;.kube;.docker;.gnupg;.hermes;.hermes-skynet", HERMES_MODELO_LOCAL_URL = "http://host.docker.internal:8090/v1", HERMES_CONTEXTO = "65536", HERMES_NUBE_PROVEEDOR = "", HERMES_NUBE_MODELO = "" }
+args = ["-fa", "on", "-np", "1", "--no-webui", "--spec-type", "draft-mtp"]

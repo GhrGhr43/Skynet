@@ -11,8 +11,7 @@ def preparar(encender=True):
     installation(settings.home)
     root = settings.home / "proyectos" / "prueba-pi"
     root.mkdir(parents=True, exist_ok=True)
-    command = f'python "{(settings.home / "herramientas/pi/verificar_web.py").as_posix()}"'
-    repo = settings.repos.get("prueba-pi") or add_repo(settings.home, "prueba-pi", root, command)
+    repo = settings.repos.get("prueba-pi") or add_repo(settings.home, "prueba-pi", root)
     configure(settings.home, settings.models["local"], True)
     if encender:
         engines = load_engines(settings.engines, settings.logs_dir, settings.home)

@@ -10,6 +10,9 @@ const $ = (s, r = document) => r.querySelector(s);
 
 // Herramientas MCP en lenguaje humano.
 const TOOL_WORDS = {
+  read: ['Leyendo', 'file'], bash: ['Ejecutando', 'terminal'],
+  edit: ['Editando', 'edit'], write: ['Escribiendo', 'edit'],
+  memoria: ['Solicitando recordar una entrada', 'brain'], tool_search: ['Buscando herramientas', 'search'],
   'internet.buscar': ['Buscando en internet', 'globe'],
   'internet.leer': ['Leyendo una página', 'globe'],
   'vision.leer_imagen': ['Mirando una imagen', 'eye'],
@@ -31,6 +34,7 @@ const TOOL_WORDS = {
 };
 
 export function toolWords(key, args = '') {
+  key = String(key).replace(/^mcp__/, '').replace('__', '.');
   const [verb, ico] = TOOL_WORDS[key] || [key, 'cpu'];
   const m = String(args).match(/(?:path|command|pattern|query|ruta)='((?:[^'\\]|\\.)*)'/);
   return { verb, ico, target: m ? m[1] : '' };
@@ -44,7 +48,7 @@ const LEVEL_TEXT = {
   READ: ['Quiere leer', ''],
 };
 
-const WHERE = { local: 'Local', hermes: 'Hermes', nube: 'Nube' };
+const WHERE = { local: 'Local', nube: 'Otro modelo' };
 const EFFORT = { auto: 'Auto', low: 'Rápido', medium: 'Equilibrado', high: 'Pensar más' };
 
 const fmtN = (n) => Number(n || 0).toLocaleString('es-ES');
@@ -115,6 +119,7 @@ export class App {
     $('#stopBtn').addEventListener('click', () => this.stop());
     $('#tabRepo').addEventListener('click', (e) => this.menuRepo(e.currentTarget));
     $('#btnModel').addEventListener('click', (e) => this.menuModel(e.currentTarget));
+    $('#btnHarness')?.addEventListener('click', () => this.panels.open('ajustes'));
     $('#btnEffort').addEventListener('click', (e) => this.menuEffort(e.currentTarget));
     $('#btnPerm').addEventListener('click', (e) => this.menuPerm(e.currentTarget));
     $('#plusBtn').addEventListener('click', (e) => this.menuPlus(e.currentTarget));
@@ -279,7 +284,6 @@ export class App {
   // --- compositor: pestañas (repo, dónde piensa) y modelo/razonamiento/permisos debajo --------
   where(s) {
     const m = (s.modelos || []).find((x) => x.nombre === s.modelo);
-    if (m && m.agente) return 'hermes';
     return m && !m.privado ? 'nube' : 'local';
   }
 
@@ -293,6 +297,8 @@ export class App {
     const bm = $('#btnModel');
     bm.innerHTML = `${icon(w === 'nube' ? 'cloud' : w === 'local' ? 'cpu' : 'route')}<span>${esc(model)}</span>${chev}`;
     bm.title = `Modelo: ${WHERE[w]}`;
+    const bh = $('#btnHarness');
+    if (bh) bh.innerHTML = `${icon('terminal')}<span>${esc(s.personalizacion?.harnesses?.[s.harness]?.nombre || s.harness || 'Pi')}</span>${chev}`;
     $('#btnEffort').innerHTML = `<span>${EFFORT[s.razonamiento] || 'Auto'}</span>${chev}`;
     const mode = (s.modos || []).find((o) => o.clave === s.modo_actual);
     const bp = $('#btnPerm');
@@ -302,7 +308,7 @@ export class App {
     // Interruptores activos (lo que se enciende desde «+»): visibles y se apagan con un clic.
     const on = [];
     if (s.internet) on.push(['internet', 'globe', 'Internet']);
-    if (s.coder) on.push(['coder', 'terminal', 'Coder']);
+    if (s.coder) on.push(['coder', 'terminal', 'Proyecto']);
     const key = on.map((x) => x[0]).join('|') + (s.ocupado ? '!' : '');
     if (key !== this.modesKey) {
       this.modesKey = key;
@@ -313,15 +319,11 @@ export class App {
   }
 
   menuPlus(anchor) {
-    const s = this.snap || {};
-    const coderOk = typeof s.coder === 'boolean';
-    this.openMenu(anchor, [{ title: 'Activar', items: [
-      { value: 'imagen', label: 'Adjuntar imágenes', ico: 'eye', sub: s.vision ? 'También puedes pegarlas o arrastrarlas' : 'Necesita el motor local con visión' },
-      { value: 'internet', label: 'Internet', ico: 'globe', on: !!s.internet,
-        sub: s.internet_bloqueado ? 'Bloqueado por privacidad alta' : 'Busca en la web cuando lo necesita' },
-      { value: 'coder', label: 'Modo coder', ico: 'terminal', on: !!s.coder,
-        sub: !coderOk ? 'Próximamente' : s.repo ? 'Programa en el repo. Más lento' : 'Elige antes un repo (abajo)' },
-    ] }], (v) => v === 'imagen' ? $('#imageInput').click() : this.toggleMode(v));
+    this.openMenu(anchor, [{title:'Herramientas',items:[
+      {value:'imagen',label:'Adjuntar imágenes',ico:'eye',sub:'También puedes pegarlas o arrastrarlas'},
+      {value:'internet',label:this.snap?.internet?'Desactivar Internet':'Activar Internet',ico:'globe',sub:'Búsqueda y navegador opcionales'},
+      {value:'config',label:'Harness, herramientas y MCP',ico:'terminal',sub:'Configurar o desactivar capacidades'},
+    ]}], v=>{if(v==='imagen') $('#imageInput').click();else if(v==='internet') this.toggleMode('internet');else this.panels.open('ajustes');});
   }
 
   async toggleMode(k) {
@@ -402,29 +404,11 @@ export class App {
     ], (v) => (v === '__nuevo__' ? this.panels.open('ajustes') : this.ajustes({ repo: v || 'ninguno' })));
   }
 
-  menuWhere(anchor) {
-    const s = this.snap || {};
-    const w = this.where(s);
-    this.openMenu(anchor, [{ items: [
-      { value: 'local', label: 'Local', sub: 'En tu PC: nada sale de él', ico: 'cpu', on: true },
-    ] }], (v) => {
-      const ms = s.modelos || [];
-      if (v === 'local') return this.ajustes({ modelo: (ms.find((m) => m.privado && !m.agente) || { nombre: 'local' }).nombre });
-      if (v === 'hermes') return this.ajustes({ modelo: (ms.find((m) => m.agente && m.privado) || { nombre: 'hermes' }).nombre });
-      const cloud = ms.find((m) => !m.privado && m.activado && m.disponible) || ms.find((m) => !m.privado && m.activado) || ms.find((m) => !m.privado);
-      if (cloud) this.ajustes({ modelo: cloud.nombre });
-    });
-  }
+  menuWhere(anchor) { this.menuModel(anchor); }
 
   menuModel(anchor) {
-    const s = this.snap || {};
-    const ms = s.modelos || [];
-    const item = (m) => ({ value: m.nombre, label: m.nombre, sub: m.litellm.split('/').slice(1).join('/') + (m.privado || m.activado ? '' : ' · pide confirmación'),
-      ico: m.privado ? 'cpu' : 'cloud', on: s.modelo === m.nombre });
-    this.openMenu(anchor, [
-      { title: 'Local', items: ms.filter((m) => m.privado).map(item) },
-      { title: 'Nube', items: ms.filter((m) => !m.privado).map(item) },
-    ], (v) => this.ajustes({ modelo: v }));
+    const ms=this.snap?.modelos||[];
+    this.openMenu(anchor,[{title:'Modelo',items:ms.map(m=>({value:m.nombre,label:m.nombre,ico:m.privado?'cpu':'cloud',on:this.snap.modelo===m.nombre,sub:m.litellm.split('/').slice(1).join('/')}))}],v=>this.ajustes({modelo:v}));
   }
 
   menuEffort(anchor) {
@@ -871,7 +855,7 @@ export class App {
       } else if (s.repo) {
         // Revisar el repo necesita Coder (sin él, la conversación no lleva el contexto del repo): se enciende al pulsar.
         items.push({ ico: 'sparkle', text: 'Revisa el repo y dime qué falta', run: async () => {
-          if (this.snap?.coder === false && !(await this.ajustes({ coder: true }))) return;
+          if (!this.snap?.harness && this.snap?.coder === false && !(await this.ajustes({ coder: true }))) return;
           this.fill('Revisa el estado del repo y dime qué falta o qué está roto');
         } });
       } else {

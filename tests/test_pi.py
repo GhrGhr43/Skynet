@@ -33,13 +33,16 @@ for line in sys.stdin.buffer:
  if cmd['type']!='prompt':continue
  emit({'id':cmd['id'],'type':'response','success':True})
  tools=http('/manifest')['tools']
- assert any(t['name']=='workspace__write_file' for t in tools)
- assert not any(t['name'] in ('bash','powershell','write') for t in tools)
+ assert not any(t['name'].startswith('workspace__') for t in tools)
+ assert '--no-builtin-tools' not in sys.argv
+ assert sys.argv[sys.argv.index('--tools')+1]=='read,bash,edit,write'
  try:http('/manifest',auth='incorrecto');raise AssertionError('Sin autenticación')
  except urllib.error.HTTPError as e:assert e.code==403
- denied=http('/tool',{'name':'workspace__write_file','args':{'path':'../escape.txt','content':'error'}})
- assert denied['content'][0]['text'].startswith('DENEGADO')
- http('/tool',{'name':'workspace__write_file','args':{'path':'mod.py','content':'VERSION = 1\n\ndef doble(x):\n    return 2 * x\n'.replace('\\n','\n')}})
+ denied=http('/authorize',{'name':'write','args':{'path':'../escape.txt','content':'error'}})
+ assert not denied['allowed']
+ allowed=http('/authorize',{'name':'write','args':{'path':'mod.py','content':'VERSION = 1\n\ndef doble(x):\n    return 2 * x\n'}})
+ assert allowed['allowed']
+ open('mod.py','w').write('VERSION = 1\n\ndef doble(x):\n    return 2 * x\n')
  # agent_end todavía no cierra el trabajo: el adaptador debe esperar settled.
  emit({'type':'agent_end','messages':[]})
  assistant('Hecho: verificado. U+2028: \u2028 OBJETIVO_CUMPLIDO')
@@ -55,22 +58,20 @@ def fake_install(monkeypatch, home, code=FAKE):
 
 async def test_pi_rpc_uses_real_gate_and_mcp(make_rt, home, repo_path, monkeypatch):
     fake_install(monkeypatch, home)
-    llm = ScriptedLLM([])
-    rt = make_rt(llm)
+    rt = make_rt()
     c = coder(Coordinator(rt, FakeUI()))
     c.coder_motor = "pi"
     task = await c.new_task("Implementa doble")
     assert task.status == "hecha", task.result_summary
     assert not (repo_path.parent / "escape.txt").exists()
     assert "return 2 * x" in (repo_path / "mod.py").read_text()
-    assert not llm.calls  # no segundo bucle ni llamadas por LiteLLM
     calls = rt.store.events(task_id=task.id, types=("llm",))
     assert calls[0]["tokens_in"] == 40 and calls[0]["tokens_out"] == 7
     assert task.capabilities["harness"] == "pi"
-    assert any(e["decision"] == "denegado" for e in rt.store.events(task_id=task.id, types=("tool",)))
+    assert any(e["decision"] == "denegado" for e in rt.store.events(task_id=task.id, types=("permission",)))
 
 
-@pytest.mark.parametrize("change", [{"api_base": "https://example.com/v1"}, {"privado": False}, {"agente": True}])
+@pytest.mark.parametrize("change", [{"api_base": "https://example.com/v1"}, {"agente": True}])
 def test_pi_rejects_nonlocal_profile(make_rt, change):
     rt = make_rt()
     profile = dataclasses.replace(rt.settings.models["local"], **change)
@@ -136,8 +137,8 @@ for line in sys.stdin:
     folder.mkdir(parents=True)
     (folder / "PLAN.md").write_text("- [ ] Requisito sin implementar\n", encoding="utf-8")
     result = await rt.agent_step(task, "chat", max_turns=10)
-    assert result.outcome.status == "limite_turnos"
-    assert result.outcome.turns == 3 and not result.outcome.claims_done
+    assert result.outcome.status == "completado"
+    assert result.outcome.turns == 1  # Pi no recibe el plan ni continuaciones impuestas
 
 
 def test_pi_keeps_error_screenshot_as_image():

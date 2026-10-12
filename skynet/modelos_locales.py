@@ -16,7 +16,7 @@ from pathlib import Path
 HOME = Path(os.environ.get("USERPROFILE") or Path.home())
 CARPETAS = [HOME / ".lmstudio" / "models"]
 NO_CHAT = ("embed", "mmproj", "mtp-", "reranker", "whisper")
-BASE = ["-fa", "on", "-ctk", "q4_0", "-ctv", "q4_0", "-np", "1", "--no-webui"]
+BASE = ["-fa", "on", "-np", "1", "--no-webui"]
 
 
 @dataclass

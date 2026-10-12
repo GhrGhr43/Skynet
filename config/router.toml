@@ -1,11 +1,8 @@
-# Perfiles de modelo. El modelo lo eliges tú (no hay modo automático: D21); por defecto, local.
-# Dos cerebros (D19): el bucle de Skynet con el modelo local (por defecto) y Hermes Agent (motor "hermes"),
-# que es la única vía para usar modelos en línea. Coder y las tareas largas van siempre con el bucle de Skynet.
-
-moneda_usd_eur = 0.86      # para convertir el coste que da LiteLLM (USD) a euros
+# Modelos independientes del harness. Pi usa el endpoint elegido.
+moneda_usd_eur = 0.86      # compatibilidad del registro histórico
 
 [presupuesto]
-mensual_eur = 0            # solo cuenta modelos de pago con precio aquí; los de Hermes los paga Hermes
+mensual_eur = 0            # modelos locales sin coste de proveedor
 
 [modelos.local]
 # Modelo local: el que elijas en Ajustes (motor "local" de skynet.toml, llama-server).
@@ -25,34 +22,3 @@ top_p = 0.95
 top_k = 20
 min_p = 0.0
 # contexto_tokens = 32768  # sin poner = el "contexto" de [motores.local] en skynet.toml
-
-[modelos.hermes]
-# Hermes Agent con el modelo local (alias "local" de Hermes = el llama-server de arriba): privado.
-# Hermes usa sus propias herramientas, memoria y skills; Skynet solo le pasa la conversación.
-# Necesita encendidos los motores "local" y "hermes" (Ajustes).
-litellm = "openai/local"
-api_base = "http://127.0.0.1:8642/v1"
-api_key_archivo = "data/hermes/api_key"   # la crea el motor "hermes" al arrancar
-agente = true
-privado = true
-coste_entrada_usd_mtok = 0
-coste_salida_usd_mtok = 0
-max_tokens = 16000
-timeout_seg = 3600         # una tarea de Hermes puede durar muchos minutos
-contexto_tokens = 128000   # Hermes gestiona su propio contexto
-
-[modelos.hermes-nube]
-# Hermes con un modelo en línea (alias "nube"): proveedor y modelo en [motores.hermes].env de skynet.toml y
-# la clave del proveedor en el .env de Hermes (C:\Users\HACHO\.hermes-skynet\.env). NO privado: se activa
-# con confirmación, como cualquier modelo en línea. El gasto lo cobra el proveedor; Skynet no lo cuenta.
-litellm = "openai/nube"
-api_base = "http://127.0.0.1:8642/v1"
-api_key_archivo = "data/hermes/api_key"
-agente = true
-motor = "hermes"
-privado = false
-coste_entrada_usd_mtok = 0
-coste_salida_usd_mtok = 0
-max_tokens = 16000
-timeout_seg = 3600
-contexto_tokens = 128000

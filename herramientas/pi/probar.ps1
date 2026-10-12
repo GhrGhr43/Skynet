@@ -16,7 +16,7 @@ try {
     }
     if (-not $servidorPi) { throw 'Skynet no ha arrancado. Mira data/logs/web-pi.stderr.log.' }
     if ($servidorPi.ocupado) { throw 'Skynet está trabajando. Pulsa Detener o espera antes de cambiar a Pi.' }
-    $ajustesPi = @{ repo='prueba-pi'; coder=$true; coder_motor='pi'; modelo='local' } | ConvertTo-Json
+    $ajustesPi = @{ repo='prueba-pi'; modelo='local' } | ConvertTo-Json
     Invoke-RestMethod 'http://127.0.0.1:8765/api/ajustes' -Method Post -ContentType 'application/json' -Body $ajustesPi | Out-Null
     Start-Process 'http://127.0.0.1:8765'
 } finally { Pop-Location }

@@ -1,256 +1,134 @@
 # Skynet
 
-Agente personal: un chat local al que dices «haz X» y que decide contexto, herramientas y
-modelo. Detrás hay un Core pequeño y estable (Personal Agent OS) al que se enchufan
-herramientas (servidores MCP), agentes y modelos sin reescribirlo.
+Agente personal de Daniel en Windows. **Pi oficial es el motor**: conserva sus herramientas
+`read`, `bash`, `edit`, `write`, sus instrucciones, sesiones y compactación. Skynet aporta
+la interfaz web, acceso desde el móvil, selección del modelo local, permisos y registro.
+No añade planes obligatorios, bloques de 30 turnos, verificadores automáticos ni propuestas de skills.
 
-- Diseño: [docs/DISENO-MVP.md](docs/DISENO-MVP.md)
-- Decisiones y desviaciones: [docs/DECISIONES.md](docs/DECISIONES.md)
-- Estado del proyecto y siguientes pasos: [PROGRESO.md](PROGRESO.md)
+## Empezar
 
-## Uso rápido
+1. Doble clic en [Abrir Skynet.cmd](Abrir%20Skynet.cmd): enciende el modelo si hace falta y abre
+   [el chat](http://127.0.0.1:8765).
+2. Elige el proyecto con el selector de carpeta y envía el objetivo completo en un mensaje.
+3. Para conversar sin herramientas de archivos, selecciona **Sin repo** y **Solo repo**.
+4. Pulsa **Pi** bajo el chat, o **+ → Harness, herramientas y MCP**, para configurar capacidades.
+5. **Detener** interrumpe el proceso y conserva avances. `continúa` retoma la última tarea
+   pendiente del chat. Los mensajes siguientes reutilizan la sesión oficial de Pi.
 
-```powershell
-cd C:\Skynet
-.\.venv\Scripts\Activate.ps1      # o usa .\.venv\Scripts\skynet.exe directamente
-skynet doctor                     # comprueba el modelo local, git, repos y servidores MCP
-skynet demo                       # crea el repo de prueba data\sandbox\demo
-skynet                            # abre el chat
-```
-
-O, con interfaz gráfica, `skynet web` (o `.\skynet web` desde `C:\Skynet`): abre
-`http://127.0.0.1:8765` en el navegador. Ver [Interfaz web](#interfaz-web).
-
-En el chat:
-
-| Escribe | Qué pasa |
-|---|---|
-| `implementa slug en textos.py` | Tarea nueva sobre el repo elegido. Skynet lee, edita y prueba con herramientas MCP; al final pasa el verificador. |
-| `continúa` (o `continúa: y añade tests`) | Retoma la última tarea sin terminar, aunque hayas cerrado Skynet. |
-| `hazme un juego de naves y trabaja una hora en él` | Crea el proyecto (carpeta, git y un test) y lo deja trabajando solo los minutos que digas, en pasos verificados con commits. Pide confirmación antes de cada cosa. |
-| `¿dónde está el exe de PEAK?` | Lo encuentra al instante con el índice de nombres de todo `C:` (modo «Ver mi PC» o más). |
-| `desinstala X de Steam e instálame Y` | Encadena las herramientas de Steam sin que pulses nada (modo «Control total»). Para programas normales usa `winget`. |
-| `/estado 3`, `/parar 3`, `/tareas` | Seguir o parar tareas. |
-| `/log` o `/log 3` | Herramientas usadas, decisión de permisos, modelo, tokens y coste. |
-| `/permisos local total` | Modo de permisos de un modelo: `repo`, `lectura`, `editar` o `total`. Sin argumentos, los lista. |
-| `/modelo hermes` | Usa Hermes Agent como cerebro (aprende y recuerda; más lento). `/modelo local` vuelve al bucle de Skynet. |
-| `/nube hermes-nube on` | Activa Hermes con un modelo en línea para esta sesión (pide confirmación). |
-| `/internet on`, `/internet off` | Activa o desactiva la búsqueda web. Apagada al arrancar; también se cambia con el globo junto al chat. |
-| `/repo demo`, `/repos` | Elegir repo autorizado. `/repo ninguno` = conversación sin herramientas. |
-| `/privado` | Exigir privacidad: solo el modelo local. |
-| `/buscar parser toml` | Busca en el historial de todas las tareas (pasos y eventos); 10 resultados por relevancia. |
-| `/skills`, `/skill escribir-tests añade tests a textos.py` | Lista las skills o lanza una tarea siguiendo una ([Skills](#skills)). |
-
-Fuera del chat: `skynet log [--tarea N]`, `skynet tareas`, `skynet estado N`,
-`skynet largo --tarea N` (lo usan las tareas largas por dentro).
-
-Cuando una acción es de riesgo (comando fuera de la lista blanca, acción privilegiada o
-destructiva), Skynet pregunta: `s` (sí), `n` (no) o `t` (sí a esa herramienta durante la tarea).
-
-### Probar Pi con tu modelo local
-
-Pi es una alternativa al bucle Coder; utiliza el mismo modelo local y las herramientas y permisos de Skynet.
-Está instalado dentro del proyecto. No hace falta LM Studio abierto ni descargar otra copia del modelo.
-
-1. Ejecuta [Probar Pi.cmd](Probar%20Pi.cmd). Prepara el modelo, el proyecto y la web, y abre el chat.
-2. Verás `Coder · Pi` y el repo `prueba-pi`. Escribe una petición completa; los archivos quedan en
-   `proyectos/prueba-pi`. Ya contiene una web de ejemplo creada por Pi, que puedes abrir con doble clic en `index.html`.
-3. Para comparar, usa `+ > Agente para programar > Skynet` o `Pi`, con el mismo repo y modelo.
-   Haz una tarea nueva: `continúa` conserva el motor elegido al crear la tarea original.
-
-En terminal: `/repo prueba-pi`, `/coder pi` y tu petición. `/coder skynet` vuelve al motor habitual.
-El proyecto de ejemplo incluye comprobaciones de carga, JavaScript y desbordamiento; las funciones de una
-web compleja necesitan además sus propios tests. La guía de instalación y los detalles están en
-[herramientas/pi/README.md](herramientas/pi/README.md).
-
-### Skills
-
-Una skill es una carpeta `skills/<nombre>/SKILL.md` en el formato de
-[agentskills.io](https://agentskills.io): frontmatter con `name` (igual que la carpeta;
-minúsculas, números y guiones) y `description`, y debajo las instrucciones en Markdown.
-Skynet solo pone en el contexto la lista de nombres y descripciones; el cuerpo entra cuando
-pides `/skill <nombre> <tarea>` (y sigue entrando si dices «continúa»). Ejemplo:
-[skills/escribir-tests](skills/escribir-tests/SKILL.md). `/skills` muestra cuántas veces se ha
-usado cada una y cuántas pasó el verificador.
-
-Cuando una tarea pasa el verificador tras 3 o más pasos, Skynet **propone** una skill nueva y
-datos para su memoria en `skills\_propuestas\`. Nada se activa sin ti: `/propuestas`,
-`/aprobar <nombre>` (te pide confirmación) o `/rechazar <nombre>` (`memoria` = los añadidos de
-memoria). La memoria son `memoria\MEMORY.md` (hechos del entorno) y `memoria\USER.md`
-(tus preferencias), de 2 KB como mucho cada una; siempre van en el contexto y puedes editarlas
-a mano.
-
-**Tus instrucciones:** escribe en `memoria\SKYNET.md` cómo quieres que trabaje (como un CLAUDE.md
-personal); va siempre en el contexto. En cada repo, Skynet lee también su `AGENTS.md` o `CLAUDE.md`.
-Las skills las carga el modelo solo cuando encajan (`/skill` sigue sirviendo para forzar una).
-
-**Peticiones grandes en Coder:** puedes enviar el objetivo completo en un mensaje. Skynet recibe instrucciones
-para construir una versión ejecutable y ampliarla con pequeñas ediciones, aunque pidas un único archivo.
-El plan de cada tarea se guarda en `.skynet/tarea-N/PLAN.md` y se recupera al continuar. Una respuesta cortada
-o una llamada con JSON inválido se descarta y se reintenta con un paso pequeño (hasta tres fallos consecutivos).
-Si acumula lecturas sin actuar, recibe un recordatorio para hacer un cambio concreto y comprobarlo.
-Una edición permite repetir una lectura o verificación; sin cambios se mantiene el límite de llamadas repetidas.
-Si agota los 30 turnos de un paso y ha modificado código, continúa automáticamente hasta cuatro bloques más;
-si falla el verificador del repo, puede intentar corregirlo dos veces. Son límites configurables en `[agente]`.
-Los avances se conservan y Detener sigue pausando la tarea. Un plan con casillas pendientes impide darla
-por terminada; la calidad final depende de las comprobaciones reales que tenga el proyecto.
-
-Si pides explícitamente un mínimo de trabajo en una tarea larga, `minutos_minimos` impide completarla
-antes de acumular ese tiempo de modelo y verificación. El máximo sigue siendo un límite distinto.
-Los avances y el tiempo acumulado sobreviven a una reanudación; no se rellena la duración esperando.
-
-Para objetivos de páginas HTML, Skynet dispone de `navegador.comprobar_html`: abre el archivo del proyecto,
-prueba botones y entradas, detecta errores JavaScript y desbordamiento móvil. Con visión puede pedir una
-captura para revisar el aspecto. Usa un perfil efímero de Chrome sin red; requiere Node.js y Playwright
-(también busca el runtime local de Codex si existe). Las pruebas de lógica del proyecto siguen siendo necesarias.
-
-**Memoria automática (como Hermes):** si le dices una preferencia, le corriges o le cuentas algo
-estable de tu PC, Skynet lo guarda por su cuenta con su herramienta `memoria` y lo recuerda en las
-conversaciones siguientes. Cada cambio sale en `/log`; no guarda secretos y no se usa en tareas
-largas. Las demás herramientas del agente no pueden escribir en `skills\` ni en `memoria\`.
-
-## Interfaz web
-
-El indicador `tok/s` se actualiza cada segundo con tokens de generación contados por llama.cpp,
-incluido el razonamiento y las tareas largas del motor seleccionado. Muestra `0 tok/s` cuando no genera y si se pierde
-la conexión. No conserva la media anterior ni estima tokens por caracteres. Otros motores sin contador
-compatible muestran cero; el pie de cada respuesta mantiene su media histórica.
+[Probar Pi.cmd](Probar%20Pi.cmd) abre un proyecto de pruebas en
+`C:\Git\Skynet\proyectos\prueba-pi`. Pi de consola en `C:\Git\PiLocal` sigue separado.
+No hace falta abrir LM Studio ni descargar otra copia del modelo.
 
 ```powershell
-cd C:\Skynet
-.\skynet web                 # abre el navegador; Ctrl+C en la ventana para cerrar
-.\skynet web --puerto 9000 --no-abrir
+cd C:\Git\Skynet
+.\.venv\Scripts\skynet.exe
+.\.venv\Scripts\skynet.exe web
+.\.venv\Scripts\skynet.exe doctor
 ```
 
-Es el mismo Skynet que el chat de terminal (mismo Coordinator, permisos, tareas y registro),
-con todo visible sin saberse comandos:
+Comandos: `/repos`, `/repo nombre|ninguno`, `/modelo local|otro`,
+`/razonamiento auto|rápido|medio|alto`, `/permisos`, `/internet on|off`, `/privado`,
+`/tareas`, `/estado id`, `/log`, `/buscar texto` y `/ayuda`.
+No hay un bucle Coder separado ni un scheduler que fuerce una duración mínima.
 
-- **Centro:** la nebulosa es Skynet. Reacciona al cursor y su color dice qué hace: blanco
-  azulado en espera, azul pensando, violeta usando herramientas, turquesa verificando, ámbar
-  cuando te necesita, verde hecho, rojo si algo falla. Cada tarea larga en marcha es una luz
-  en órbita.
-- **Abajo:** escribe lo que quieras. El botón cuadrado detiene la tarea (queda pausada). Debajo de
-  cada respuesta: tokens, tokens por segundo y estado; si falla o queda a medias, **Reintentar**.
-- **Izquierda:** sesiones, **Uso** (modelos, tokens, herramientas y permisos de cada tarea),
-  **Estado** (comprobar la instalación) y Configuración (modelos, repos, permisos, calidad visual).
-- **Permisos:** lo que necesita tu visto bueno sale en un diálogo con el comando exacto que se va a
-  ejecutar: Permitir (`S`), Denegar (`N`) o Permitir en toda la tarea (`T`).
-- **Modos de permisos por modelo** (junto al cuadro de texto y en Configuración): Solo repo, Ver mi
-  PC, Ver y editar y Control total. En Control total solo se pregunta lo delicado, como Claude o
-  Hermes: administrador, cambiar carpetas del sistema, borrar y secretos. Mirar, buscar, instalar
-  juegos o programas no pregunta.
-- **Cerebros** (no hay modo automático: eliges tú): Local (el bucle rápido de Skynet, por defecto),
-  Hermes (agente que aprende, con el modelo local) y Nube (Hermes con un modelo en línea, con confirmación). Coder y las tareas largas
-  van siempre con Skynet. Ver [Hermes como segundo cerebro](#hermes-como-segundo-cerebro).
-- `Ctrl+K` abre todas las acciones con buscador. Los comandos `/` siguen funcionando como atajos.
+## Configuración
 
-Solo escucha en `127.0.0.1` y rechaza peticiones de otras webs (comprueba Host y Origin).
+Las opciones personales se guardan localmente en `data/personalizacion.json`:
 
-**Imágenes y capturas (Local):** con el motor encendido con visión, usa **+ > Adjuntar imágenes**, pega una
-imagen o arrástrala al chat. PNG, JPEG o WebP; hasta 4 por mensaje y 5 MB cada una. Se reducen a 1280 px,
-se quitan metadatos y se guardan localmente en `data/imagenes/`; el historial y Reintentar conservan los adjuntos.
-El modelo elegido en Ajustes necesita su `mmproj` compatible en la misma carpeta. Con IQ3_S y 64K, el
-proyector va en CPU (`vision_gpu = false`) para reducir la presión sobre los 16 GB de VRAM.
+- **Harness:** Pi por defecto. Puedes registrar ejecutables compatibles con **Pi RPC y sus
+  opciones de arranque**. Otros protocolos necesitan adaptadores; indicar un nombre de agente
+  no lo integra automáticamente. Modelo y harness se eligen por separado.
+- **Herramientas:** activa o desactiva las cuatro originales. Las llamadas pasan por permisos.
+- **Modelo local:** contexto configurable, MTP y visión en GPU/CPU. Apaga y enciende el motor tras
+  cambiar estas opciones. Caché KV sin cuantización: usa la precisión por defecto del backend.
+  MTP permanece activado; compara el mismo prompt con MTP activado y desactivado.
+- **Otros modelos:** en «Más modelos y harnesses», registra un endpoint compatible con OpenAI:
+  `{"otro":{"id":"modelo-servido","api_base":"http://127.0.0.1:1234/v1","privado":true,
+  "contexto":16384,"max_tokens":4096,"razonamiento":null}}`.
+  `razonamiento:null` sirve para modelos sin razonamiento explícito. Para proveedores externos
+  usa `privado:false` y `api_key_env` si necesitan clave; no escribas la clave en el catálogo.
+- **Skills:** lista explícita de rutas; Pi las carga con su mecanismo original, sin generar propuestas.
 
-En Coder o peticiones visuales, Skynet dispone del MCP `vision`: lee imágenes del repo y, con **Ver mi PC**
-o más, puede capturar una ventana por su título o la ventana activa. Para abrir el juego o ejecutar pruebas
-fuera del repo necesita **Control total**. Se le indica revisar capturas después de cambios relevantes en
-juegos e interfaces, junto con tests y errores. Es una decisión del modelo, no un verificador visual infalible.
-Las tareas largas conservan **Solo repo**: pueden mirar imágenes guardadas dentro del proyecto, pero no
-capturar el escritorio. Hermes y Nube no reciben adjuntos por esta integración. En el móvil hace falta
-recompilar e instalar un APK nuevo para ver estos controles.
+La compactación usa los valores de Pi con 64K. Para ventanas inferiores a 36K ajusta su reserva
+proporcionalmente; sigue siendo la compactación de Pi, sin un bucle propio de Skynet.
+En este PC, una prueba corta sin cuantización y con MTP activado dio 7,41 tok/s con 64K y 19,93 con 32K.
+Se dejó 64K restaurado. Prueba 32K/48K si buscas más velocidad; una muestra no garantiza esos valores
+en todos los prompts. La retirada de cuantización tiene un coste de memoria que el harness no elimina.
 
-**Internet opcional:** pulsa el globo junto al cuadro de texto. Se ilumina cuando está activado;
-Skynet puede buscar datos que le falten y leer fuentes públicas, con enlaces en la respuesta.
-No busca en cada mensaje: decide cuándo hace falta. Apagado, no arranca el servidor de búsqueda ni
-añade sus herramientas al modelo. Activado, añade dos herramientas pequeñas y las consultas tardan
-lo que tarde la red y el modelo en leerlas. Funciona con o sin repo, sin clave API y sin abrir Chrome.
-Las consultas salen del PC a buscadores externos (DDGS); privacidad alta y tareas largas bloquean
-estas herramientas. No navega por cuentas ni ejecuta JavaScript. Los buscadores pueden limitar
-consultas o fallar: Skynet debe indicar el fallo en vez de inventar resultados.
-Sin dependencias nuevas: usa Starlette y uvicorn, que ya instala el SDK de MCP; Three.js va
-incluido en `skynet/web/static/vendor` (funciona sin internet). Calidad visual automática
-según la GPU; se puede forzar con `?calidad=baja|media|alta|ultra` o en Modelos y repos, y
-`?fps` muestra los fotogramas por segundo.
+## MCP opcional
 
-## Configuración (`config/`)
+Apagado por defecto. Puedes añadir, eliminar y activar cada servidor `stdio` (ejecutable y argumentos)
+o HTTP (URL), y apagar MCP entero. Un servidor apagado no se conecta ni registra herramientas.
+Los activos usan el MCP oficial de Pi, con esquemas cargados bajo demanda mediante `tool_search`.
 
-| Archivo | Para qué |
+Catálogo inicial: búsqueda en internet, navegador local, visión, herramientas/índice del PC y
+agente-godot. **Internet** controla búsqueda y navegador desde el chat. Visión y las demás herramientas
+se activan por separado. El navegador comprueba HTML cuando el modelo lo decide; no es un verificador
+automático. Mantiene su aislamiento de red: páginas con CDN pueden necesitar dependencias locales
+para esa herramienta.
+
+«Configuración avanzada de MCP (JSON)» permite editar `args`, `env`, `headers`, `cwd` y `exposure`.
+Los placeholders `{repo}`, `{home}` y `{modo}` se resuelven por petición.
+`exposure:deferred` es el valor inicial; también se admite `direct` o `hidden`.
+
+## Memoria individual
+
+Apagada por defecto. Solo se incorpora la memoria aprobada. Cada entrada tiene botones
+**Aprobar esta entrada** y **Descartar**; no hay aprobación en lote. Si el modelo pide recordar algo,
+se muestra esa entrada y necesita aprobación incluso con «Sin preguntar». Una negativa la deja
+pendiente. Las antiguas preferencias se importan pendientes; los borradores no se activan.
+
+Desactivar memoria retira la herramienta y su añadido de instrucciones; no borra mensajes antiguos.
+Memoria, skills y extras activos añaden tokens. Apagados no se añaden al prompt, aunque se conserva
+el historial previo. Para comparar rendimiento empieza chats nuevos con las mismas opciones.
+
+## Permisos, imágenes y móvil
+
+Modos por modelo: **Solo repo**, **Ver mi PC**, **Ver y editar**, **Control total**. Las llamadas
+se revisan antes de ejecutarse. Las acciones que lo requieren piden confirmación y quedan registradas.
+Este control **no es un sandbox del sistema operativo** ni garantiza inspeccionar todos los efectos
+indirectos de un script ejecutado con bash.
+
+Con un modelo compatible y su `mmproj`, adjunta, pega o arrastra PNG/JPEG/WebP al chat (hasta cuatro,
+5 MB por imagen). MCP visión puede leer imágenes y capturar ventanas según permisos. Ayuda en juegos
+e interfaces si modelo y herramienta tienen visión activa; no es una garantía de calidad visual.
+El proyector en CPU es la opción inicial para dejar margen en los 16 GB de VRAM de este PC;
+es configurable y no obligatorio.
+
+`tok/s` muestra cada segundo la generación contada por llama.cpp y cero cuando está inactivo o no
+hay un contador compatible. El pie conserva la media histórica de la respuesta. Skynet escucha
+solo en `127.0.0.1`; el móvil usa acceso privado por Tailscale y llave del dispositivo. La APK
+instalada necesita recompilar para incorporar cambios de interfaz; el backend ya utiliza Pi.
+SQLite e historial se conservan sin modificar migraciones publicadas.
+
+## Mantenimiento
+
+| Archivo/carpeta | Uso |
 |---|---|
-| `repos.toml` | Repos autorizados (fuera de ellos no se lee ni escribe nada), su verificador, privacidad y agente. |
-| `permisos.toml` | Nivel de cada herramienta y lista blanca de comandos. |
-| `router.toml` | Perfiles de modelo: local (llama-server), Hermes local y Hermes en la nube. |
-| `skynet.toml` | Rutas, límites del agente y de las tareas largas, y servidores MCP. |
+| `config/router.toml` | Modelo local y perfiles base |
+| `config/skynet.toml` | Motor local y catálogo inicial MCP |
+| `config/repos.toml` | Proyectos autorizados |
+| `config/permisos.toml` | Niveles y comandos permitidos |
+| `skynet_tools/pi_agent.py` | Adaptador RPC, sin bucle propio |
+| `herramientas/pi/puente.ts` | Extensión de permisos y memoria opcional |
+| `skynet_tools/personalizacion.py` | Opciones persistentes y aprobación individual |
+| `data/pi/sessions` | Sesiones JSONL originales de Pi |
+| `data/skynet.db` | Tareas e historial consultable |
 
-Para cambios personales sin tocar los archivos versionados, crea `config/<nombre>.local.toml`
-(se mezcla encima y git lo ignora).
+`config/*.local.toml`, estado, memoria y credenciales no se versionan. LiteLLM no interviene en
+producción: Pi usa su cliente de proveedor. Se conserva en desarrollo para pruebas del ejecutor
+histórico. LM Studio es otra capa: instala modelos y backends; Skynet puede arrancar su llama-server.
 
-### Hermes como segundo cerebro
+El ejecutor anterior queda fuera de producción, con fixtures de regresión existentes. Hermes se
+retira de configuración, interfaz y adaptadores. Las decisiones antiguas permanecen como historial
+en [docs/DECISIONES.md](docs/DECISIONES.md).
 
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) corre en Docker y Skynet le pasa la
-conversación; él usa sus herramientas, su memoria y sus skills (ver D19 en docs/DECISIONES.md).
-
-1. Docker Desktop abierto y la imagen construida:
-   `docker build -t skynet/hermes herramientas\bench-hermes\docker`.
-2. En Ajustes, enciende el motor **local** y el motor **hermes**; elige **Hermes** en el selector de modelo.
-3. Para usar un modelo en línea: en `config/skynet.toml` ([motores.hermes].env) pon
-   `HERMES_NUBE_PROVEEDOR` y `HERMES_NUBE_MODELO` (p. ej. `openrouter` y `anthropic/claude-sonnet-5.5`),
-   la clave del proveedor en `%USERPROFILE%\.hermes-skynet\.env` (p. ej. `OPENROUTER_API_KEY=...`),
-   reinicia el motor hermes y elige **Nube**.
-
-Hermes ve tu carpeta de usuario y `C:\Git` (salvo AppData, .ssh y credenciales) y, dentro del
-contenedor, ejecuta sin preguntar. Su memoria y sus skills quedan en `%USERPROFILE%\.hermes-skynet`.
-
-**Añadir un repo tuyo:**
-
-```toml
-[repos.mi-web]
-ruta = "C:/Users/HACHO/Documents/mi-web"
-verificador = "npm test"
-herramientas = ["workspace"]
-```
-
-**Usar agente-godot como programador de un juego:**
-
-```toml
-[repos.feudo]
-ruta = "C:/Users/HACHO/Documents/agente-godot/juegos/feudo"
-agente = "agente-godot"
-herramientas = ["coding_agent"]
-```
-
-y en el chat: «trabaja 3 horas en feudo siguiendo su PLAN.md».
-
-## Estructura
-
-```
-skynet/          Core
-  coordinator.py   chat -> tareas, comandos, «continúa»
-  store.py         task store + audit log (SQLite, data/skynet.db)
-  gate.py          permission gate
-  audit.py         eventos de auditoría
-  context.py       context builder (git + archivos de estado, sin vector DB)
-  skills.py        skills de solo lectura (skills/<nombre>/SKILL.md)
-  propuestas.py    propuestas de skill y memoria, /aprobar y /rechazar
-  router.py        model router (LiteLLM) con presupuesto
-  agent.py         bucle modelo <-> herramientas
-  scheduler.py     tareas largas verificadas (sin LLM en el control)
-  verifier.py      verificador objetivo
-  toolhub.py       cliente MCP
-  runtime.py       ensamblaje de las piezas
-  cli.py, views.py interfaz de terminal
-  web/             interfaz web: server.py (HTTP + SSE) y static/ (Three.js, sin build)
-skynet_tools/    servidores MCP propios (workspace, coding_agent)
-config/          configuración TOML
-skills/          skills (formato agentskills.io); _propuestas/ = borradores sin aprobar
-memoria/         memoria curada (MEMORY.md, USER.md)
-tests/           pytest (LLM guionizado + MCP real); tests/test_lmstudio.py usa el modelo real
-data/            base de datos, logs y sandbox (ignorado por git)
-```
-
-## Tests
+Backup **solo local**: rama `SKynet-Old-v0.2`, commit `067ea44`, estado personal en
+`data/backups/old-v0.2-20261012`. Rama de trabajo: `codex/pi-motor`. No se publica a GitHub.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-$env:SKYNET_TEST_LMSTUDIO = "1"; .\.venv\Scripts\python.exe -m pytest -q -m lmstudio   # con el motor local encendido
+.\.venv\Scripts\skynet.exe doctor
 ```
+
+Estado: [PROGRESO.md](PROGRESO.md). Integración: [herramientas/pi/README.md](herramientas/pi/README.md).

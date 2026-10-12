@@ -78,10 +78,10 @@
       <div id="attachments" class="attachments" aria-label="Imágenes adjuntas" hidden></div>
       <textarea id="input" rows="1" placeholder="Pídele algo a Skynet…" aria-label="Mensaje para Skynet"></textarea>
       <div class="prompt-bar">
-        <button type="button" class="prompt-plus" id="plusBtn" data-icon="plus" aria-label="Más: internet, modo coder…" title="Internet, modo coder…"></button>
+        <button type="button" class="prompt-plus" id="plusBtn" data-icon="plus" aria-label="Imágenes, internet y herramientas" title="Imágenes, internet y herramientas"></button>
         <span class="modes" id="modes"></span>
         <span class="grow"></span>
-        <span class="tps" id="tps" title="Velocidad de la última respuesta"></span>
+        <span class="tps" id="tps" title="Tokens generados en el último segundo"></span>
         <button type="button" class="meter" id="meter" title="Tokens" aria-label="Uso de tokens"></button>
         <button type="button" class="prompt-btn prompt-stop" id="stopBtn" data-icon="stop" aria-label="Detener" title="Detener (Esc). La tarea queda pausada"></button>
         <button type="submit" class="prompt-btn prompt-send" id="sendBtn" data-icon="send" aria-label="Enviar"></button>
@@ -92,6 +92,7 @@
       <button type="button" class="mini" id="tabRepo" title="Repo en el que trabaja Skynet"></button>
       <button type="button" class="mini" id="btnPerm" title="Permisos del modelo: hasta dónde puede llegar en tu PC"></button>
       <span class="grow"></span>
+      <button type="button" class="mini" id="btnHarness" title="Configurar el harness"></button>
       <button type="button" class="mini" id="btnModel" title="Modelo"></button>
       <button type="button" class="mini" id="btnEffort" title="Cuánto razona antes de responder"></button>
     </div>
@@ -129,6 +130,6 @@
 <div class="build" id="build" aria-hidden="true"></div>
 
 <script src="/static/vendor/qrcode/qrcode.js" defer></script>
-<script type="module" src="/static/js/main.js?v=version-20261011pi"></script>
+<script type="module" src="/static/js/main.js?v=version-20261012pi"></script>
 </body>
 </html>

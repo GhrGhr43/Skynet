@@ -1,4 +1,4 @@
-"""Motores locales (LM Studio, llama-server y procesos como Hermes): saber si están
+"""Motores locales (LM Studio, llama-server y procesos configurables): saber si están
 encendidos, encenderlos y apagarlos.
 
 Los que usan la GPU (16 GB) se excluyen: encender uno apaga los demás con `gpu = true`. La configuración vive
@@ -92,7 +92,7 @@ class Engines:
     def set_local_model(self, name: str, local: Any) -> None:
         """Cambia el GGUF del motor `name` (objeto modelos_locales.Local); no lo reinicia."""
         s = self.specs[name]
-        s.modelo, s.args = str(local.ruta), local.args()
+        s.modelo, s.args = str(local.ruta), local.args(con_mtp=getattr(self, "mtp", True))
         if local.mmproj and not s.vision_gpu:
             s.args += ["--no-mmproj-offload"]
 
@@ -125,7 +125,7 @@ class Engines:
         raise ValueError(f"Tipo de motor desconocido: {s.tipo}")
 
     def _start_llamacpp(self, s: EngineSpec, wait_s: float) -> str:
-        # llama-server directo (el que trae LM Studio): permite FA, KV q8_0 y MTP, que `lms load` no expone
+        # llama-server directo permite configurar FA, contexto, visión y MTP.
         if self.is_on(s.nombre):
             return f"{s.nombre} ya estaba encendido"
         port = s.url.rsplit(":", 1)[1].split("/")[0]
@@ -208,6 +208,21 @@ def load_engines(raw: dict[str, Any], logs_dir: Path, home: Path | None = None) 
                                             "firma", "gpu", "parar", "vision_gpu") if k in e}
         specs[n] = EngineSpec(nombre=n, **known)
     eng = Engines(specs, logs_dir)
+    if home:
+        from skynet_tools.personalizacion import Personalizacion
+        opciones = Personalizacion(home)
+        opts = opciones.data
+        eng.mtp = opts["mtp"]
+        if "local" in specs:
+            if opciones.path.exists():
+                specs["local"].contexto = opts["contexto"]
+            specs["local"].vision_gpu = opts["vision_gpu"]
+            # La caché conserva la precisión por defecto del backend.
+            args = specs["local"].args
+            specs["local"].args = [v for i, v in enumerate(args) if v not in ("-ctk", "-ctv", "q4_0", "q8_0")]
+            if not eng.mtp and "--spec-type" in specs["local"].args:
+                i = specs["local"].args.index("--spec-type")
+                del specs["local"].args[i:i + 2]
     if "local" in specs and specs["local"].tipo == "llamacpp":  # modelo elegido en Ajustes
         from . import modelos_locales as ml
 

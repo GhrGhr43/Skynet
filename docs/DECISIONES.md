@@ -1,5 +1,37 @@
 # Decisiones (ADR) del MVP
 
+## D27. Pi oficial como único motor de producción (2026-10-12)
+- Daniel autoriza sustituir el bucle propio tras comparar tareas reales, retirar Hermes, caché cuantizada,
+  propuestas y verificación impuesta; mantener MTP, opciones configurables y aprobar memoria individual.
+  Esta decisión sustituye D26 para la ejecución actual; las anteriores describen versiones históricas.
+- Se reutiliza Pi 1.1.0 mediante RPC y extensiones oficiales. Conserva read/bash/edit/write, sus contratos,
+  prompt, sesión y compactación. Skynet no construye un bucle de razonamiento ni impone planes, checkpoints
+  o un verificador universal. Los límites antiguos quedan fuera de producción; fixtures antiguas los prueban.
+- **Contrato caro de cambiar:** motores registrados deben hablar Pi RPC y admitir las opciones de arranque
+  del adaptador actual. Otro harness necesita adaptador. Registro persistente separado de modelos; añadir un
+  ejecutable desconocido no equivale a integrar su protocolo. No se cambia el esquema SQLite publicado.
+- **Autoridad de sesión:** JSONL de Pi con UUID estable por chat/proyecto; SQLite mantiene tareas, consumo y
+  auditoría para interfaz. El mensaje se transmite sin reconstruir contexto propio o duplicar historial.
+  Se reutilizan ajustes de muestreo/contexto/modelo. Compactación original con 64K, reserva adaptada bajo 36K.
+- **Permisos caros de cambiar:** extensión tool_call consulta el gate existente antes de ejecutar originales
+  y MCP. Puente loopback efímero con token, rechazo de Origin y límites de tamaño. No es un sandbox del SO;
+  el control de bash no inspecciona de forma completa los efectos indirectos de programas. No se promete esa
+  protección. Memoria siempre solicita aprobación por entrada incluso con «Sin preguntar».
+- **Extras:** configuración explícita de MCP global/por servidor, herramientas nativas, skills y memoria.
+  MCP oficial con descubrimiento diferido; apagados no conectan ni registran herramientas. No se descubren
+  MCP ni extensiones de otras instalaciones/proyectos. Las instrucciones AGENTS habituales de Pi permanecen.
+  Internet controla búsqueda y navegador; privacidad alta evita ambos. Un historial previo puede conservar
+  resultados y nombres antiguos aunque un extra esté apagado; no quedan ejecutables ni declaraciones activas.
+- **Memoria:** dos entradas antiguas importadas pendientes, sin autoaprobar ni fusionar lotes. Estado JSON
+  local y auditado por ID. Solo entradas aprobadas se añaden al prompt si memoria está activa (máximo 4K chars).
+  Sin propuestas de skills o memoria por completar tareas. No se publica estado personal ni credenciales.
+- **Modelo:** endpoint compatible con OpenAI separado del harness. Caché KV sin cuantización, MTP mantenido,
+  contexto configurable y visión CPU/GPU. No se exige Qwen ni 64K. CPU recomendada para margen de VRAM.
+  Una medición corta con MTP/FP16 da 7,41 tok/s a 64K y 19,93 a 32K; se restaura 64K y se recomienda comparar.
+- **Respaldo y distribución:** backup local `SKynet-Old-v0.2` (`067ea44`) y estado consistente en data/backups.
+  Trabajo en `codex/pi-motor`, sin push por decisión expresa de Daniel. Hermes fuera del proyecto activo;
+  historial de decisiones y fixtures se conserva. LiteLLM fuera de producción, solo en dependencias dev.
+
 ## D15. Búsqueda web opcional y ligera (2026-10-09)
 Pedido por Daniel: búsqueda en internet con interruptor en la UI, evitando cargar varios MCP
 de navegador. Servidor propio `skynet_tools/internet.py` sobre DDGS 9.x y httpx: dos herramientas,

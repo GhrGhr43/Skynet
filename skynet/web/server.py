@@ -174,7 +174,7 @@ class WebUI:
         return await self._request({
             "clase": "permiso", "tarea": task_id, "herramienta": key, "nivel": level.name,
             "args": summarize_args(args), "motivo": reason, "comando": comando_completo(args),
-            "todas": level is not Level.DESTRUCTIVE and SIEMPRE_TAG not in reason,
+            "todas": key != "memoria" and level is not Level.DESTRUCTIVE and SIEMPRE_TAG not in reason,
         })
 
     def resolve(self, qid: str, value: str) -> bool:
@@ -280,7 +280,8 @@ class Session:
 
         self.engines = load_engines(rt.settings.engines, rt.settings.logs_dir, rt.settings.home)
         # litellm tarda unos segundos en importarse; hecho en el primer mensaje congelaba la web (y Detener).
-        threading.Thread(target=_warm_litellm, daemon=True).start()
+        if not rt.native:
+            threading.Thread(target=_warm_litellm, daemon=True).start()
 
         self.ui.on_usage = self._usage
         self.ui.on_route = self._route_speed
@@ -456,7 +457,7 @@ def models_info(rt: Runtime, engines: list[dict[str, Any]]) -> list[dict[str, An
     on = {e["nombre"]: e for e in engines}
     for name, m in rt.settings.models.items():
         free = (m.coste_entrada_usd_mtok or 0) == 0 and (m.coste_salida_usd_mtok or 0) == 0
-        motor = m.motor or name  # hermes y hermes-nube comparten el motor «hermes»
+        motor = m.motor or name
         if motor in on:
             ok, why = on[motor]["encendido"], "" if on[motor]["encendido"] else "motor apagado"
         else:
@@ -486,10 +487,12 @@ def snapshot(s: Session) -> dict[str, Any]:
         "repo": c.repo_name,
         "modelo": c.force_model or "local",
         "privado": c.private,
-        "internet": c.internet and not internet_blocked(s),
+        "internet": (rt.personalizacion.data["mcp_activo"] and rt.personalizacion.data["mcp"].get("internet", {}).get("enabled", False) if rt.native else c.internet) and not internet_blocked(s),
         "internet_bloqueado": internet_blocked(s),
-        "coder": c.coder and c.repo_name is not None,
+        "coder": c.coder and c.repo_name is not None and not rt.native,
         "coder_motor": c.coder_motor,
+        "harness": rt.personalizacion.data["harness"],
+        "personalizacion": rt.personalizacion.data,
         "vision": _current_model(s) == "local" and rt.vision_disponible(),
         "razonamiento": c.effort or "auto",
         "ocupado": s.busy,
@@ -505,7 +508,7 @@ def snapshot(s: Session) -> dict[str, Any]:
         "largas_vivas": long_alive,
         "limites": {"max_horas": rt.settings.long.max_horas},
         "ayuda": HELP,
-        "propuestas": propuestas.count(rt.settings.home),
+        "propuestas": 0 if rt.native else propuestas.count(rt.settings.home),
         "modos": [{"clave": m.clave, "nombre": m.nombre, "descripcion": m.descripcion, "fuerte": m.fuerte}
                   for m in modos.MODOS.values()],
         "modo_actual": rt.access.modo(_current_model(s)),
@@ -844,6 +847,46 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
     async def cancelar(request: Request) -> Response:
         return ok(cancelado=await session.cancel())
 
+    async def personalizacion(request: Request) -> Response:
+        if request.method == "GET":
+            return jresp(rt.personalizacion.data)
+        if session.busy:
+            return bad("Espera o pulsa Detener antes de cambiar la configuración.", 409)
+        if cliente_de(request).remoto:
+            return bad("La configuración de motores y MCP se cambia desde el PC.", 403)
+        data = await body(request)
+        try:
+            rt.personalizacion.cambiar(data)
+            rt.personalizacion.aplicar_modelos(rt.settings)
+            rt.settings.models["local"].contexto_tokens = rt.personalizacion.data["contexto"]
+            from ..engines import load_engines
+            session.engines = load_engines(rt.settings.engines, rt.settings.logs_dir, rt.settings.home)
+        except (ValueError, TypeError, KeyError) as e:
+            return bad(str(e))
+        rt.audit.log("config", decision="actualizada", detail={"campos": list(data)})
+        session.bus.publish("estado", snapshot(session))
+        return jresp(snapshot(session))
+
+    async def memoria_individual(request: Request) -> Response:
+        data = await body(request)
+        try:
+            if request.method == "GET":
+                return jresp({"entradas": rt.personalizacion.data["memoria"]})
+            if session.busy:
+                return bad("Espera o pulsa Detener antes de revisar memoria.", 409)
+            action = data.get("accion")
+            if action == "proponer":
+                entry = rt.personalizacion.proponer_memoria(data.get("texto"), data.get("destino", "usuario"))
+                return jresp(entry)
+            if action not in ("aprobar", "descartar") or not isinstance(data.get("id"), str):
+                return bad("Selecciona UNA entrada y aprobar o descartar.")
+            rt.personalizacion.revisar_memoria(data["id"], action == "aprobar")
+            rt.audit.log("memoria", decision=action, detail={"id": data["id"]})
+            session.bus.publish("estado", snapshot(session))
+            return jresp(snapshot(session))
+        except ValueError as e:
+            return bad(str(e))
+
     async def ajustes(request: Request) -> Response:
         b = await body(request)
         c = session.coord
@@ -870,7 +913,11 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
             if b["internet"] and target_repo and target_repo.privacidad == "alta":
                 return bad("Este repo tiene privacidad alta: la búsqueda web está desactivada.")
             c.internet = b["internet"]
+            if rt.native:
+                rt.personalizacion.internet(c.internet)
         if "coder_motor" in b:
+            if rt.native:
+                return bad("Configura el harness en Configuración; el bucle Coder anterior se ha retirado.")
             if b["coder_motor"] not in ("skynet", "pi"):
                 return bad("Motor Coder desconocido.")
             if session.busy:
@@ -1192,6 +1239,8 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
 
     # --- aprendizaje: propuestas de skills y memoria pendientes de tu visto bueno -----------
     async def aprendizaje_lista(request: Request) -> Response:
+        if rt.native:
+            return jresp({"items": []})
         home = rt.settings.home
         skl, mem = propuestas.list_proposals(home)
         items = []
@@ -1211,6 +1260,8 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         return jresp({"items": items})
 
     async def aprendizaje_accion(request: Request) -> Response:
+        if rt.native:
+            return bad("Las propuestas automáticas se han retirado. Usa la memoria individual en Configuración.", 410)
         nombre = str(request.path_params["nombre"])
         accion = str((await body(request)).get("accion") or "")
         if accion not in ("aprobar", "descartar"):
@@ -1252,6 +1303,8 @@ def create_app(rt: Runtime, port: int | None = None) -> Starlette:
         Route("/api/responder", responder, methods=["POST"]),
         Route("/api/cancelar", cancelar, methods=["POST"]),
         Route("/api/ajustes", ajustes, methods=["POST"]),
+        Route("/api/personalizacion", personalizacion, methods=["GET", "POST"]),
+        Route("/api/memoria", memoria_individual, methods=["GET", "POST"]),
         Route("/api/repos", repos_nuevo, methods=["POST"]),
         Route("/api/tareas", tareas),
         Route("/api/tareas/{id:int}", tarea),

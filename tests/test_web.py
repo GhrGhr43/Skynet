@@ -56,16 +56,43 @@ def test_estado_basico(web):
     assert c.get("/static/cursors/arrow.svg").status_code == 200
 
 
-def test_pi_selector_changes_harness_without_changing_model(web, monkeypatch):
-    from skynet_tools import pi_agent
+def test_pi_selector_changes_harness_without_changing_model(web):
     c, rt, app = web()
-    monkeypatch.setattr(pi_agent, "installation", lambda home: ("node", home / "pi.js", home / "puente.ts"))
-    assert c.get("/api/estado").json()["coder_motor"] == "skynet"
-    snap = c.post("/api/ajustes", json={"coder_motor": "pi", "coder": True, "modelo": "local"}).json()
-    assert snap["coder_motor"] == "pi" and snap["coder"] is True and snap["modelo"] == "local"
-    assert c.post("/api/ajustes", json={"coder_motor": "desconocido"}).status_code == 400
-    assert c.get("/api/estado").json()["coder_motor"] == "pi"
-    assert c.post("/api/ajustes", json={"coder_motor": "skynet"}).json()["coder_motor"] == "skynet"
+    initial = c.get('/api/estado').json()['modelo']
+    response = c.post('/api/personalizacion', json={'harness':'pi','mcp_activo':False})
+    assert response.status_code == 200
+    assert response.json()['harness'] == 'pi'
+    assert response.json()['modelo'] == initial
+    assert c.post('/api/personalizacion', json={'harness':'desconocido'}).status_code == 400
+
+
+def test_memoria_api_aprueba_una_y_rechaza_lotes(web):
+    c, rt, app = web()
+    a = c.post('/api/memoria', json={'accion':'proponer','texto':'Primera preferencia'}).json()
+    b = c.post('/api/memoria', json={'accion':'proponer','texto':'Segunda preferencia'}).json()
+    assert c.post('/api/memoria', json={'accion':'aprobar','ids':[a['id'],b['id']]}).status_code == 400
+    assert c.post('/api/memoria', json={'accion':'aprobar','id':a['id']}).status_code == 200
+    entries = c.get('/api/memoria').json()['entradas']
+    assert next(e for e in entries if e['id']==a['id'])['aprobada']
+    assert not next(e for e in entries if e['id']==b['id'])['aprobada']
+
+
+def test_motor_antiguo_no_se_puede_activar_en_produccion(web):
+    c, rt, app = web()
+    rt.native = True
+    assert c.post('/api/ajustes', json={'coder_motor':'skynet'}).status_code == 400
+
+
+async def test_permiso_memoria_no_ofrece_aprobacion_para_toda_la_tarea():
+    from skynet.web.server import WebUI
+    from skynet.gate import Level
+    ui = WebUI(Bus())
+    task = asyncio.create_task(ui.ask_permission(1, 'memoria', Level.WRITE, {'texto':'Una entrada'}, 'Aprobar esta entrada'))
+    await asyncio.sleep(0)
+    question = ui.open_questions()[0]
+    assert not question['todas']
+    ui.resolve(question['id'], 's')
+    assert await task == 's'
 
 
 def test_solo_local_host_origen_y_json(web):

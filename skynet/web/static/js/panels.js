@@ -4,6 +4,7 @@ import { api } from './api.js';
 import { md, esc } from './md.js';
 import { icon, paintIcons } from './icons.js';
 import { QUALITY } from './scene/engine.js';
+import { opcionesHtml, enlazarOpciones } from './personalizacion.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 
@@ -146,7 +147,9 @@ export class Panels {
   }
 
   onSnap(s) {
-    if (this.current === 'ajustes') this.render(true);
+    // El sondeo de estado no debe borrar cambios que el usuario todavía no ha guardado.
+    const key = JSON.stringify([s.personalizacion, s.modelo, s.repo, s.modelos, s.motores, s.privado, s.modo_actual]);
+    if (this.current === 'ajustes' && key !== this.settingsKey) this.render(true);
     if (this.current === 'aprendizaje' && s && s.propuestas !== this.learnCount) this.render(true);
   }
 
@@ -240,6 +243,7 @@ export class Panels {
   renderSettings() {
     const s = this.app.snap;
     if (!s) return;
+    this.settingsKey = JSON.stringify([s.personalizacion, s.modelo, s.repo, s.modelos, s.motores, s.privado, s.modo_actual]);
     const quality = localStorage.getItem('skynet.calidad') || 'auto';
     const motores = Object.fromEntries((s.motores || []).map((e) => [e.nombre, e]));
     const modos = (s.modos || []);
@@ -306,7 +310,9 @@ export class Panels {
       </select></label>`;
     html += '</details>';
 
+    html = opcionesHtml(s.personalizacion) + html;
     this.paint(html);
+    enlazarOpciones(this, s.personalizacion);
     for (const c of this.body.querySelectorAll('[data-repo]')) c.addEventListener('click', () => this.setRepo(c.dataset.repo || null));
     for (const c of this.body.querySelectorAll('[data-model]')) c.addEventListener('click', () => this.setModel(c.dataset.model));
     for (const sel of this.body.querySelectorAll('[data-perm]')) sel.addEventListener('change', async () => {
@@ -577,7 +583,7 @@ export class Panels {
   }
 
   // Un solo interruptor por modelo. En los online, encender activa el modelo (con confirmación) y
-  // arranca su motor si lo tiene (Hermes); apagar hace lo contrario.
+  // Arranca el motor asociado al modelo; apagar hace lo contrario.
   async toggleModel(name, on) {
     const s = this.app.snap;
     const m = s.modelos.find((x) => x.nombre === name);

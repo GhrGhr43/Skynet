@@ -163,6 +163,13 @@ def doctor_checks(rt: Runtime) -> list[dict[str, Any]]:
     check("Base de datos", True, f"{s.db_path} (esquema v{rt.store.schema_version()})")
     check("git", shutil.which("git") is not None)
     check("ripgrep (opcional)", True, "encontrado" if shutil.which("rg") else "no instalado: la búsqueda usa Python")
+    if rt.native:
+        try:
+            from skynet_tools.pi_agent import installation
+            node, cli, _ = installation(s.home)
+            check("Harness Pi", True, f"{cli} · {node}")
+        except RuntimeError as e:
+            check("Harness Pi", False, str(e))
     local = s.models["local"]
     if local.api_base:
         try:
@@ -179,7 +186,7 @@ def doctor_checks(rt: Runtime) -> list[dict[str, Any]]:
         out.append({"nombre": f"modelo {name}", "estado": "ok" if avail else "off",
                     "detalle": f"{m.litellm} · {why or 'clave presente'} · presupuesto {s.budget_eur} €/mes"})
     for name, e in s.engines.items():
-        # motores opcionales (p. ej. Hermes): apagado no es un fallo
+        # Motores opcionales: apagado no es un fallo.
         if e.get("tipo") == "proceso" and e.get("salud"):
             try:
                 with urllib.request.urlopen(e["salud"], timeout=5) as r:
@@ -369,6 +376,9 @@ def main(argv: list[str] | None = None) -> int:
         console.print(views.task_detail(rt.store, task))
         return 0
     if a.cmd == "largo":
+        if rt.native:
+            console.print("Las tareas se ejecutan en la sesión del harness. Usa el chat o la web; el scheduler antiguo está retirado.")
+            return 2
         return cmd_long(rt, a)
     if a.cmd == "doctor":
         return cmd_doctor(rt)

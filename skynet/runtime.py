@@ -1,8 +1,4 @@
-"""Ensamblaje del Core: crea las piezas y ejecuta un paso de agente sobre una tarea.
-
-Lo usan tanto el chat (Coordinator) como las tareas largas (Scheduler), para que haya un
-solo camino de ejecución: tarea -> paso -> contexto -> router -> agente -> gate -> MCP.
-"""
+"""Ensamblaje: Pi oficial en producción; ejecutor antiguo solo para fixtures guionizadas."""
 from __future__ import annotations
 
 import shutil
@@ -55,6 +51,21 @@ class Runtime:
         self.router = ModelRouter(self.settings, self.store, completion_fn, access=self.access)
         self.skills_dir = self.settings.home / "skills"
         self.context = ContextBuilder(self.store, self.settings.agent.contexto_max_tokens, self.settings.home)
+        from skynet_tools.personalizacion import Personalizacion
+        self.personalizacion = Personalizacion(self.settings.home)
+        if not self.personalizacion.path.exists():
+            self.personalizacion.data["contexto"] = self.settings.models["local"].contexto_tokens or 65536
+        self.personalizacion.aplicar_modelos(self.settings)
+        if not self.personalizacion.data["mcp"] and not self.personalizacion.path.exists():
+            self.personalizacion.data["mcp"] = {name: {"command": spec.comando, "args": spec.args, "enabled": False}
+                for name in self.settings.servers if name != "workspace"
+                for spec in [self.settings.server_spec(name, None)]}
+            for spec in self.personalizacion.data["mcp"].values():
+                spec["args"] = [arg or "{repo}" for arg in spec["args"]]
+        self.settings.models["local"].contexto_tokens = self.personalizacion.data["contexto"]
+        self.native = completion_fn is None
+        if self.native and not self.personalizacion.path.exists():
+            self.personalizacion.guardar()
         self._vision_at, self._vision = 0.0, False
 
     def vision_disponible(self) -> bool:
@@ -110,6 +121,8 @@ class Runtime:
         history: list[tuple[Any, str]] | None = None,
     ) -> StepRun:
         """Ejecuta un paso de agente con contexto fresco (sesión nueva). No verifica ni hace commit."""
+        if self.native:
+            return await self._native_step(task, kind, extra, asker, on_event)
         repo = self.repo_for(task)
         # El contexto se arma antes de abrir el paso nuevo, para que vea el paso que se cortó.
         context = self.context.build(task, repo, extra) if repo else self.context.build_chat(task, extra)
@@ -196,6 +209,25 @@ class Runtime:
             agent = agent_class(self.router, None, None, audit, **agent_kwargs)
             outcome = await agent.run(system, context, caps, turns, history=history)
         return StepRun(step, outcome)
+
+    async def _native_step(self, task, kind, extra, asker, on_event):
+        from skynet_tools.pi_agent import PiAgent
+        repo = self.repo_for(task)
+        caps = self.capabilities_for(task, repo)
+        profile = self.router.choose(caps).profile
+        enabled = self.personalizacion.data["mcp_activo"] and self.personalizacion.data["mcp"].get("internet", {}).get("enabled", False)
+        caps.internet = bool(enabled and caps.privacy != "alta")
+        gate = PermissionGate(self.settings, repo, self.audit.bind(task.id), asker=asker,
+            mode=self.access.modo(profile.nombre), internet=bool(caps.internet),
+            sin_preguntar=self.access.sin_preguntar(profile.nombre), vision=self.vision_disponible())
+        gate.reserved.append(self.personalizacion.path.resolve())  # las opciones y aprobaciones las gestiona su API
+        step = self.store.start_step(task.id, kind, (extra or task.goal)[:500])
+        agent = PiAgent(self.router, gate, None, self.audit.bind(task.id, step.id), on_event=on_event)
+        agent.personalizacion = self.personalizacion
+        agent.session_key = task.capabilities.get("session_key", task.id)
+        content = imagenes.contenido(extra or task.goal, task.capabilities.get("imagenes", []), self.settings.db_path.parent)
+        result = await agent.run("", content, caps)
+        return StepRun(step, result)
 
 
 # Herramientas de todo el PC que cada modo puede usar. Las demás ni se le enseñan al modelo: el gate

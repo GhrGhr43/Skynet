@@ -16,3 +16,6 @@ firma/
 # Dependencias de terceros instaladas en el PC (OmniRoute: npm)
 vendor/
 herramientas/pi/node_modules/
+
+# Memoria personal: se respalda localmente, no se publica.
+memoria/

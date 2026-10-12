@@ -58,6 +58,8 @@ async function request(method, url, body) {
 }
 
 export const api = {
+  personalizacion: (datos) => request('POST','/api/personalizacion',datos),
+  memoria: (datos) => request('POST','/api/memoria',datos),
   estado: () => request('GET', '/api/estado'),
   mensaje: (texto, imagenes = []) => request('POST', '/api/mensaje', { texto, imagenes }),
   imagen: (id) => request('GET', '/api/imagenes/' + encodeURIComponent(id)),
