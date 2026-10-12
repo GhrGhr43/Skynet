@@ -1,5 +1,19 @@
 # PROGRESO del proyecto Skynet
 
+## Comparación rápida de caché Q8/Q4 (2026-10-12)
+- A petición de Daniel, comparación temporal en el mismo Qwen GSQ-RCO IQ3_S, Vulkan, contexto 64K,
+  MTP activo, visión CPU, temperatura 0 y semilla 42. Ambas cachés K/V usan el formato probado.
+  Calentamiento de 32 tokens por formato; dos textos idénticos y 256 tokens generados por muestra.
+- Q8: 14,67 tok/s con texto corto; 13,54 tok/s con 5.244 tokens de código. Lectura del código: 16,48 s;
+  petición completa: 35,37 s. Q4: 44,12 y 44,39 tok/s; lectura del código 6,96 s; petición 12,77 s.
+  Media de generación: Q8 14,11 frente a Q4 44,26 tok/s (3,14 veces). Dos muestras, sin evaluar calidad.
+- Memoria del proceso tras calentamiento: Q8 12,455 GiB dedicados + 1,363 compartidos; Q4 12,353 + 1,201.
+  Son contadores del proceso completo, no el tamaño aislado de KV ni una medición de máxima ocupación.
+- Un primer intento se interrumpió por lector de contadores de Windows PowerShell incompatible;
+  se restauró FP16 y se repitió completo con PowerShell 7. Solo la segunda ejecución aporta resultados.
+- FP16/64K/MTP restaurados automáticamente; `data/personalizacion.json` intacto. Sin cambios al código
+  de producción. Evidencia y respuestas: `data/pruebas/pi/comparacion-kv/resultado.json`.
+
 ## Pi como motor de producción y extras configurables (2026-10-12, D27)
 - Diseño autorizado por Daniel. Backup solo local: rama `SKynet-Old-v0.2`, commit `067ea44`.
   Estado personal consistente (SQLite incluido) en `data/backups/old-v0.2-20261012`.
