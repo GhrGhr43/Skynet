@@ -28,7 +28,7 @@ def installation(home: Path) -> tuple[str, Path, Path]:
     return node, cli, base / "puente.ts"
 
 
-def configure(home: Path, profile: Any, vision: bool = False) -> Path:
+def configure(home: Path, profile: Any, vision: bool = False, thinking_budget_field: str | None = None) -> Path:
     """Solo el endpoint elegido; no descubre proveedores ni claves de otras instalaciones."""
     url = urlparse(profile.api_base or "")
     if profile.agente or (profile.privado and url.hostname not in ("127.0.0.1", "localhost", "::1")):
@@ -38,7 +38,7 @@ def configure(home: Path, profile: Any, vision: bool = False) -> Path:
     model = {
         "id": profile.litellm.split("/", 1)[-1], "name": profile.nombre,
         "reasoning": profile.reasoning_effort is not None, "input": ["text", "image"] if vision else ["text"],
-        "contextWindow": profile.contexto_tokens, "maxTokens": profile.max_tokens,
+        "contextWindow": profile.contexto_tokens, "maxTokens": min(profile.max_tokens, profile.contexto_tokens // 2),
         "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
         "compat": {"supportsStore": False, "supportsDeveloperRole": False,
                    "supportsReasoningEffort": True, "maxTokensField": "max_tokens"},
@@ -56,12 +56,14 @@ def configure(home: Path, profile: Any, vision: bool = False) -> Path:
         "settings.json": {"defaultProvider": "skynet-local", "defaultModel": model["id"],
                           "defaultThinkingLevel": profile.reasoning_effort or "off"},
     }
+    if thinking_budget_field:
+        model["compat"]["thinkingTokenBudgetField"] = thinking_budget_field
     git_bash = Path("C:/Program Files/Git/bin/bash.exe")
-    if profile.contexto_tokens < 36000:
-        # Los valores originales reservan 16K: una ventana menor necesita una reserva proporcional.
-        files["settings.json"]["compaction"] = {"reserveTokens": min(profile.max_tokens, profile.contexto_tokens // 4),
-                                                 "keepRecentTokens": profile.contexto_tokens // 3}
-        model["maxTokens"] = min(profile.max_tokens, profile.contexto_tokens // 2)
+    if profile.contexto_tokens < 36000 or model["maxTokens"] > 16384:
+        # La compactación de Pi debe dejar espacio para el presupuesto de salida real.
+        reserve = max(model["maxTokens"], min(16384, profile.contexto_tokens // 4))
+        files["settings.json"]["compaction"] = {"reserveTokens": reserve,
+            "keepRecentTokens": min(20000, profile.contexto_tokens // 3)}
     if git_bash.is_file():
         files["settings.json"]["shellPath"] = str(git_bash)
     for name, data in files.items():
@@ -86,7 +88,10 @@ class PiAgent(Agent):
         profile = self.router.choose(caps).profile
         home = self.router.settings.home
         node, cli, extension = installation(home)
-        agent_dir = configure(home, profile, vision=self.gate.vision if self.gate else False)
+        engine = self.router.settings.engines.get(profile.motor or profile.nombre, {})
+        budget_field = "thinking_budget_tokens" if engine.get("tipo") == "llamacpp" else None
+        agent_dir = configure(home, profile, vision=self.gate.vision if self.gate else False,
+                              thinking_budget_field=budget_field)
         out = AgentOutcome(status="error", final_text="", model=profile.litellm)
         token = uuid.uuid4().hex + uuid.uuid4().hex
         connections: set[asyncio.Task] = set()
@@ -288,6 +293,11 @@ class PiAgent(Agent):
                         cost_eur=0, detail={"harness": "pi", "fin": msg.get("stopReason")})
                     if msg.get("stopReason") in ("error", "aborted"):
                         last_error = msg.get("errorMessage") or "Pi interrumpió la respuesta."
+                    elif msg.get("stopReason") == "length":
+                        count = f" ({tout:,} tokens)".replace(",", ".") if tout else ""
+                        last_error = ("Respuesta truncada: se agotó el límite de salida" + count +
+                            ". El razonamiento también consume ese límite. La tarea no está terminada; "
+                            "puedes continuar o aumentar Salida máxima en Configuración.")
                     else:
                         last_error = ""
                     out.final_text = "\n".join(b.get("text", "") for b in msg.get("content", []) if b.get("type") == "text")
@@ -309,7 +319,7 @@ class PiAgent(Agent):
             out.status = "error" if last_error else "completado"
             out.error = last_error or None
             if last_error:
-                out.final_text = last_error
+                out.final_text = last_error + ("\n\nRespuesta parcial:\n" + out.final_text if out.final_text else "")
             out.claims_done = out.status == "completado"
         except (RuntimeError, OSError, ValueError, TimeoutError) as e:
             out.error = out.final_text = str(e)

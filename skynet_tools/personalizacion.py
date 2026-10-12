@@ -21,7 +21,8 @@ class Personalizacion:
         self.data = {"harness": "pi", "harnesses": {"pi": {"nombre": "Pi", "protocolo": "pi-rpc"}},
                      "herramientas": list(NATIVAS), "mcp_activo": False, "mcp": {},
                      "memoria_activa": False, "memoria": [], "contexto": 65536,
-                     "mtp": True, "vision_gpu": False, "cache_kv": "f16", "modelos": {}, "skills": []}
+                     "mtp": True, "vision_gpu": False, "cache_kv": "f16", "salida_max_tokens": 32768,
+                     "modelos": {}, "skills": []}
         if self.path.is_file():
             self.data.update(json.loads(self.path.read_text(encoding="utf-8")))
         else:
@@ -44,7 +45,7 @@ class Personalizacion:
         with self.lock:
             result = dict(self.data)
             allowed = {"harness", "harnesses", "herramientas", "mcp_activo", "mcp",
-                       "memoria_activa", "contexto", "mtp", "vision_gpu", "cache_kv", "modelos", "skills"}
+                       "memoria_activa", "contexto", "mtp", "vision_gpu", "cache_kv", "salida_max_tokens", "modelos", "skills"}
             if set(changes) - allowed:
                 raise ValueError("Opción desconocida")
             result.update(changes)
@@ -55,6 +56,8 @@ class Personalizacion:
                 raise ValueError("Contexto: entre 2048 y 262144 tokens")
             if result["cache_kv"] not in ("f16", "q8_0", "q4_0"):
                 raise ValueError("Caché KV: f16, q8_0 o q4_0")
+            if type(result["salida_max_tokens"]) is not int or not 256 <= result["salida_max_tokens"] <= 131072:
+                raise ValueError("Salida máxima: entre 256 y 131072 tokens")
             if not isinstance(result["herramientas"], list) or not all(isinstance(t, str) and t in NATIVAS for t in result["herramientas"]):
                 raise ValueError("Herramientas nativas: read, bash, edit y write")
             if not isinstance(result["skills"], list) or not all(isinstance(p, str) for p in result["skills"]):
@@ -145,6 +148,7 @@ class Personalizacion:
             self._modelos_base = dict(settings.models)
         settings.models.clear()
         settings.models.update(self._modelos_base)
+        settings.models["local"].max_tokens = self.data["salida_max_tokens"]
         for name, model in self.data["modelos"].items():
             settings.models[name] = ModelProfile(nombre=name, litellm="openai/" + model["id"],
                 api_base=model["api_base"], api_key_env=model.get("api_key_env"), privado=bool(model.get("privado", True)),

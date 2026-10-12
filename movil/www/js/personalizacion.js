@@ -9,6 +9,8 @@ export function opcionesHtml(o) {
     <div class="card-sub">Pi conserva sus herramientas, conversación y compactación. Otros motores necesitan un adaptador compatible.</div>
     <div class="section-k">Herramientas originales</div>${['read','bash','edit','write'].map(t=>`<label class="card-sub"><input type="checkbox" data-nativa="${t}" ${o.herramientas.includes(t)?'checked':''}> ${t}</label> `).join('')}
     <div class="section-k">Modelo local</div><label>Contexto (tokens) <input class="input" id="contextoNative" type="number" min="2048" max="262144" value="${o.contexto}"></label>
+    <label>Salida máxima por respuesta (tokens) <input class="input" id="salidaNative" type="number" min="256" max="131072" value="${o.salida_max_tokens||32768}"></label>
+    <p class="note">Incluye razonamiento y código. Pi limita la salida a la mitad del contexto y reserva espacio con su compactación. Se aplica al siguiente mensaje.</p>
     ${check('mtp','MTP: acelerar generación cuando el modelo lo admita')}${check('vision_gpu','Procesar imágenes en GPU (apagado: CPU)')}
     <label>Caché KV <select class="select" id="cacheNative">${[['f16','FP16'],['q8_0','Q8'],['q4_0','Q4']].map(([id,label])=>`<option value="${id}" ${(o.cache_kv||'f16')===id?'selected':''}>${label}</option>`).join('')}</select></label>
     <p class="note">Contexto, caché, MTP y visión se aplican al reiniciar el motor.</p>
@@ -34,7 +36,7 @@ export function enlazarOpciones(panel,o){
   const q=s=>panel.body.querySelector(s);
   const run=async f=>{try{await f();panel.app.applySnap(await api.estado());panel.render(true);}catch(e){panel.app.toast(e.message,'bad');}};
   q('#guardarNative')?.addEventListener('click',()=>run(async()=>{
-    const body={harness:q('#harnessSelect').value,contexto:Number(q('#contextoNative').value),cache_kv:q('#cacheNative').value,herramientas:[...panel.body.querySelectorAll('[data-nativa]:checked')].map(e=>e.dataset.nativa)};
+    const body={harness:q('#harnessSelect').value,contexto:Number(q('#contextoNative').value),salida_max_tokens:Number(q('#salidaNative').value),cache_kv:q('#cacheNative').value,herramientas:[...panel.body.querySelectorAll('[data-nativa]:checked')].map(e=>e.dataset.nativa)};
     for(const e of panel.body.querySelectorAll('[data-opcion]'))body[e.dataset.opcion]=e.checked;
     await api.personalizacion(body);
   }));

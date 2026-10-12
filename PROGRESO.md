@@ -1,5 +1,30 @@
 # PROGRESO del proyecto Skynet
 
+## Cortes por límite de salida en Pi y Skynet (2026-10-12, D29)
+- Juego Ecosystem Defender: sesión Pi consola `01a13032-f3e2-750d-8726-96f675c9d6a3` y Skynet
+  `a0eb89d7-68c7-50c1-bffd-2a78465c8766` (tarea 216) terminan con stopReason=length y exactamente
+  8.192 tokens de salida. Solo pensamiento (~26K caracteres), sin texto/código ni herramientas.
+  Entrada inicial de 2.530/2.930 tokens: no se agotó el contexto de 64K ni falló el planificador.
+- Salida máxima ampliada a 32.768 en ambas instalaciones, configurable en la web. Modelo local
+  limitado a la mitad del contexto; reserva de compactación de Pi adaptada al presupuesto real.
+  Compatible con contextos menores y otros perfiles. Sin bucle propio de continuación.
+- Faltaba `compat.thinkingTokenBudgetField=thinking_budget_tokens` para el servidor llama.cpp.
+  Se conecta su opción oficial de Pi: bajo 2K, medio 8K, alto 16K, dejando al menos 1K de respuesta.
+  El campo se activa solo para motores gestionados llama.cpp; no se envía a proveedores desconocidos.
+- Error del adaptador: length se trataba como éxito. Ahora muestra fallo y motivo, conserva respuesta
+  parcial y respeta la recuperación nativa de Pi si esta finalmente termina bien.
+- Tarea 216 corregida de hecha/vacía a fallida, con auditoría y backup consistente previo de SQLite.
+  Configuración de Pi consola respaldada antes de cambiarla. Sesiones y proyectos del usuario intactos.
+- Prueba real del servidor: presupuesto de pensamiento 32, salida máxima 256, devuelve código y stop,
+  64 tokens totales. Pi consola por RPC confirma maxTokens=32768, contexto=65536 y campo correcto.
+  No se ha repetido todavía el juego completo ni se afirma que ampliar límites garantice su calidad.
+- Validación: 236 tests correctos, 1 excluido; Pi instalado/proveedor simulado comprueba envío real
+  de max_tokens=32768 y thinking_budget_tokens=8192. UI sin errores JS en tres anchos; nuevo límite guardable.
+  Doctor: Pi/modelo correctos, carpetas antiguas inexistentes y Tailscale desconectado (opcional).
+  Q4 y MTP conservados; no se ha cambiado la conexión de red del usuario.
+- Para un objetivo grande en un solo prompt, pedir escribir index.html con herramientas por etapas;
+  no exigir todo el código en una única respuesta Markdown. El resultado puede seguir siendo un archivo.
+
 ## Q4 permanente por petición de Daniel (2026-10-12, D28)
 - Guardada opción `cache_kv=q4_0` para K y V. Se conserva al reiniciar y al elegir otro GGUF.
   Selector FP16/Q8/Q4 en Configuración y fuentes móviles. Contexto 64K, MTP y visión CPU conservados.

@@ -119,6 +119,41 @@ def test_pi_configuration_matches_local_profile(make_rt):
     assert model["input"] == ["text", "image"]
 
 
+def test_salida_y_reserva_caben_en_contexto(make_rt):
+    rt = make_rt()
+    for contexto in (2048, 32768, 65536):
+        profile = dataclasses.replace(rt.settings.models['local'], contexto_tokens=contexto, max_tokens=32768)
+        folder = pi_agent.configure(rt.settings.home, profile)
+        model = json.loads((folder/'models.json').read_text())['providers']['skynet-local']['models'][0]
+        settings = json.loads((folder/'settings.json').read_text())
+        assert model['maxTokens'] == contexto // 2
+        assert settings['compaction']['reserveTokens'] >= model['maxTokens']
+        assert settings['compaction']['keepRecentTokens'] < contexto - model['maxTokens']
+
+
+@pytest.mark.parametrize('recuperada', [False, True])
+async def test_corte_por_tokens_no_es_tarea_hecha(make_rt, home, monkeypatch, recuperada):
+    code = '''import json,sys
+for line in sys.stdin:
+ c=json.loads(line)
+ if c['type']!='prompt': continue
+ print(json.dumps({'type':'message_start','message':{'role':'assistant'}}),flush=True)
+ print(json.dumps({'type':'message_end','message':{'role':'assistant','stopReason':'length',
+  'usage':{'input':2500,'output':8192},'content':[{'type':'thinking','thinking':'razonamiento sin respuesta'}]}}),flush=True)
+'''
+    if recuperada:
+        code += " print(json.dumps({'type':'message_end','message':{'role':'assistant','stopReason':'stop','usage':{},'content':[{'type':'text','text':'Respuesta recuperada por Pi'}]}}),flush=True)\n"
+    code += " print(json.dumps({'type':'agent_settled'}),flush=True)\n"
+    fake_install(monkeypatch, home, code)
+    rt = make_rt()
+    ui = FakeUI()
+    task = await Coordinator(rt, ui).new_task('Crea el juego completo')
+    assert task.status == ('hecha' if recuperada else 'fallida')
+    assert ('Respuesta truncada' in task.result_summary) is (not recuperada)
+    if not recuperada:
+        assert '8.192' in task.result_summary and ui.answers_given[-1]
+
+
 async def test_pi_keeps_pending_plan_unfinished(make_rt, home, repo_path, monkeypatch):
     code = r'''
 import json,sys

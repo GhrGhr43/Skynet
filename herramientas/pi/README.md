@@ -24,8 +24,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File herramientas/pi/instalar.ps1
 ```
 
 Node.js 22.19 o posterior. `puente.ts` revisa llamadas antes de ejecutarse sin reemplazar las
-herramientas; no aporta aislamiento del sistema operativo. Compactación original con 64K;
-reserva adaptada para ventanas menores de 36K.
+herramientas; no aporta aislamiento del sistema operativo. La compactación de Pi reserva espacio
+para la salida configurada y adapta la reserva en contextos pequeños. Salida máxima inicial de 32K,
+incluido razonamiento. llama.cpp recibe el presupuesto oficial por nivel mediante `thinking_budget_tokens`.
+Una respuesta final truncada se muestra como fallo con explicación; no se declara tarea completada.
 
 Prueba del modelo real después de migrar: tarea 202, cuatro llamadas, dos archivos Python y ocho
 comprobaciones correctas. Tests con **Pi instalado**, proveedor simulado y MCP real comprueban

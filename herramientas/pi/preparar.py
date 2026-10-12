@@ -12,7 +12,8 @@ def preparar(encender=True):
     root = settings.home / "proyectos" / "prueba-pi"
     root.mkdir(parents=True, exist_ok=True)
     repo = settings.repos.get("prueba-pi") or add_repo(settings.home, "prueba-pi", root)
-    configure(settings.home, settings.models["local"], True)
+    configure(settings.home, settings.models["local"], True,
+              "thinking_budget_tokens" if settings.engines["local"]["tipo"] == "llamacpp" else None)
     if encender:
         engines = load_engines(settings.engines, settings.logs_dir, settings.home)
         print(engines.start("local"))

@@ -42,6 +42,10 @@ Las opciones personales se guardan localmente en `data/personalizacion.json`:
 - **Modelo local:** contexto configurable, caché KV (FP16/Q8/Q4), MTP y visión en GPU/CPU. Apaga y
   enciende el motor tras cambiar estas opciones. En este PC Daniel ha elegido Q4 para ambas cachés K/V.
   MTP permanece activado; compara el mismo prompt con MTP activado y desactivado.
+- **Salida máxima:** 32.768 tokens por respuesta, contando razonamiento y texto/código. Se aplica al
+  siguiente mensaje, sin reiniciar el modelo. Pi la limita a la mitad del contexto y ajusta su reserva
+  de compactación. Con llama.cpp se conecta el presupuesto oficial de Pi: rápido 2K, medio 8K,
+  alto 16K de razonamiento (limitados además para dejar al menos 1K de respuesta).
 - **Otros modelos:** en «Más modelos y harnesses», registra un endpoint compatible con OpenAI:
   `{"otro":{"id":"modelo-servido","api_base":"http://127.0.0.1:1234/v1","privado":true,
   "contexto":16384,"max_tokens":4096,"razonamiento":null}}`.
@@ -49,8 +53,8 @@ Las opciones personales se guardan localmente en `data/personalizacion.json`:
   usa `privado:false` y `api_key_env` si necesitan clave; no escribas la clave en el catálogo.
 - **Skills:** lista explícita de rutas; Pi las carga con su mecanismo original, sin generar propuestas.
 
-La compactación usa los valores de Pi con 64K. Para ventanas inferiores a 36K ajusta su reserva
-proporcionalmente; sigue siendo la compactación de Pi, sin un bucle propio de Skynet.
+La compactación de Pi reserva espacio para la salida configurada (32K en este PC) y adapta los
+valores para contextos pequeños; sigue siendo la compactación de Pi, sin un bucle propio de Skynet.
 En este PC, una prueba corta sin cuantización y con MTP activado dio 7,41 tok/s con 64K y 19,93 con 32K.
 Después se comparó Q8/Q4 a 64K: medias de generación 14,11 y 44,26 tok/s respectivamente.
 Daniel eligió Q4, manteniendo 64K y MTP. Son pruebas cortas de velocidad; no certifican calidad de código.

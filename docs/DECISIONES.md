@@ -1,5 +1,16 @@
 # Decisiones (ADR) del MVP
 
+## D29. Salida y presupuesto de razonamiento de Pi (2026-10-12)
+- Incidente reproducible: ambos clientes cortan a 8.192 tokens solo de pensamiento. Se amplía la salida
+  a 32K, configurable por separado del contexto. Pi reserva espacio en su compactación y limita la salida
+  a la mitad del contexto; no se sustituye el bucle ni se añade continuación propia.
+- Se reutiliza `compat.thinkingTokenBudgetField=thinking_budget_tokens` de Pi para llama.cpp gestionado.
+  Sus niveles originales asignan presupuesto de pensamiento y dejan espacio para respuesta/herramientas.
+  Proveedores sin compatibilidad verificada no reciben este campo. Modelo, Q4, MTP y visión CPU se conservan.
+- Una respuesta final length es fallo, aunque Pi no envíe errorMessage. Si Pi se recupera y termina con
+  stop, se respeta ese final. Se conserva texto parcial y se explica el corte; no se publica tarea hecha vacía.
+- Sin cambios SQLite de esquema, MCP o permisos. La corrección histórica de tarea 216 se audita y respalda.
+
 ## D28. Caché KV configurable y Q4 elegido (2026-10-12)
 - Tras comparar Q8/Q4 en su PC, Daniel pide dejar Q4. Esta petición sustituye la retirada de caché
   cuantizada de D27; contexto 64K, MTP y proyector de visión en CPU permanecen.

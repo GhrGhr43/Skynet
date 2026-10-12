@@ -75,6 +75,8 @@ async def test_pi_original_con_extras_optativos(make_rt, home, repo_path, monkey
         task = await coord.new_task("Ejecuta las comprobaciones disponibles")
         assert task.status == "hecha", task.result_summary
         names = {t["function"]["name"] for t in calls[0].get("tools", [])}
+        assert calls[0]['max_tokens'] == 32768
+        assert calls[0]['thinking_budget_tokens'] == 8192  # nivel medio original de Pi
         assert {"read", "bash", "edit", "write"} <= names
         assert ("memoria" in names) is extras
         assert ("tool_search" in names) is extras
