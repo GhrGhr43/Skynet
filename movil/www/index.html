@@ -18,15 +18,35 @@
 } }
 </script>
 </head>
-<body>
+<body class="mode-home">
 <canvas id="gl" aria-hidden="true"></canvas>
 <div class="fallback-glow" aria-hidden="true"></div>
 <div class="veil" aria-hidden="true"></div>
 
+<!-- Launcher: la nebulosa (el agente, la app madre) y las apps hijas flotando alrededor. -->
+<section class="home" id="home" aria-label="Inicio">
+  <svg class="home-lines" id="homeLines" aria-hidden="true"></svg>
+  <header class="home-top">
+    <span class="wordmark">Skynet</span>
+    <span class="grow"></span>
+    <div class="status home-status" id="homeStatus" role="status"><span class="status-dot"></span><span class="status-label" id="homeStatusLabel">Conectando</span></div>
+  </header>
+  <button type="button" class="home-core" id="homeCore" aria-label="Abrir el agente"></button>
+  <div class="home-caption" aria-hidden="true">
+    <div class="home-name">Agente</div>
+    <div class="home-hint" id="homeHint">Toca la nebulosa</div>
+  </div>
+  <nav class="home-apps" id="homeApps" aria-label="Apps"></nav>
+</section>
+
+<!-- Fondo del modo agente: rejilla de puntos que se ilumina al tocar -->
+<canvas id="dots" aria-hidden="true"></canvas>
+<div class="burst" id="burst" aria-hidden="true"></div>
+
 <!-- Barra lateral: sesiones (como Claude/Codex) y, abajo, las secciones y la configuración -->
 <aside class="side" id="side" aria-label="Sesiones">
   <div class="side-top">
-    <span class="wordmark">Skynet</span>
+    <button type="button" class="brand" id="brandHome" title="Volver al inicio" aria-label="Volver al inicio"><span class="orb"></span><span class="wordmark">Skynet</span></button>
     <button class="icon-btn" id="sideClose" data-icon="sidebar" aria-label="Ocultar barra lateral" title="Ocultar barra lateral (Ctrl+B)"></button>
   </div>
   <button class="side-new" id="newSession" title="Sesión nueva (Ctrl+Mayús+O)">
@@ -52,6 +72,7 @@
 <main class="main">
   <header class="top">
     <button class="icon-btn side-open" id="sideOpen" data-icon="sidebar" aria-label="Mostrar barra lateral" title="Mostrar barra lateral (Ctrl+B)"></button>
+    <button type="button" class="icon-btn top-home" id="topHome" aria-label="Volver al inicio" title="Volver al inicio"><span class="orb"></span></button>
     <button class="title" id="sessionTitle" title="Renombrar sesión"></button>
     <span class="grow"></span>
     <span class="demo-chip" id="demoChip" title="La app aún no se conecta a tu PC: datos de prueba">Demo</span>
@@ -63,6 +84,7 @@
   </header>
 
   <div class="hero" id="hero" aria-hidden="true">
+    <span class="orb orb-lg"></span>
     <h1 class="hero-title" id="heroTitle">¿En qué trabajamos?</h1>
     <p class="hero-sub" id="heroSub"></p>
   </div>
@@ -104,7 +126,7 @@
 
 <aside class="panel" id="panel" aria-hidden="true">
   <div class="panel-head">
-    <h2 class="panel-title" id="panelTitle"></h2>
+    <h2 class="panel-title"><span class="panel-ico" id="panelIco" hidden></span><span id="panelTitle"></span></h2>
     <button class="icon-btn" id="panelClose" data-icon="close" aria-label="Cerrar panel"></button>
   </div>
   <div class="panel-body" id="panelBody"></div>

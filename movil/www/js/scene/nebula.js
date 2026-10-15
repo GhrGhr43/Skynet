@@ -59,57 +59,69 @@ function basis(n) {
 
 function buildRest(size) {
   const count = size * size;
-  const home = new Float32Array(count * 4);   // xyz reposo, w = grupo (0 núcleo, 1-3 órbita, 4 halo)
+  const home = new Float32Array(count * 4);   // xyz reposo, w = grupo (0 núcleo, 4 halo, 5 capa)
   const attr = new Float32Array(count * 4);   // x semilla, y brillo, z radio normalizado, w fase
   const start = new Float32Array(count * 4);  // posición inicial (intro: llegan desde lejos)
   const rand = mulberry32(7);
   const noise = valueNoise3(rand);
-  const ringB = RINGS.map((r) => basis(r.n));
   const v = new THREE.Vector3();
   const fbm = (x, y, z) => noise(x, y, z) * 0.55 + noise(x * 2.03 + 5.2, y * 2.03 + 1.3, z * 2.03 + 7.7) * 0.3
     + noise(x * 4.1 + 9.1, y * 4.1 + 3.7, z * 4.1 + 2.9) * 0.15;
   // Ruido "ridged": crestas finas -> filamentos y velos, como una nebulosa real.
   const ridge = (x, y, z) => 1 - Math.abs(fbm(x, y, z));
+  // Nudos cometarios (como en la nebulosa de la Hélice): direcciones fijas desde las que caen
+  // hilos de gas hacia dentro de la capa.
+  const knots = Array.from({ length: 180 }, () => new THREE.Vector3(gauss(rand), gauss(rand) * 0.86, gauss(rand)).normalize());
+  const SHELL = 2.0;
   for (let i = 0; i < count; i++) {
     const q = rand();
     let group, bright;
-    if (q < 0.10) {
+    if (q < 0.08) {
       // Corazón: una semilla muy densa y caliente en el centro.
       group = 0;
-      v.set(gauss(rand), gauss(rand), gauss(rand)).multiplyScalar(0.2);
-      bright = 0.7 + rand() * 0.6;
-    } else if (q < 0.52) {
-      // Nebulosa: volumen con filamentos y huecos oscuros (muestreo por rechazo sobre el ruido).
+      v.set(gauss(rand), gauss(rand), gauss(rand)).multiplyScalar(0.18);
+      bright = 0.75 + rand() * 0.6;
+    } else if (q < 0.24) {
+      // Ojo: gas interior más suave que el núcleo, con filamentos; deja la capa bien recortada.
       group = 0;
       let dens = 0;
       for (let tries = 0; tries < 40; tries++) {
-        v.set(gauss(rand), gauss(rand), gauss(rand)).normalize().multiplyScalar(1.45 * Math.cbrt(rand()));
+        v.set(gauss(rand), gauss(rand), gauss(rand)).normalize().multiplyScalar(1.35 * Math.cbrt(rand()));
         const r = v.length();
-        const shape = Math.exp(-(r * r) / 0.75);
+        const shape = Math.exp(-(r * r) / 0.6);
         const fil = Math.pow(ridge(v.x * 1.5 + 3.1, v.y * 1.5 + 7.3, v.z * 1.5 + 1.9), 6);
         dens = shape * (0.05 + 0.95 * fil);
         if (rand() < dens) break;
       }
-      bright = 0.35 + Math.min(1, dens * 1.4) * 0.9;
-    } else if (q < 0.72) {
-      // Órbitas: tres anillos finos inclinados, como orbitales de un átomo.
-      const k = Math.min(2, Math.floor(rand() * 3));
-      group = 1 + k;
-      const R = RINGS[k], B = ringB[k];
-      const th = rand() * Math.PI * 2;
-      const rr = R.r + gauss(rand) * R.t * (rand() < 0.12 ? 5 : 1);
-      const h = gauss(rand) * R.t * 0.7;
-      v.copy(B.U).multiplyScalar(Math.cos(th) * rr)
-        .addScaledVector(B.V, Math.sin(th) * rr)
-        .addScaledVector(B.N, h);
-      bright = 0.35 + rand() * 0.55;
+      bright = 0.18 + Math.min(1, dens * 1.4) * 0.55;
+    } else if (q < 0.78) {
+      // Capa: la envoltura de gas de una nebulosa planetaria, gruesa, irregular y filamentosa,
+      // con nudos que dejan estelas hacia el centro. Sustituye a los antiguos orbitales.
+      group = 5;
+      let dens = 0;
+      for (let tries = 0; tries < 30; tries++) {
+        if (rand() < 0.14) {
+          const k = knots[Math.floor(rand() * knots.length)];
+          v.copy(k).multiplyScalar(SHELL * (0.72 + rand() * 0.3)).addScaledVector(new THREE.Vector3(gauss(rand), gauss(rand), gauss(rand)), 0.035);
+          dens = 0.6;
+          break;
+        }
+        v.set(gauss(rand), gauss(rand), gauss(rand)).normalize();
+        const fil = ridge(v.x * 2.4 + 4.0, v.y * 2.4 + 8.0, v.z * 2.4 + 1.0);
+        const rr = SHELL * (1 + gauss(rand) * 0.04 + (fil - 0.6) * 0.14);
+        v.multiplyScalar(rr);
+        v.y *= 0.86;  // ligeramente achatada, como la Hélice
+        dens = 0.08 + 0.92 * Math.pow(fil, 5);
+        if (rand() < dens) break;
+      }
+      bright = 0.3 + Math.min(1, dens) * 0.85;
     } else {
       // Halo: polvo tenue y aplanado con brazos (también filamentoso).
       group = 4;
       let dens = 0;
       for (let tries = 0; tries < 30; tries++) {
         v.set(gauss(rand), gauss(rand) * 0.45, gauss(rand)).normalize();
-        v.multiplyScalar(1.2 + -Math.log(1 - rand() * 0.985) * 0.8);
+        v.multiplyScalar(2.1 + -Math.log(1 - rand() * 0.985) * 0.75);  // fuera de la capa
         const fil = Math.pow(ridge(v.x * 0.9 + 11.0, v.y * 0.9 + 2.0, v.z * 0.9 + 5.0), 4);
         dens = 0.08 + 0.92 * fil;
         if (rand() < dens) break;
@@ -177,6 +189,7 @@ uniform float uPulseAmp;
 uniform float uScanY;
 uniform float uScanAmp;
 uniform float uJitter;
+uniform float uBurst;
 
 void main(){
   vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -189,7 +202,7 @@ void main(){
   float g = home.w;
 
   // Flujo turbulento alrededor del reposo (más libre en el halo, contenido en las órbitas).
-  float freedom = g < 0.5 ? 0.16 : (g < 3.5 ? 0.06 : 0.42);
+  float freedom = g < 0.5 ? 0.16 : (g < 4.5 ? 0.42 : 0.1);
   vec3 flow = curlNoise(h * 0.55 + vec3(0.0, uTime * 0.07, uTime * 0.03)) * uTurb * freedom;
   vec3 target = h + flow;
 
@@ -215,6 +228,12 @@ void main(){
     float scan = exp(-pow((p.y - uScanY) * 6.0, 2.0));
     vec2 out2 = normalize(p.xz + 1e-5);
     acc += vec3(out2.x, 0.0, out2.y) * scan * uScanAmp;
+  }
+
+  // Explosión al entrar en el modo agente: todo sale disparado hacia fuera, cada partícula a su ritmo.
+  if (uBurst > 0.001) {
+    vec3 out3 = normalize(p.xyz + (vec3(attr.x, attr.w * 0.16, attr.y) - 0.5) * 0.35 + 1e-5);
+    acc += out3 * uBurst * (0.35 + attr.x * 1.3);
   }
 
   // Error: temblor nervioso.
@@ -263,13 +282,13 @@ void main(){
   vec4 mv = modelViewMatrix * vec4(p.xyz, 1.0);
   gl_Position = projectionMatrix * mv;
   float twinkle = 0.75 + 0.25 * sin(uTime * (0.6 + attr.x * 2.5) + attr.w);
-  float sizeBy = g < 0.5 ? 1.0 : (g < 3.5 ? 0.9 : 0.85);
+  float sizeBy = g < 0.5 ? 1.0 : (g < 4.5 ? 0.85 : 0.95);
   gl_PointSize = min(uSize * sizeBy * (0.6 + attr.y * 0.8) * uPixelRatio * (1.0 / -mv.z), 40.0 * uPixelRatio);
   vSpeed = length(vel);
   vRad = length(p.xyz);
   vGroup = g;
   vScan = exp(-pow((p.y - uScanY) * 7.0, 2.0)) * uScanAmp;
-  float groupA = g < 0.5 ? 0.30 : (g < 3.5 ? 0.30 : 0.22);
+  float groupA = g < 0.5 ? 0.30 : (g < 4.5 ? 0.20 : 0.27);
   vAlpha = groupA * attr.y * twinkle * uIntro;
 }
 `;
@@ -292,6 +311,10 @@ void main(){
   // Centro casi blanco; cuanto más lejos del núcleo, más color del estado.
   float edge = smoothstep(0.55, 2.6, vRad);
   vec3 col = mix(uCore, uTint, edge);
+  // Borde exterior de la capa con el color de acento, como el anillo de una nebulosa planetaria.
+  // La capa toma algo del acento (azul frío en reposo): núcleo blanco, envoltura fría, borde más intenso.
+  if (vGroup > 4.5) col = mix(col, uAccent, 0.28);
+  col = mix(col, uAccent * 1.15, smoothstep(1.95, 2.6, vRad) * 0.55);
   // Las partículas deformadas (rápidas) se iluminan con el acento: se ve el rastro del cursor.
   float hot = clamp(vSpeed * 0.55, 0.0, 1.0);
   col = mix(col, uAccent * 1.6, hot * 0.85);
@@ -356,6 +379,7 @@ export class Nebula {
       uScanY: { value: 99 },
       uScanAmp: { value: 0 },
       uJitter: { value: 0 },
+      uBurst: { value: 0 },
     });
     this.posVar.material.uniforms.uDt = { value: 0.016 };
     for (const v of [this.velVar, this.posVar]) {
@@ -440,6 +464,7 @@ export class Nebula {
     v.uScanY.value = p.scanY;
     v.uScanAmp.value = p.scanAmp;
     v.uJitter.value = p.jitter;
+    v.uBurst.value = p.burst || 0;
     for (let i = 0; i < sub; i++) this.gpu.compute();
 
     const pu = this.pu;

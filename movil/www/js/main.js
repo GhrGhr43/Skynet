@@ -76,6 +76,8 @@ window.skynetAtras = () => {
     if (window.app.panels.detail) { window.app.panels.detail = null; window.app.panels.render(); return true; }
     window.app.panels.close(); return true;
   }
+  // En el agente, «atrás» vuelve al launcher; en el launcher, sale de la app.
+  if (window.app.mode === 'agent') { window.app.goHome(); return true; }
   return false;
 }
 
