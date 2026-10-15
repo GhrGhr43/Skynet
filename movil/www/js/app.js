@@ -5,6 +5,8 @@ import { md, esc } from './md.js';
 import { icon, paintIcons } from './icons.js';
 import { STATES } from './scene/engine.js';
 import { Panels } from './panels.js';
+import { Launcher } from './launcher/launcher.js';
+import { Dots } from './dots.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 
@@ -55,6 +57,22 @@ const fmtN = (n) => Number(n || 0).toLocaleString('es-ES');
 const kfmt = (n) => (n >= 1e6 ? `${(n / 1e6).toLocaleString('es-ES', { maximumFractionDigits: 1 })} M` : n >= 1000 ? `${(n / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 })} k` : String(n || 0));
 const eurFmt = (n) => `${Number(n || 0).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
+// Duración legible: segundos hasta el minuto; después minutos y horas.
+function fmtDur(sec) {
+  sec = Math.max(0, +sec || 0);
+  if (sec < 59.5) return `${sec.toLocaleString('es-ES', { maximumFractionDigits: sec < 10 ? 1 : 0 })} s`;
+  const t = Math.round(sec);
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  if (h) return m ? `${h} h ${m} min` : `${h} h`;
+  return s ? `${m} min ${s} s` : `${m} min`;
+}
+
+// Tokens del pie: exactos hasta 100.000; después en miles o millones.
+const tokFmt = (n) => (n >= 1e6 ? `${(n / 1e6).toLocaleString('es-ES', { maximumFractionDigits: 2 })} M`
+  : n >= 1e5 ? `${Math.round(n / 1000).toLocaleString('es-ES')} k` : fmtN(n));
+
+const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)');
+
 const FOOT_RE = /^(.+?) · (\d+)\+(\d+) tokens · ([\d.,]+) € · (\d+) herramientas · tarea (\d+): (\w+)(?: · verificador (OK|FALLA))?$/;
 
 export class App {
@@ -77,8 +95,11 @@ export class App {
     this.panels = new Panels(this);
     this.sessions = [];
     this.sessionQuery = '';
+    this.dots = new Dots($('#dots'));
+    this.launcher = new Launcher(this);
     paintIcons();
     this.initSide();
+    this.initMode();
     this.bind();
     this.setState();
     this.updateFocus();
@@ -146,8 +167,98 @@ export class App {
     $('#palette').addEventListener('click', (e) => { if (e.target.id === 'palette') this.closePalette(); });
     $('#paletteInput').addEventListener('input', () => this.renderPalette());
     $('#paletteInput').addEventListener('keydown', (e) => this.paletteKey(e));
-    window.addEventListener('resize', () => this.updateFocus());
+    window.addEventListener('resize', () => { this.updateFocus(); this.autosize(); });
+    $('#brandHome').addEventListener('click', () => this.goHome());
+    $('#topHome').addEventListener('click', () => this.goHome());
+    window.addEventListener('hashchange', () => (location.hash === '#agente' ? this.enterAgent() : this.goHome()));
     this.autosize();
+  }
+
+  // --- inicio (espacio con herramientas) <-> modo agente --------------------------
+  // El modo se recuerda en la dirección (#agente): al recargar trabajando, sigues en el agente.
+  initMode() {
+    this.initMini();
+    const agent = location.hash === '#agente';
+    this.mode = agent ? 'agent' : 'home';
+    document.body.classList.toggle('mode-agent', agent);
+    document.body.classList.toggle('mode-home', !agent);
+    if (agent) { this.engine?.pause(); this.dots.start(); }
+  }
+
+  // La marca del modo agente es la nebulosa de verdad en miniatura: un retrato que hace la escena
+  // en el inicio y se guarda para las siguientes cargas (aunque se entre directo al agente).
+  initMini() {
+    const root = document.documentElement;
+    const apply = (url) => {
+      if (!url || !url.startsWith('data:image/') || url.length < 3000) return;  // muy corto = retrato vacío
+      root.style.setProperty('--nebula-mini', `url("${url}")`);
+      root.classList.add('has-mini');
+    };
+    try { apply(localStorage.getItem('skynet.nebulosa.v2')); } catch { /* sin almacenamiento */ }
+    if (this.engine) {
+      this.engine.onSnapshot = (url) => {
+        apply(url);
+        try { localStorage.setItem('skynet.nebulosa.v2', url); } catch { /* nada */ }
+      };
+    }
+  }
+
+  setOrigin() {
+    const [cx, cy] = this.launcher.center();
+    document.body.style.setProperty('--ox', `${cx}px`);
+    document.body.style.setProperty('--oy', `${cy}px`);
+  }
+
+  // La nebulosa estalla y, desde ese punto, se abre el espacio de trabajo.
+  enterAgent(opts = {}) {
+    if (this.mode === 'agent' || this.switching) return;
+    const b = document.body;
+    if (this.panels.ventana) this.panels.close();  // la ventana de una app es del launcher
+    this.mode = 'agent';
+    if (location.hash !== '#agente') history.replaceState(null, '', '#agente');
+    this.setOrigin();
+    this.dots.start();
+    const done = () => {
+      b.classList.remove('exploding', 'revealing');
+      this.switching = false;
+      if (this.mode === 'agent') this.engine?.pause();
+      this.updateFocus();
+      this.autosize();
+      if (opts.side) this.toggleSide(true);
+      else if (!this.narrow()) this.input.focus();
+    };
+    if (REDUCED.matches) { b.classList.replace('mode-home', 'mode-agent'); this.scrollDown(true); done(); return; }
+    this.switching = true;
+    b.classList.add('exploding');
+    this.engine?.explode();
+    setTimeout(() => { b.classList.remove('mode-home'); b.classList.add('mode-agent', 'revealing'); this.autosize(); this.scrollDown(true); }, 420);
+    setTimeout(done, 1500);
+  }
+
+  // Vuelta al espacio: la interfaz se recoge hacia la nebulosa, que se vuelve a condensar.
+  goHome() {
+    if (this.mode === 'home' || this.switching) return;
+    const b = document.body;
+    this.closeMenu();
+    this.closeMeter();
+    if (this.panels.current) this.panels.close();
+    b.classList.remove('side-open-m');
+    this.mode = 'home';
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    this.engine?.resume();
+    this.engine?.reform();
+    this.setOrigin();
+    const done = () => {
+      b.classList.remove('mode-agent', 'closing');
+      b.classList.add('mode-home');
+      this.dots.stop();
+      this.updateFocus();
+    };
+    if (REDUCED.matches) { done(); return; }
+    this.switching = true;
+    b.classList.add('closing');
+    setTimeout(() => { done(); this.launcher.arrive(); }, 620);
+    setTimeout(() => { this.switching = false; }, 1700);
   }
 
   autosize() {
@@ -216,7 +327,18 @@ export class App {
       if (k === 's' || k === 'n' || (k === 't' && this.question.todas)) { e.preventDefault(); this.answer(k); }
       return;
     }
-    if (!typing && e.key === '/' && $('#palette').hidden) { e.preventDefault(); this.input.focus(); }
+    if (!typing && e.key === '/' && $('#palette').hidden) { e.preventDefault(); this.enterAgent(); this.input.focus(); return; }
+    // En el inicio: Intro abre el agente, y empezar a escribir también (la letra no se pierde).
+    if (this.mode === 'home' && !typing && $('#palette').hidden && $('#ask').hidden && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const el = document.activeElement;
+      const onButton = el && el !== document.body && el.id !== 'homeCore';
+      if (e.key === 'Enter' && !onButton) { e.preventDefault(); this.enterAgent(); }
+      else if (e.key.length === 1 && e.key !== ' ' && !this.panels.current) {
+        e.preventDefault();
+        this.input.value += e.key;
+        this.enterAgent();
+      }
+    }
   }
 
   async send(text) {
@@ -414,7 +536,7 @@ export class App {
   menuEffort(anchor) {
     const s = this.snap || {};
     this.openMenu(anchor, [{ items: Object.entries(EFFORT).map(([v, label]) => ({ value: v, label, on: (s.razonamiento || 'auto') === v,
-      sub: { auto: 'Lo normal de cada modelo', low: 'Responde antes', medium: '', high: 'Tarda más en lo difícil' }[v] })) }],
+      sub: { auto: 'Lo normal de cada modelo', low: 'Responde antes', medium: '', xhigh: 'Tarda más en lo difícil' }[v] })) }],
     (v) => this.ajustes({ razonamiento: v }));
   }
 
@@ -532,6 +654,10 @@ export class App {
     document.documentElement.style.setProperty('--accent', S.accent);
     document.documentElement.style.setProperty('--accent-soft', S.accent + '29');
     $('#statusLabel').textContent = S.label;
+    $('#homeStatusLabel').textContent = S.label;
+    $('#homeStatus').classList.toggle('busy', this.busy || !!this.question);
+    this.dots?.setAccent(S.accent);
+    if (this.snap) this.launcher?.render(this.snap, { label: S.label, connected: this.connected });
     let d = detail ?? this.statusDetail ?? '';
     if (!this.busy && !this.question) d = '';
     const longs = (this.snap?.largas_vivas || []).length;
@@ -564,8 +690,14 @@ export class App {
       document.documentElement.style.setProperty('--focus-x', `${px}px`);  // el brillo sin WebGL también
       this.engine?.setFocusShift(px);
     };
-    if (w < 860) return set(0);
     const css = getComputedStyle(document.documentElement);
+    if (this.mode !== 'agent') {
+      // En el launcher no hay barra lateral y las apps abren ventanas encima: la nebulosa no se mueve.
+      this.launcher?.layout();
+      this.launcher?.render(this.snap, { label: $('#statusLabel').textContent, connected: this.connected });
+      return set(0);
+    }
+    if (w < 860) return set(0);
     const sideW = document.body.classList.contains('side-collapsed') ? 0 : parseFloat(css.getPropertyValue('--side-w')) || 264;
     // Solo cuenta el panel cuando empuja la conversación (pantallas anchas, ver app.css).
     const panelW = this.panels.current && w >= 1180 ? (parseFloat(css.getPropertyValue('--panel-w')) || 420) + 12 : 0;
@@ -596,6 +728,19 @@ export class App {
   addUser(text, images = []) {
     this.finishTurn();
     const el = this.node(`<div class="msg-k">Tú</div><div class="bubble">${esc(text)}</div>`, 'msg msg-user');
+    // Mensajes muy largos (encargos detallados): plegados, con «Mostrar todo».
+    if (String(text).length > 700 || String(text).split('\n').length > 14) {
+      el.classList.add('long', 'folded');
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'msg-more';
+      more.textContent = 'Mostrar todo';
+      more.addEventListener('click', () => {
+        const folded = el.classList.toggle('folded');
+        more.textContent = folded ? 'Mostrar todo' : 'Mostrar menos';
+      });
+      el.append(more);
+    }
     if (images.length) {
       const box = document.createElement('div'); box.className = 'message-images';
       for (const ref of images) {
@@ -698,15 +843,18 @@ export class App {
     if (live) this.engine?.pulse(0.8);
   }
 
-  // Pie de cada respuesta: tokens, tokens por segundo y estado. Si falló o quedó a medias, «Reintentar»
+  // Pie de cada respuesta: tokens, tokens por segundo, segundos y estado. Si falló o quedó a medias, «Reintentar»
   // retoma la misma tarea (con lo que ya hizo) en vez de empezar otra.
   addFin(d, live) {
     const ans = this.lastAnswer;
     if (!ans || ans.querySelector('.meta')) return;
     const fallo = d.estado === 'fallida' || d.estado === 'pausada';
     const label = { hecha: 'Hecha', fallida: 'Falló', pausada: 'A medias' }[d.estado] || d.estado;
-    const bits = [`${(+d.tokens || 0).toLocaleString('es-ES')} tokens`];
+    const tok = +d.tokens || 0;
+    const bits = [`<span title="${fmtN(tok)} tokens">${tokFmt(tok)} tokens</span>`];
     if (+d.tok_s > 0) bits.push(`${Math.round(+d.tok_s)} tok/s`);
+    if (typeof d.segundos === 'number' && Number.isFinite(d.segundos) && d.segundos >= 0)
+      bits.push(`<span title="Tiempo del modelo, incluido el razonamiento: ${d.segundos.toLocaleString('es-ES', { maximumFractionDigits: 1 })} s">${fmtDur(d.segundos)}</span>`);
     bits.push(`<span class="${d.estado === 'hecha' ? 'ok' : fallo ? 'bad' : ''}">${esc(label)}</span>`);
     ans.querySelector('.bubble').insertAdjacentHTML('beforeend', `<div class="meta">${bits.map((b) => `<span>${b}</span>`).join('')}${
       fallo ? `<button class="btn small retry">${icon('resume')} Reintentar</button>` : ''}</div>`);
@@ -882,7 +1030,10 @@ export class App {
     const s = this.snap || {};
     const A = [];
     const g = (group, ico, text, run, desc = '') => A.push({ group, ico, text, run, desc });
-    g('Hablar', 'chat', 'Escribir a Skynet', () => this.input.focus(), '/');
+    g('Hablar', 'chat', 'Escribir a Skynet', () => { this.enterAgent(); this.input.focus(); }, '/');
+    if (this.mode === 'agent') g('Sistema', 'orbit', 'Volver al inicio', () => this.goHome());
+    else g('Sistema', 'orbit', 'Abrir el agente', () => this.enterAgent(), 'Intro');
+    if (this.mode !== 'agent') g('Sistema', 'sparkle', this.launcher?.abierto ? 'Recoger las apps' : 'Mostrar las apps', () => (this.launcher.abierto ? this.launcher.ocultar() : this.launcher.mostrar()), 'mantener pulsado');
     if (s.pendiente) g('Hablar', 'resume', `Continuar «${s.pendiente.title}»`, () => this.resumeTask(s.pendiente.id), `tarea ${s.pendiente.id}`);
     if (this.busy) g('Hablar', 'stop', 'Detener lo que está haciendo', () => this.stop(), 'Esc');
     g('Sistema', 'log', 'Uso: modelos, tokens y herramientas', () => this.panels.open('registro'));
@@ -975,6 +1126,7 @@ export class App {
       const r = await api.sesiones(this.sessionQuery);
       this.sessions = r.sesiones || [];
       this.renderSessions(r.actual);
+      this.paintState();  // el inicio enseña cuántas sesiones hay
     } catch { /* servidor antiguo sin sesiones: la lista queda vacía */ }
   }
 
@@ -1122,6 +1274,7 @@ export class App {
       const r = await api.sesionArchivar(id);
       this.sessions = r.sesiones || [];
       this.renderSessions(r.actual);
+      this.paintState();  // el inicio enseña cuántas sesiones hay
       this.toast('Sesión borrada.');
     } catch (e) { this.toast(e.message, 'bad'); }
   }

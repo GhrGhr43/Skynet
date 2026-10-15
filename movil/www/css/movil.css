@@ -63,3 +63,10 @@ kbd, .ask-actions .btn kbd { display: none !important; }
 .cx-go { height: 48px; margin-top: 8px; justify-content: center; font-size: 15px; }
 .cx-msg { color: var(--bad, #ff6b7a); font-size: 13.5px; min-height: 20px; margin-top: 6px; }
 .cx-body .steps-list { margin-top: 0; }
+
+/* Launcher: en el teléfono, cada app se abre como hoja a pantalla completa que crece desde su icono. */
+.panel.as-app { width: auto !important; height: auto !important; max-height: none !important; transform: translateY(24px);
+  border-radius: 22px 22px 0 0 !important; }
+.panel.as-app.open { transform: none; }
+.panel.as-app .panel-body { flex: 1 1 auto; padding: 6px 18px calc(28px + var(--safe-b)); }
+.home-top { padding-top: calc(var(--safe-t) + 14px); }
