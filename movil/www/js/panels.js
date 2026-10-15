@@ -69,11 +69,31 @@ export class Panels {
   open(name, opts = {}) {
     this.current = name;
     this.detail = opts.detail ?? null;
-    $('#panelTitle').textContent = TITLES[name] || '';
+    // Desde el launcher, el panel es la ventana de una app: su nombre, su icono y su color.
+    this.ventana = opts.app || null;
     const panel = $('#panel');
+    const ventana = !!this.ventana && this.app.mode !== 'agent';
+    clearTimeout(this.unwindow);
+    $('#panelTitle').textContent = this.ventana?.nombre || TITLES[name] || '';
+    const ico = $('#panelIco');
+    ico.hidden = !this.ventana;
+    ico.innerHTML = this.ventana ? icon(this.ventana.icono) : '';
+    panel.style.setProperty('--app', this.ventana?.color || 'var(--accent)');
+    panel.classList.toggle('as-app', ventana);
+    const wasOpen = panel.classList.contains('open');
     panel.classList.add('open');
     panel.setAttribute('aria-hidden', 'false');
     document.body.classList.add('has-panel');
+    // La ventana sale del icono de la app.
+    if (ventana && opts.from && !wasOpen && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // En el teléfono la ventana es una hoja a pantalla completa: crece desde el punto del icono.
+      const f = opts.from, r = panel.getBoundingClientRect();
+      const origin = `${(f.left + f.width / 2 - r.left).toFixed(0)}px ${(f.top + f.height / 2 - r.top).toFixed(0)}px`;
+      panel.animate([
+        { transformOrigin: origin, transform: `scale(${(f.width / (r.width || 1)).toFixed(3)})`, opacity: 0.3, borderRadius: '50%' },
+        { transformOrigin: origin, transform: 'none', opacity: 1, borderRadius: '22px 22px 0 0' },
+      ], { duration: 460, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    }
     this.markRail();
     this.app.updateFocus();
     clearInterval(this.timer);
@@ -84,11 +104,15 @@ export class Panels {
   close() {
     this.current = null;
     this.detail = null;
+    this.ventana = null;
     clearInterval(this.timer);
     const panel = $('#panel');
     panel.classList.remove('open');
     panel.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('has-panel');
+    // La ventana se desvanece en su sitio; después vuelve a ser el panel del agente.
+    clearTimeout(this.unwindow);
+    this.unwindow = setTimeout(() => { if (!this.current) panel.classList.remove('as-app'); }, 400);
     this.markRail();
     this.app.updateFocus();
   }
@@ -123,10 +147,26 @@ export class Panels {
       else if (name === 'ajustes') this.renderSettings();
       else if (name === 'diagnostico') this.renderDiag();
       else if (name === 'aprendizaje') await this.renderLearn(silent);
+      else if (this.ventana?.montar) await this.ventana.montar(body, this.app);  // app con interfaz propia
     } catch (e) {
       if (!silent) body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
     }
+    if (this.ventana?.seccion) this.soloSeccion(this.ventana.seccion);
     paintIcons(body);
+  }
+
+  // Una app que es una sección de Configuración (Proyectos, Herramientas, Conexión) enseña solo esa
+  // parte: desde su título hasta el siguiente. El título lo da ya la ventana.
+  soloSeccion(id) {
+    let dentro = false;
+    for (const el of this.body.children) {
+      if (el.classList.contains('section-k')) {
+        dentro = el.dataset.section === id;
+        el.hidden = true;
+        continue;
+      }
+      el.hidden = !dentro;
+    }
   }
 
   // Mantiene el scroll y el foco al refrescar en caliente.
@@ -192,6 +232,18 @@ export class Panels {
     try { this.app.applySnap(await api.ajustes({ repo: name || 'ninguno' })); } catch (e) { this.app.toast(e.message, 'bad'); }
   }
 
+  // Solo sale de la lista: la carpeta y su contenido no se tocan.
+  async removeRepo(nombre) {
+    const ok = await this.app.confirmDialog({ tipo: 'aviso', titulo: `¿Quitar «${nombre}» de la lista?`,
+      texto: 'Skynet dejará de poder trabajar en esa carpeta. No se borra ningún archivo: puedes volver a añadirla cuando quieras.', boton: 'Quitar' });
+    if (!ok) return;
+    try {
+      this.app.applySnap(await api.quitarRepo(nombre));
+      this.app.toast(`«${nombre}» ya no está en la lista.`);
+      this.render(true);
+    } catch (e) { this.app.toast(e.message, 'bad'); }
+  }
+
   async setModel(name) {
     return this.app.ajustes({ modelo: name });
   }
@@ -206,7 +258,7 @@ export class Panels {
 
     const cx = conexion();
     const enPC = modoConexion === 'pc';
-    let html = `<div class="section-k" style="margin-top:4px">Conexión con tu PC</div>
+    let html = `<div class="section-k" data-section="conexion" style="margin-top:4px">Conexión con tu PC</div>
       <div class="card"><div class="card-row">${icon(enPC ? 'phone' : 'cpu')}<div class="grow">
         <div class="card-title">${enPC ? 'Conectado a tu PC' : 'Modo demo'}</div>
         <div class="card-sub ${enPC ? 'mono ellipsis' : ''}">${enPC ? `${esc(cx.url.replace(/^https?:\/\//, ''))} · ${esc(cx.dispositivo?.nombre || 'este móvil')}`
@@ -214,7 +266,7 @@ export class Panels {
         <div class="btn-row">${enPC
           ? '<button class="btn small" id="cxProbar">Probar</button><button class="btn small danger" id="cxSalir">Desconectar</button>'
           : `<button class="btn primary small" id="cxAbrir">${icon('link')} Conectar con mi PC</button>`}</div></div>`;
-    html += '<div class="section-k">Repos</div>';
+    html += '<div class="section-k" data-section="repos">Repos</div>';
     for (const r of s.repos || []) {
       html += `<div class="card clickable ${s.repo === r.nombre ? 'selected' : ''}" data-repo="${esc(r.nombre)}">
         <div class="card-row">${icon('repo')}<div class="grow"><div class="card-title">${esc(r.nombre)}</div>
@@ -228,7 +280,7 @@ export class Panels {
       <button class="btn primary" type="submit">Añadir</button>
     </form>`;
 
-    html += '<div class="section-k">Modelos</div>';
+    html += '<div class="section-k" data-section="modelos">Modelos</div>';
     for (const m of s.modelos || []) {
       const e = motores[m.motor || m.nombre];
       const busy = !!e?.ocupado;
@@ -283,7 +335,8 @@ export class Panels {
     html = opcionesHtml(s.personalizacion) + html;
     this.paint(html);
     enlazarOpciones(this, s.personalizacion);
-    for (const c of this.body.querySelectorAll('[data-repo]')) c.addEventListener('click', () => this.setRepo(c.dataset.repo || null));
+    for (const c of this.body.querySelectorAll('[data-repo]')) c.addEventListener('click', (e) => { if (!e.target.closest('[data-repo-quitar]')) this.setRepo(c.dataset.repo || null); });
+    for (const b of this.body.querySelectorAll('[data-repo-quitar]')) b.addEventListener('click', () => this.removeRepo(b.dataset.repoQuitar));
     for (const c of this.body.querySelectorAll('[data-model]')) c.addEventListener('click', () => this.setModel(c.dataset.model));
     for (const sel of this.body.querySelectorAll('[data-perm]')) sel.addEventListener('change', async () => {
       const prev = (s.modelos || []).find((m) => m.nombre === sel.dataset.perm)?.modo || 'repo';

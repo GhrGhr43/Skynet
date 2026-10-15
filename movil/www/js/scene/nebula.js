@@ -177,6 +177,7 @@ uniform float uPulseAmp;
 uniform float uScanY;
 uniform float uScanAmp;
 uniform float uJitter;
+uniform float uBurst;
 
 void main(){
   vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -215,6 +216,12 @@ void main(){
     float scan = exp(-pow((p.y - uScanY) * 6.0, 2.0));
     vec2 out2 = normalize(p.xz + 1e-5);
     acc += vec3(out2.x, 0.0, out2.y) * scan * uScanAmp;
+  }
+
+  // Explosión al entrar en el modo agente: todo sale disparado hacia fuera, cada partícula a su ritmo.
+  if (uBurst > 0.001) {
+    vec3 out3 = normalize(p.xyz + (vec3(attr.x, attr.w * 0.16, attr.y) - 0.5) * 0.35 + 1e-5);
+    acc += out3 * uBurst * (0.35 + attr.x * 1.3);
   }
 
   // Error: temblor nervioso.
@@ -356,6 +363,7 @@ export class Nebula {
       uScanY: { value: 99 },
       uScanAmp: { value: 0 },
       uJitter: { value: 0 },
+      uBurst: { value: 0 },
     });
     this.posVar.material.uniforms.uDt = { value: 0.016 };
     for (const v of [this.velVar, this.posVar]) {
@@ -440,6 +448,7 @@ export class Nebula {
     v.uScanY.value = p.scanY;
     v.uScanAmp.value = p.scanAmp;
     v.uJitter.value = p.jitter;
+    v.uBurst.value = p.burst || 0;
     for (let i = 0; i < sub; i++) this.gpu.compute();
 
     const pu = this.pu;

@@ -11,7 +11,7 @@ import { Glyphs } from './glyphs.js';
 import { Satellites } from './satellites.js';
 
 // Contenedores de la maqueta que dejan ver la escena (el ratón sobre ellos mueve la nebulosa).
-const SCENE_THROUGH = '.main, .top, .hero, .hero *, .convo, .convo-scroll, .convo-inner, .dock, .suggest, .under';
+const SCENE_THROUGH = '.home, .home-core, .home-top, .home-caption, .home-caption *, .home-apps, .home-lines';
 
 // Cada estado del agente es una "personalidad" de la nube: color, turbulencia, giro...
 export const STATES = {
@@ -98,8 +98,16 @@ export class Engine {
       turb: s.turb, spin: s.spin, breath: s.breath, glyphRate: s.glyphRate, glyphGain: s.glyphGain,
       bloom: s.bloom, size: s.size, scanAmp: 0, scanY: 99, jitter: 0,
       spring: 0.6, damp: 2.2, pointer: 0, rayO: new THREE.Vector3(0, 0, 100), rayD: new THREE.Vector3(0, 0, -1),
-      mouseVel: new THREE.Vector3(), pulseR: 99, pulseAmp: 0, intro: 0, starGain: 0,
+      mouseVel: new THREE.Vector3(), pulseR: 99, pulseAmp: 0, intro: 0, starGain: 0, burst: 0,
     };
+    // Explosión (entrar al agente) y reformado (volver al inicio).
+    this.springT0 = 0;
+    this.springRamp = 4;
+    this.burstUntil = 0;
+    this.zoom = 0;
+    this.zoomTarget = 0;
+    this.bloomBoost = 0;
+    this.paused = false;
     this.pulses = [];
     this.satCount = 0;
     this.shift = 0;
@@ -117,7 +125,7 @@ export class Engine {
     this.hit = new THREE.Vector3();
     window.addEventListener('pointermove', (e) => this.onPointer(e), { passive: true });
     window.addEventListener('pointerdown', (e) => {
-      if (this.isScene(e.target)) this.pulse(0.9);
+      if (!this.paused && this.isScene(e.target)) this.pulse(0.9);
     });
     document.addEventListener('pointerleave', () => { this.overScene = false; });
     window.addEventListener('blur', () => { this.overScene = false; });
@@ -146,7 +154,8 @@ export class Engine {
   }
 
   resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    // Nunca 0×0 (pestaña oculta al cargar): la proporción 0/0 metería NaN en la simulación para siempre.
+    const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
     this.w = w; this.h = h;
     this.renderer.setPixelRatio(this.pr);
     this.renderer.setSize(w, h, false);
@@ -154,7 +163,8 @@ export class Engine {
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
     // En pantallas estrechas la nube se aleja un poco para que quepa entera.
-    this.baseZ = w / h < 0.9 ? 15.5 : 11.5;
+    // En el móvil (muy vertical) aún más lejos: deja sitio a las herramientas alrededor.
+    this.baseZ = w / h < 0.6 ? 19 : w / h < 0.9 ? 15.5 : 11.5;
     this.applyViewOffset();
     this.grade.uniforms.uRes.value.set(w * this.pr, h * this.pr);
     for (const o of [this.nebula, this.stars, this.glyphs, this.sats]) o.setPixelRatio(this.pr);
@@ -195,6 +205,40 @@ export class Engine {
     this.satCount = n;
   }
 
+  // La nebulosa estalla: empuje radial, muelle flojo, destello y la cámara se mete dentro.
+  explode() {
+    this.p.burst = 46;
+    this.burstUntil = this.t + 1.1;
+    this.zoomTarget = -6.5;
+    this.bloomBoost = 0.55;
+    this.pulse(2.2);
+  }
+
+  // Vuelve a condensarse: el muelle se endurece poco a poco, como en la intro.
+  reform() {
+    this.p.burst = 0;
+    this.burstUntil = 0;
+    this.springT0 = this.t;
+    this.springRamp = 2.2;              // más rápido que la intro: vuelve a casa, no nace
+    this.zoomTarget = 0;
+    this.zoom = Math.max(this.zoom, -2.5);
+    this.pulse(0.6);
+  }
+
+  // Sin dibujar nada (modo agente): la GPU queda libre para el modelo local.
+  pause() {
+    if (this.paused) return;
+    this.paused = true;
+    this.renderer.setAnimationLoop(null);
+  }
+
+  resume() {
+    if (!this.paused) return;
+    this.paused = false;
+    this.clock.getDelta();  // que el salto de tiempo en pausa no cuente como un frame larguísimo
+    this.renderer.setAnimationLoop(() => this.frame());
+  }
+
   // Avanza la simulación sin dibujar (pruebas y capturas: salta la intro).
   warmup(seconds, step = 1 / 60) {
     for (let i = 0; i < seconds / step; i++) this.frame(step, false);
@@ -224,8 +268,14 @@ export class Engine {
     // Intro: aparece y se condensa; el muelle se endurece poco a poco.
     p.intro = Math.min(1, t / 2.2);
     p.starGain = Math.min(1, t / 3.0) * (this.activeState === 'desconectado' ? 0.5 : 1);
-    const springTarget = 7.5;
-    p.spring = t < 4 ? 0.6 + (springTarget - 0.6) * Math.pow(t / 4, 2) : springTarget;
+    const springTarget = 7.5, st = t - this.springT0;
+    const ramp = this.springRamp;
+    p.spring = st < ramp ? 0.6 + (springTarget - 0.6) * Math.pow(st / ramp, 2) : springTarget;
+    p.damp = 2.2;
+    if (t < this.burstUntil) { p.spring = 0.12; p.damp = 0.5; }
+    p.burst *= Math.exp(-2.6 * dt);
+    this.bloomBoost *= Math.exp(-2.2 * dt);
+    this.zoom += (this.zoomTarget - this.zoom) * ease(this.zoomTarget < this.zoom ? 2.4 : 1.6, dt);
     // Latido cuando espera confirmación.
     if (this.activeState === 'esperando') p.breath = 2.4 + Math.pow(Math.max(0, Math.sin(t * 2.6)), 12) * 4;
 
@@ -261,7 +311,7 @@ export class Engine {
     // Cámara: paralaje suave con el cursor y una deriva lenta, como si flotara.
     const cx = this.mouseSmooth.x * 0.45 + Math.sin(t * 0.07) * 0.25;
     const cy = this.mouseSmooth.y * 0.28 + Math.sin(t * 0.05 + 1.3) * 0.15;
-    this.camera.position.set(cx, cy, this.baseZ + Math.sin(t * 0.04) * 0.2);
+    this.camera.position.set(cx, cy, this.baseZ + this.zoom + Math.sin(t * 0.04) * 0.2);
     this.camera.lookAt(0, 0, 0);
     if (Math.abs(this.shiftTarget - this.shift) > 0.5) {
       this.shift += (this.shiftTarget - this.shift) * ease(4, dt);
@@ -272,11 +322,54 @@ export class Engine {
     this.stars.update(t, p.starGain);
     this.glyphs.update(t, p);
     this.sats.update(t, this.satCount);
-    this.bloom.strength = p.bloom;
+    this.bloom.strength = p.bloom + this.bloomBoost;
     this.grade.uniforms.uTime.value = t;
     if (!draw) return;
+    if (this.onSnapshot && t > 6 && p.burst < 0.3 && Math.abs(this.zoom) < 0.05 && this.h >= 240) this.snapshot(dt);
     this.composer.render(dt);
     this.adapt(dtRaw);
+  }
+
+  // Retrato de la nebulosa para los iconos (la marca del modo agente): un fotograma limpio, centrado,
+  // sin estrellas ni glifos, recortado y reducido. Una vez por carga; quien escucha lo guarda.
+  snapshot(dt) {
+    const cb = this.onSnapshot;
+    this.onSnapshot = null;
+    const hidden = [this.stars.points, this.glyphs.points, this.sats.points];
+    for (const o of hidden) o.visible = false;
+    const pos = this.camera.position.clone();
+    this.camera.clearViewOffset();
+    this.camera.position.set(0, 0, 11.5);
+    this.camera.lookAt(0, 0, 0);
+    this.camera.updateProjectionMatrix();
+    this.composer.render(dt);
+    try {
+      // A 11,5 de distancia se ven 2·11,5·tan(19°) ≈ 7,9 unidades de alto; la nebulosa con sus anillos ocupa unas 6; se deja margen.
+      const src = this.renderer.domElement;
+      const side = Math.min(src.height * 0.86, src.width);
+      const out = document.createElement('canvas');
+      out.width = out.height = 192;
+      const ctx = out.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(src, (src.width - side) / 2, (src.height - side) / 2, side, side, 0, 0, 192, 192);
+      const img = ctx.getImageData(0, 0, 192, 192);
+      const px = img.data;
+      // Un retrato oscuro es un fotograma fallido (lienzo sin pintar): se reintenta más tarde.
+      let lum = 0;
+      for (let y = 80; y < 112; y++) for (let x = 80; x < 112; x++) { const i = (y * 192 + x) * 4; lum += px[i] + px[i + 1] + px[i + 2]; }
+      if (lum / 1024 < 120) { this.onSnapshot = cb; } else {
+        // La luz es aditiva sobre negro: el negro pasa a transparente y el retrato flota sobre cualquier fondo.
+        for (let i = 0; i < px.length; i += 4) {
+          const a = Math.max(px[i], px[i + 1], px[i + 2]);
+          if (a) { const k = 255 / a; px[i] *= k; px[i + 1] *= k; px[i + 2] *= k; }
+          px[i + 3] = a;
+        }
+        ctx.putImageData(img, 0, 0);
+        cb(out.toDataURL('image/webp', 0.9));
+      }
+    } catch { /* sin retrato: los iconos usan el dibujo de reserva */ }
+    for (const o of hidden) o.visible = true;
+    this.camera.position.copy(pos);
+    this.applyViewOffset();
   }
 
   // Si va lento, baja la resolución interna (nunca la cantidad de partículas en caliente).
